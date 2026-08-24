@@ -29,7 +29,15 @@ RUN npm run build
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
 COPY .npmrc package.json package-lock.json ./
-RUN npm ci --omit=dev --no-fund --no-audit && npm cache clean --force
+# --omit=optional derruba deps que so servem a auths que nao usamos
+# (ex.: @aws-sdk/* do mongodb, so p/ MONGODB-AWS/Atlas IAM) — ~16 MB.
+# O prune abaixo tira artefato que o runtime nunca le (~20 MB); LICENSEs ficam.
+RUN npm ci --omit=dev --omit=optional --no-fund --no-audit && \
+    npm cache clean --force && \
+    find node_modules -type f \( -name "*.map" -o -name "*.d.ts" -o -name "*.d.mts" \
+        -o -name "*.d.cts" -o -name "*.md" -o -name "*.markdown" \) -delete && \
+    find node_modules -type d \( -name test -o -name tests -o -name __tests__ \
+        -o -name ".github" \) -prune -exec rm -rf {} +
 
 ############################################################
 # 3) Runtime
