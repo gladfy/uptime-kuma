@@ -20,6 +20,23 @@ funcionalidades que faltam no upstream. Destino de producao: **monitor-clientes.
   json (perto de chaves relacionadas), nunca no final: upstream/Weblate acrescentam no fim do
   arquivo, e e la que o conflito nasce.
 
+## Fluxo de trabalho — OpenSpec
+
+Este repo usa **OpenSpec** (`schema: spec-driven`). Funcionalidade nova comeca por um
+change, nao por codigo:
+
+```
+/opsx:explore   -> pensar em voz alta, investigar, clarificar requisito
+/opsx:propose   -> cria o change completo (proposal + design + specs + tasks)
+/opsx:apply     -> implementa as tasks do change
+/opsx:archive   -> arquiva o change depois de entregue
+```
+
+Contexto e regras dos artefatos: `openspec/config.yaml` — mantenha em dia quando a
+stack ou as convencoes mudarem. **Regra:** mudanca de comportamento (monitor type,
+provider, tela, schema) exige change aberto; correcao pontual de bug pode ir direto.
+Todo change declara se e candidato a PR upstream ou exclusivo do fork.
+
 ## Stack
 
 | Camada | Tecnologia |

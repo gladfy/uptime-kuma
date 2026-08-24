@@ -1,0 +1,68 @@
+schema: spec-driven
+
+context: |
+  # Uptime Kuma — Fork Winker
+
+  Fork de louislam/uptime-kuma (v2.5.3) para evoluir funcionalidades que faltam no
+  upstream. Producao: monitor-clientes.winker.com.br (k8s/EKS winkernetes), com a
+  imagem propria docker/winker.dockerfile (multi-stage, non-root, ~123 MB comprimida).
+  Monitoramento dos servicos/clientes Winker.
+
+  Leia o CLAUDE.md do repo antes de qualquer artefato — ele tem a arquitetura,
+  os pontos de extensao e os gotchas. Resumo do que importa para specs:
+
+  ## Stack
+  - Backend: Node >= 20.4 (dev em 22), Express + Socket.io — quase toda comunicacao
+    logada e socket, NAO REST. REST so para status pages, badges, push e /metrics.
+  - Frontend: Vue 3 SPA + Bootstrap 5, Vite (dist/ com .gz/.br pre-comprimidos).
+  - Dados: redbean-node (models em server/model/) + knex so para migrations.
+    Banco: SQLite (default) ou MariaDB/MySQL, decidido por data/db-config.json.
+  - Testes: node --test em test/backend-test/ · e2e Playwright · eslint + stylelint.
+
+  ## Pontos de extensao (o motivo do fork)
+  - Monitor type novo = 3 pontas: server/monitor-types/<tipo>.js (estende MonitorType,
+    override check()) + registro em server/uptime-kuma-server.js (~linha 113) +
+    src/pages/EditMonitor.vue (option + campos condicionais). Campo novo = migration.
+  - Notification provider novo = 4 arquivos: server/notification-providers/<x>.js +
+    registro em server/notification.js + src/components/notifications/<X>.vue +
+    entrada em src/components/notifications/index.js (a CHAVE = name do backend).
+  - Migration: db/knex_migrations/YYYY-MM-DD-HHMM-descricao.js (nome validado pelo CI),
+    roda no boot, precisa funcionar em SQLite E MySQL.
+
+  ## Regras do fork (custo de manter fork)
+  - upstream = louislam/uptime-kuma; sync por merge. Toda mudanca em arquivo quente do
+    upstream (server.js, EditMonitor.vue, notification.js, index.js de notifications)
+    e conflito futuro — mudancas ADITIVAS e localizadas custam menos que edicao no meio
+    de codigo existente.
+  - i18n: chave nova em src/lang/en.json E pt-BR.json, inserida no MEIO do json (perto
+    de chaves relacionadas), nunca no fim — upstream/Weblate acrescentam no fim.
+  - Codigo, nomes de variavel e chaves i18n em ingles (padrao do upstream);
+    proposals, specs, commits e documentacao em portugues.
+
+rules:
+  proposal:
+    - Escreva em portugues.
+    - Sempre inclua uma secao "Fora de escopo".
+    - Declare se a mudanca e candidata a PR no upstream ou e exclusiva do fork —
+      e, se exclusiva, quais arquivos quentes do upstream ela toca (custo de merge).
+    - Toda decisao consciente de deixar algo como esta vira item em "Pendencias
+      futuras", com um "revisar quando".
+  design:
+    - Divergencia de comportamento em relacao ao upstream deve ser dita explicitamente,
+      com o custo de merge estimado (arquivo quente? mudanca aditiva ou no meio?).
+    - Funcionalidade logada nova usa Socket.io (socket.on no server + chamada no
+      frontend), nao rota REST — a menos que seja consumo externo/anonimo.
+    - Se a mudanca cria monitor type ou notification provider, liste as pontas de
+      registro (backend + frontend + i18n) — ponta esquecida = feature invisivel
+      ou que aparece e nao funciona.
+    - Se toca schema, a migration precisa rodar em SQLite E MySQL; diga como cada
+      um se comporta.
+    - Nada de segredo (token, senha de provider) em log, badge ou status page publica.
+  tasks:
+    - Quebre em tarefas de no maximo meio dia.
+    - Mudanca com texto de UI ganha tarefa de i18n (en.json + pt-BR.json, chave no
+      MEIO do json).
+    - Backend novo ganha tarefa de teste em test/backend-test/ (ha ~20 exemplos de
+      notification-providers e monitors).
+    - Feche com as validacoes do CI: npm run lint, node extra/check-lang-json.js e,
+      se houver migration, node extra/check-knex-filenames.mjs.

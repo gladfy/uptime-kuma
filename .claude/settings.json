@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(git fetch:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(wc:*)",
+      "Bash(openspec:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run test-backend:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run tsc:*)",
+      "Bash(node extra/check-lang-json.js:*)",
+      "Bash(node extra/check-knex-filenames.mjs:*)",
+      "Bash(docker compose -f compose.build.yaml:*)",
+      "Bash(docker build -f docker/winker.dockerfile:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)",
+      "Bash(curl -s http://localhost:3001:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
