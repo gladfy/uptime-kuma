@@ -16,7 +16,9 @@ funcionalidades que faltam no upstream. Destino de producao: **monitor-clientes.
   (release, docker push, bots de comunidade) foi removido — eram do upstream e falhariam aqui.
 - **i18n:** o upstream so aceita mudanca em `src/lang/en.json` (o resto vem do Weblate). No fork
   podemos editar `pt-BR.json` direto, MAS cada edicao vira conflito no proximo merge do upstream —
-  prefira chaves novas (aditivas) a alterar traducao existente.
+  prefira chaves novas (aditivas) a alterar traducao existente. Insira a chave nova no MEIO do
+  json (perto de chaves relacionadas), nunca no final: upstream/Weblate acrescentam no fim do
+  arquivo, e e la que o conflito nasce.
 
 ## Stack
 
