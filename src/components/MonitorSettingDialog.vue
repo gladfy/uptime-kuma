@@ -43,6 +43,24 @@
                         </div>
                     </template>
 
+                    <!-- Show group monitors (group type only) -->
+                    <div v-if="monitor.type === 'group'" class="my-3 form-check">
+                        <input
+                            id="show-group-children"
+                            v-model="monitor.showChildren"
+                            class="form-check-input"
+                            type="checkbox"
+                            data-testid="show-group-children"
+                            @click="toggleShowChildren(monitor.group_index, monitor.monitor_index)"
+                        />
+                        <label class="form-check-label" for="show-group-children">
+                            {{ $t("showGroupChildren") }}
+                        </label>
+                        <div class="form-text">
+                            {{ $t("showGroupChildrenDescription") }}
+                        </div>
+                    </div>
+
                     <button
                         class="btn btn-primary btn-add-group me-2"
                         @click="$refs.badgeLinkGeneratorDialog.show(monitor.id, monitor.name)"
@@ -108,6 +126,8 @@ export default {
                 group_index: group.index,
                 isClickAble: this.showLink(monitor),
                 url: monitor.element.url,
+                type: monitor.element.type,
+                showChildren: !!monitor.element.showChildren,
             };
 
             this.MonitorSettingDialog.show();
@@ -122,6 +142,17 @@ export default {
         toggleLink(groupIndex, index) {
             this.$root.publicGroupList[groupIndex].monitorList[index].sendUrl =
                 !this.$root.publicGroupList[groupIndex].monitorList[index].sendUrl;
+        },
+
+        /**
+         * Toggle the value of showChildren (expand group monitors on the page)
+         * @param {number} groupIndex Index of group monitor is member of
+         * @param {number} index Index of monitor within group
+         * @returns {void}
+         */
+        toggleShowChildren(groupIndex, index) {
+            this.$root.publicGroupList[groupIndex].monitorList[index].showChildren =
+                !this.$root.publicGroupList[groupIndex].monitorList[index].showChildren;
         },
 
         /**

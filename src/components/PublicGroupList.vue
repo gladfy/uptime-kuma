@@ -119,6 +119,31 @@
                                             <HeartbeatBar size="mid" :monitor-id="monitor.element.id" />
                                         </div>
                                     </div>
+
+                                    <!-- Expanded children of a group monitor (read-only; they follow the group) -->
+                                    <div
+                                        v-if="monitor.element.showChildren && monitor.element.childrenList && monitor.element.childrenList.length > 0"
+                                        class="children-list"
+                                        data-testid="group-children"
+                                    >
+                                        <div v-for="child in monitor.element.childrenList" :key="child.id" class="row">
+                                            <div class="col-9 col-xl-6 small-padding">
+                                                <div class="info">
+                                                    <Status
+                                                        v-if="showOnlyLastHeartbeat"
+                                                        :status="statusOfLastHeartbeat(child.id)"
+                                                    />
+                                                    <Uptime v-else :monitor="child" type="24" :pill="true" />
+                                                    <p class="item-name" data-testid="group-child-name">
+                                                        {{ child.name }}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div :key="$root.userHeartbeatBar" class="col-3 col-xl-6">
+                                                <HeartbeatBar size="mid" :monitor-id="child.id" />
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </template>
                         </Draggable>
@@ -343,6 +368,12 @@ export default {
 
 .monitor-list {
     min-height: 46px;
+}
+
+.children-list {
+    margin-left: 28px;
+    padding-left: 12px;
+    border-left: 2px solid rgba(128, 128, 128, 0.25);
 }
 
 .item-name {

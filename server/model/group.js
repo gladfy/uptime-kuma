@@ -15,7 +15,24 @@ class Group extends BeanModel {
         let monitorList = [];
 
         for (let bean of monitorBeanList) {
-            monitorList.push(await bean.toPublicJSON(showTags, certExpiry));
+            let monitorObj = await bean.toPublicJSON(showTags, certExpiry);
+            monitorObj.showChildren = !!bean.showChildren;
+
+            // Expand the direct children of a group monitor when enabled for this status page row.
+            // Children expose id/name/type only: they have no monitor_group row, so no URL can leak.
+            if (monitorObj.showChildren && bean.type === "group") {
+                monitorObj.childrenList = await R.getAll(
+                    `
+                    SELECT id, name, type FROM monitor
+                    WHERE parent = ?
+                    AND active = 1
+                    ORDER BY name
+                `,
+                    [bean.id]
+                );
+            }
+
+            monitorList.push(monitorObj);
         }
 
         return {
@@ -35,7 +52,7 @@ class Group extends BeanModel {
             "monitor",
             await R.getAll(
                 `
-            SELECT monitor.*, monitor_group.send_url, monitor_group.custom_url FROM monitor, monitor_group
+            SELECT monitor.*, monitor_group.send_url, monitor_group.custom_url, monitor_group.show_children FROM monitor, monitor_group
             WHERE monitor.id = monitor_group.monitor_id
             AND group_id = ?
             ORDER BY monitor_group.weight

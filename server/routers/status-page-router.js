@@ -82,6 +82,28 @@ router.get("/api/status-page/heartbeat/:slug", cache("1 minutes"), async (reques
             [statusPageID]
         );
 
+        // Include the direct children of group monitors that have "show children" enabled on this page
+        const expandedGroupIDs = await R.getCol(
+            `
+            SELECT monitor_group.monitor_id FROM monitor_group, \`group\`, monitor
+            WHERE monitor_group.group_id = \`group\`.id
+            AND monitor.id = monitor_group.monitor_id
+            AND \`group\`.public = 1
+            AND \`group\`.status_page_id = ?
+            AND monitor_group.show_children = 1
+            AND monitor.type = 'group'
+        `,
+            [statusPageID]
+        );
+
+        for (const groupMonitorID of expandedGroupIDs) {
+            const childIDs = await R.getCol("SELECT id FROM monitor WHERE parent = ? AND active = 1", [groupMonitorID]);
+            monitorIDList.push(...childIDs);
+        }
+
+        // A child may also be listed individually on the same page
+        monitorIDList = [...new Set(monitorIDList)];
+
         for (let monitorID of monitorIDList) {
             let list = await R.getAll(
                 `

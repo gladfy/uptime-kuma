@@ -585,6 +585,8 @@
     "secureOptionNone": "Nenhum / STARTTLS (25, 587)",
     "apiKeyAddedMsg": "Sua chave de API foi adicionada. Por favor anote essa chave, ela não será mostrada novamente.",
     "Show Clickable Link": "Mostrar Link Clicável",
+    "showGroupChildren": "Mostrar monitores do grupo",
+    "showGroupChildrenDescription": "Exibe também os monitores deste grupo nesta página de status, inclusive os adicionados ao grupo no futuro. As URLs deles nunca são exibidas.",
     "backupOutdatedWarning": "Obsoleto: Já que muitos recursos foram adicionados e este recurso de backup não foi atualizado, ele não consegue gerar ou restaurar um backup completo.",
     "wayToGetDiscordURL": "Voce pode configurar isso indo à Configurações do Servidor -> Integrações -> Ver Webhooks -> Novo Webhook",
     "Home": "Início",

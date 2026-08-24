@@ -64,5 +64,5 @@ rules:
       MEIO do json).
     - Backend novo ganha tarefa de teste em test/backend-test/ (ha ~20 exemplos de
       notification-providers e monitors).
-    - Feche com as validacoes do CI: npm run lint, node extra/check-lang-json.js e,
+    - Feche com as validacoes do CI — npm run lint, node extra/check-lang-json.js e,
       se houver migration, node extra/check-knex-filenames.mjs.

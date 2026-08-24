@@ -390,6 +390,12 @@ module.exports.statusPageSocketHandler = (socket) => {
                         relationBean.custom_url = monitor.url;
                     }
 
+                    // "Show children" only makes sense (and is only accepted) for group monitors
+                    if (monitor.showChildren) {
+                        const monitorType = await R.getCell("SELECT type FROM monitor WHERE id = ?", [monitor.id]);
+                        relationBean.show_children = monitorType === "group";
+                    }
+
                     await R.store(relationBean);
                 }
 
