@@ -1,0 +1,21 @@
+# Sobe o Uptime Kuma BUILDADO deste fork (o compose.yaml original usa a imagem oficial).
+#
+#   mkdir -p data                                  # 1a vez: o container roda como uid 1000
+#   docker compose -f compose.build.yaml up --build
+#
+# App em http://localhost:3001 (primeiro boot abre o wizard de setup do banco).
+services:
+  uptime-kuma:
+    build:
+      context: .
+      dockerfile: docker/winker.dockerfile
+    image: winker/uptime-kuma:local
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/app/data
+    # o monitor de ping precisa de NET_RAW; o docker concede por default,
+    # mas deixamos explicito porque no k8s isso vira securityContext
+    cap_add:
+      - NET_RAW
