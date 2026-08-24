@@ -386,22 +386,22 @@
                 <template v-else>
                     <div v-if="allUp">
                         <font-awesome-icon icon="check-circle" class="ok" />
-                        {{ overallStatusBoxText }}
+                        {{ $t("All Systems Operational") }}
                     </div>
 
                     <div v-else-if="partialDown">
                         <font-awesome-icon icon="exclamation-circle" class="warning" />
-                        {{ overallStatusBoxText }}
+                        {{ $t("Partially Degraded Service") }}
                     </div>
 
                     <div v-else-if="allDown">
                         <font-awesome-icon icon="times-circle" class="danger" />
-                        {{ overallStatusBoxText }}
+                        {{ $t("Degraded Service") }}
                     </div>
 
                     <div v-else-if="isMaintenance">
                         <font-awesome-icon icon="wrench" class="status-maintenance" />
-                        {{ overallStatusBoxText }}
+                        {{ $t("maintenanceStatus-under-maintenance") }}
                     </div>
 
                     <div v-else>
@@ -834,50 +834,6 @@ export default {
             return this.overallStatus === STATUS_PAGE_MAINTENANCE;
         },
 
-        /**
-         * Localized text of the current overall status
-         * @returns {string} Overall status text, empty while unknown
-         */
-        overallStatusText() {
-            if (this.allUp) {
-                return this.$t("All Systems Operational");
-            } else if (this.partialDown) {
-                return this.$t("Partially Degraded Service");
-            } else if (this.allDown) {
-                return this.$t("Degraded Service");
-            } else if (this.isMaintenance) {
-                return this.$t("maintenanceStatus-under-maintenance");
-            }
-            return "";
-        },
-
-        /**
-         * Text of the overall status box: page title + current status
-         * (e.g. "Situator - Degraded Service"), falling back to the status
-         * alone while the title has not loaded.
-         * @returns {string} Overall status box text
-         */
-        overallStatusBoxText() {
-            if (this.config.title && this.overallStatusText) {
-                return `${this.config.title} - ${this.overallStatusText}`;
-            }
-            return this.overallStatusText;
-        },
-
-        /**
-         * Page title with the overall status next to it (e.g. "Situator - All Systems Operational")
-         * @returns {string} Document title
-         */
-        pageTitle() {
-            if (!this.config.title) {
-                return "";
-            }
-            if (this.overallStatusText) {
-                return `${this.config.title} - ${this.overallStatusText}`;
-            }
-            return this.config.title;
-        },
-
         incidentHTML() {
             if (this.incident && this.incident.content != null) {
                 return DOMPurify.sanitize(marked(this.incident.content));
@@ -986,10 +942,8 @@ export default {
             this.loadedTheme = true;
         },
 
-        pageTitle(title) {
-            if (title) {
-                document.title = title;
-            }
+        "config.title"(title) {
+            document.title = title;
         },
 
         "$root.monitorList"() {
