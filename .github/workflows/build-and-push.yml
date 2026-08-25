@@ -1,10 +1,18 @@
-# Builda a imagem propria do fork (docker/winker.dockerfile) e publica no Docker Hub.
+# Builda a imagem propria do fork (docker/winker.dockerfile), publica no Docker Hub
+# e faz o deploy em producao (EKS winkernetes, namespace monitor-infra).
 #
 # Registry: tiwinker/* (ADR-0006 do repo infrastructure) — conta privada.
 # Tags: SEMPRE imutaveis. Nao publicamos `latest` nem `prod` de proposito:
-# o manifest do k8s pina a tag, e tag movel tira o rollback por tag.
+# tag movel tira o rollback por tag.
 #
-# Secrets exigidos no repo/org: DOCKER_USERNAME, DOCKER_PASSWORD.
+# ATENCAO: push em master DEPLOYA EM PRODUCAO. O Deployment usa strategy
+# Recreate (o PVC e ReadWriteOnce), entao todo deploy tem ~1-2 min de queda:
+# o pod velho morre ANTES de o novo subir. Nao ha rolling update possivel.
+#
+# Secrets exigidos no repo/org:
+#   DOCKER_USERNAME, DOCKER_PASSWORD          (publicar a imagem)
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY  (falar com o EKS)
+#   AWS_DEFAULT_REGION
 name: build-and-push
 
 on:
@@ -25,6 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      release: ${{ steps.meta.outputs.release }}
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with: { persist-credentials: false }
@@ -60,6 +71,8 @@ jobs:
           {
             echo "release=${release}"
             echo "commit=${commit}"
+            # a tag sozinha, sem o repositorio — e o que o helm --set image.tag espera
+            echo "tag=${version}-winker.${RUN_NUMBER}"
           } >> "$GITHUB_OUTPUT"
           echo "Publicando: ${release} e ${commit}"
 
@@ -106,7 +119,138 @@ jobs:
             echo "| Tag por commit | \`${COMMIT_TAG}\` |"
             echo "| Digest | \`${DIGEST}\` |"
             echo ""
-            echo "Para subir em producao, aponte o \`image:\` do deployment em"
-            echo "\`helm-packages/tools/uptimekuma/deployment-uptimekuma.yaml\` (repo infrastructure)"
-            echo "para a **tag de release** acima."
+            echo "O job \`deploy\` abaixo sobe esta tag no EKS."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Deploy no EKS winkernetes, namespace monitor-infra.
+  #
+  # O chart NAO vive aqui: ele vive no repo `infrastructure`
+  # (helm-packages/tools/uptimekuma) e e publicado no repo Helm em S3. Este job
+  # baixa o pacote publicado e sobrescreve SO a tag da imagem. Chart alterado =>
+  # publicar versao nova no S3 e subir CHART_VERSION abaixo.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLUSTER: winkernetes
+      NAMESPACE: monitor-infra
+      RELEASE: uptime-kuma
+      CHART_REPO: s3://winker-helm-packages/tools/uptimekuma
+      # Pinado de proposito: chart novo so entra em producao quando alguem sobe
+      # este numero. Precedente do que acontece sem isso: o pipeline do Chatwoot
+      # fixa --version 1.1.18, alguem publicou 1.1.19 e reverteu com push --force,
+      # e ate hoje o index.yaml anuncia uma versao que nao existe no bucket.
+      CHART_VERSION: "0.1.1"
+      # >= 3.17: e a primeira com --take-ownership. Sem ela, o primeiro upgrade
+      # sobre objetos criados por `kubectl apply` falha com "invalid ownership
+      # metadata" e o conserto vira anotar recurso de producao na mao.
+      HELM_VERSION: v3.18.4
+    steps:
+      - name: Confere os secrets da AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          missing=""
+          [ -z "$AWS_ACCESS_KEY_ID" ] && missing="$missing AWS_ACCESS_KEY_ID"
+          [ -z "$AWS_SECRET_ACCESS_KEY" ] && missing="$missing AWS_SECRET_ACCESS_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Secret(s) ausente(s):$missing — a imagem FOI publicada, mas o deploy nao roda."
+            exit 1
+          fi
+
+      - name: Credenciais AWS e kubeconfig
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+        run: |
+          set -eu
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set default.region "${AWS_DEFAULT_REGION:-us-east-1}"
+          aws eks update-kubeconfig --no-cli-pager --name "$CLUSTER"
+          kubectl -n "$NAMESPACE" get deploy "$RELEASE" -o name
+
+      - name: Instala helm, o plugin s3 e garante o kubectl
+        run: |
+          set -eu
+          # kubectl vem na imagem do runner, mas isso nao e contrato — se sumir,
+          # a falha apareceria so no meio do deploy.
+          command -v kubectl >/dev/null || {
+            curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          }
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tgz
+          tar -zxf /tmp/helm.tgz -C /tmp
+          sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+          helm version --short
+          helm plugin install https://github.com/hypnoglow/helm-s3.git
+
+      - name: Baixa o chart publicado
+        run: |
+          set -eu
+          helm repo add winker-uptimekuma "$CHART_REPO"
+          helm repo update winker-uptimekuma
+          helm pull winker-uptimekuma/uptimekuma --version "$CHART_VERSION" --untar
+          test -f ./uptimekuma/Chart.yaml
+
+      # Antes de qualquer coisa que mexa no pod: o backup do banco precisa do
+      # Kuma DE PE. O CronJob tem podAffinity no pod `app=uptime-kuma` (o PVC e
+      # RWO, so monta no mesmo node), entao com o Deployment derrubado ele fica
+      # Pending. E a migration da imagem nova nao tem volta automatica: se algo
+      # der errado, restaurar este .db e o unico caminho confiavel.
+      - name: Backup do banco antes de mexer
+        run: |
+          set -eu
+          job="uptime-kuma-backup-ci-${GITHUB_RUN_NUMBER}"
+          kubectl -n "$NAMESPACE" create job "$job" --from=cronjob/uptime-kuma-backup
+          if ! kubectl -n "$NAMESPACE" wait --for=condition=complete "job/$job" --timeout=300s; then
+            echo "::error::O backup nao completou. Abortando ANTES de tocar no Deployment."
+            kubectl -n "$NAMESPACE" logs "job/$job" --tail=50 || true
+            exit 1
+          fi
+
+      - name: Deploy
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -eu
+          helm upgrade --install "$RELEASE" ./uptimekuma -f ./uptimekuma/values.yaml \
+            --namespace "$NAMESPACE" \
+            --take-ownership \
+            --set image.tag="$IMAGE_TAG" \
+            --wait --timeout 5m
+
+      # --wait ja falha se o rollout nao completar; isto deixa o motivo no log
+      # em vez de so o codigo de saida.
+      - name: Confere o rollout
+        if: always()
+        run: |
+          kubectl -n "$NAMESPACE" rollout status "deploy/$RELEASE" --timeout=120s || true
+          kubectl -n "$NAMESPACE" get pod -l app=uptime-kuma -o wide
+          echo "--- migrations no boot ---"
+          kubectl -n "$NAMESPACE" logs -l app=uptime-kuma --tail=40 | grep -iE "migrat|patch|error" || true
+
+      - name: Resumo do deploy
+        if: always()
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          {
+            echo "### Deploy"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Release | \`$RELEASE\` em \`$NAMESPACE\` |"
+            echo "| Chart | \`uptimekuma-$CHART_VERSION\` (S3) |"
+            echo "| Imagem | \`tiwinker/uptime-kuma:$IMAGE_TAG\` |"
+            echo ""
+            echo "Rollback: \`helm -n $NAMESPACE rollback $RELEASE\`."
+            echo "Se o problema for o BANCO (migration), rollback de release nao resolve —"
+            echo "restaure o .db do backup em \`s3://kuma-99cb2431/uptime-kuma/\`."
           } >> "$GITHUB_STEP_SUMMARY"
