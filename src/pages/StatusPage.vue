@@ -284,6 +284,11 @@
                         <font-awesome-icon icon="tachometer-alt" />
                         {{ $t("Go to Dashboard") }}
                     </a>
+
+                    <a :href="`/status/${slug}/tv`" target="_blank" rel="noopener" class="btn btn-primary mb-2 ms-2">
+                        <font-awesome-icon icon="tv" />
+                        {{ $t("Go to TV Panel") }}
+                    </a>
                 </div>
 
                 <div v-else>
