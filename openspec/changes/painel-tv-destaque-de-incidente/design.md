@@ -144,8 +144,16 @@ sobra para o destaque ....... 737  →  linhas ≤ 4,04
 
 Quatro linhas cabem por 5 px e deixam a lista com **uma** linha — um painel que só mostra o que
 está quebrado deixa de responder "e o resto está bom?". **Decisão:** teto de **9** cards
-(3 × 3), excedente resumido em "e mais N fora do ar" na faixa. Sobram ~155 px, que a medição da
-lista converte em 2–3 linhas úteis.
+(3 × 3). Sobram ~155 px, que a medição da lista converte em 2–3 linhas úteis.
+
+**Revisão de 2026-08-25 — queda em massa.** A primeira versão resumia o excedente em "e mais N
+fora do ar" na faixa. Em produção, com 32 de 48 fora, isso deixou 23 quedas invisíveis: nem no
+destaque (teto de 9) nem na lista (que exclui os caídos) — o número na faixa era a única
+evidência delas. Acima do teto, os cards saem de cena: fica só a faixa de contagem e a lista
+assume com TODOS os monitores, caídos primeiro (ordenação estável por gravidade, curadoria
+preservada dentro de cada estado) e com o rótulo saneado da causa ao lado do nome. A lista
+recupera a altura dos cards (~24 linhas por página em 2 colunas) e a rotação de 15 s varre tudo
+em ~30 s. Dentro do teto, nada muda.
 
 Os números acima usam entrelinha aproximada: a implementação **confere no render real** com o
 cenário de 50 monitores fora, e o teto é constante nomeada, num lugar só.

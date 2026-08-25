@@ -63,19 +63,32 @@ O sistema SHALL exibir card grande com histórico completo quando houver exatame
 - **WHEN** há cinco monitores em `DOWN`
 - **THEN** o destaque mostra cinco cards compactos, cada um com nome, rótulo do erro e histórico curto
 
-### Requirement: O destaque nunca corta conteúdo
+### Requirement: O destaque nunca corta conteúdo nem esconde queda
 
 O canvas é fixo (1920 × 1080) com `overflow: hidden`. O sistema SHALL limitar quantos cards o
 bloco de destaque exibe, de modo que o bloco caiba na tela **e** sobre espaço para ao menos uma
-linha da lista, e SHALL informar quantos monitores fora do ar não couberam.
+linha da lista. Acima do teto de cards (queda em massa), o sistema SHALL recolher o destaque à
+faixa de contagem e exibir TODOS os monitores na lista, com os caídos primeiro — nenhum monitor
+fora do ar pode ficar representado apenas por um número.
 
-#### Scenario: Quedas acima do teto
+> Revisado em 2026-08-25: a primeira versão resumia o excedente em "e mais N fora do ar". Medido
+> em produção com 32 de 48 fora, 23 quedas ficavam invisíveis — o painel deixava de responder
+> exatamente "o que está fora?". O excedente resumido foi substituído pelo modo lista.
+
+#### Scenario: Quedas acima do teto (queda em massa)
 - **WHEN** o número de monitores em `DOWN` excede o teto de cards do destaque
-- **THEN** o painel exibe os cards até o teto e um indicador do excedente ("e mais N fora do ar")
+- **THEN** o destaque exibe apenas a faixa com a contagem ("N de T monitores"), sem cards
+- **AND** a lista exibe todos os monitores, ordenados por gravidade (fora do ar, degradado,
+  manutenção, normal), preservando a ordem de curadoria dentro de cada estado
+- **AND** cada linha de monitor fora do ar exibe o rótulo saneado da causa ao lado do nome
+
+#### Scenario: Quedas dentro do teto
+- **WHEN** há mais de um e no máximo o teto de monitores em `DOWN`
+- **THEN** o destaque mostra um card por monitor caído e a lista mostra apenas os demais
 
 #### Scenario: Nada é cortado pela borda
 - **WHEN** todos os 50 monitores do slug estão em `DOWN`
-- **THEN** o bloco de destaque continua inteiramente visível dentro dos 1080 px e a lista mantém ao menos uma linha
+- **THEN** o bloco de destaque (a faixa) continua inteiramente visível dentro dos 1080 px e a lista mantém ao menos uma linha
 
 ### Requirement: Mudança de situação dispara pulso de 15 segundos
 

@@ -258,6 +258,7 @@
     "tvPanelJustChanged": "changed now",
     "tvPanelServices": "Services",
     "tvPanelRemaining": "Other monitors · {0} of {1}",
+    "tvPanelAllListed": "All monitors · {0}",
     "tvPanelAllNormal": "{0} monitors · all normal",
     "tvPanelPage": "page {0}/{1}",
     "tvPanelHistory": "History · last {0}",

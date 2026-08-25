@@ -439,6 +439,7 @@
     "tvPanelJustChanged": "mudou agora",
     "tvPanelServices": "Serviços",
     "tvPanelRemaining": "Demais monitores · {0} de {1}",
+    "tvPanelAllListed": "Todos os monitores · {0}",
     "tvPanelAllNormal": "{0} monitores · todos normais",
     "tvPanelPage": "página {0}/{1}",
     "tvPanelHistory": "Histórico · últimos {0}",

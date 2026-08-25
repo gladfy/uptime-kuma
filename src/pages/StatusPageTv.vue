@@ -22,9 +22,6 @@
                     </p>
                     <p class="tv-alert__count">
                         {{ $t("tvPanelDownCount", [downMonitors.length, monitors.length]) }}
-                        <span v-if="hiddenDownCount > 0" class="tv-alert__overflow">
-                            · {{ $t("tvPanelMoreDown", [hiddenDownCount]) }}
-                        </span>
                     </p>
                 </div>
 
@@ -56,10 +53,13 @@
                     </div>
                 </div>
 
-                <!-- Várias quedas: grade de cards compactos -->
-                <div v-else class="tv-alert__grid">
+                <!-- Várias quedas dentro do teto: grade de cards compactos.
+                     Acima do teto os cards saem de cena e a lista assume, com os caídos primeiro:
+                     um painel que só resume o excedente ("e mais 23") esconde exatamente o que ele
+                     existe para mostrar. -->
+                <div v-else-if="!overflowing" class="tv-alert__grid">
                     <div
-                        v-for="monitor in visibleDownMonitors"
+                        v-for="monitor in downMonitors"
                         :key="monitor.id"
                         class="tv-card"
                         :class="{ 'tv-card--pulsing': isJustChanged(monitor) }"
@@ -96,7 +96,10 @@
                 <div ref="grid" class="tv-list__grid">
                     <div v-for="monitor in visibleMonitors" :key="monitor.id" class="tv-row" :class="rowClass(monitor)">
                         <div class="tv-row__marker"></div>
-                        <p class="tv-row__name">{{ monitor.name }}</p>
+                        <p class="tv-row__name">
+                            {{ monitor.name
+                            }}<span v-if="monitor.errorLabel" class="tv-row__cause"> · {{ monitor.errorLabel }}</span>
+                        </p>
                         <p class="tv-row__status">{{ statusLabel(monitor.status) }}</p>
                         <div class="tv-bars tv-bars--xs">
                             <div
@@ -180,22 +183,28 @@ export default {
             return this.monitors.filter((monitor) => monitor.status === DOWN);
         },
 
-        /** @returns {object[]} The down monitors that fit in the highlight block */
-        visibleDownMonitors() {
-            return this.downMonitors.slice(0, MAX_HIGHLIGHT_CARDS);
-        },
-
-        /** @returns {number} How many down monitors did not fit */
-        hiddenDownCount() {
-            return Math.max(0, this.downMonitors.length - MAX_HIGHLIGHT_CARDS);
+        /**
+         * Mass outage: more down monitors than the highlight can show as cards. The cards leave and
+         * the list takes over with the down monitors first — a wall panel that answers "what is
+         * down?" with "and 23 more" is not answering.
+         * @returns {boolean} True when the down set no longer fits the highlight block.
+         */
+        overflowing() {
+            return this.downMonitors.length > MAX_HIGHLIGHT_CARDS;
         },
 
         /** @returns {object[]} Monitors the list shows: the ones not promoted to the highlight */
         listedMonitors() {
-            if (this.downMonitors.length > 0) {
-                return this.monitors.filter((monitor) => monitor.status !== DOWN);
+            if (this.downMonitors.length === 0) {
+                return this.monitors;
             }
-            return this.monitors;
+
+            if (this.overflowing) {
+                // Stable sort: broken states first, curation order preserved inside each state.
+                return [...this.monitors].sort((a, b) => this.statusRank(a.status) - this.statusRank(b.status));
+            }
+
+            return this.monitors.filter((monitor) => monitor.status !== DOWN);
         },
 
         /** @returns {number} Items per page, from the measured capacity of the grid (2 columns) */
@@ -224,10 +233,16 @@ export default {
 
         /** @returns {string} Right-hand summary of the list section */
         summary() {
-            const base =
-                this.downMonitors.length > 0
-                    ? this.$t("tvPanelRemaining", [this.listedMonitors.length, this.monitors.length])
-                    : this.$t("tvPanelAllNormal", [this.monitors.length]);
+            let base;
+
+            if (this.downMonitors.length === 0) {
+                base = this.$t("tvPanelAllNormal", [this.monitors.length]);
+            } else if (this.overflowing) {
+                // The list holds everyone, so "other monitors" would miscount what is on screen.
+                base = this.$t("tvPanelAllListed", [this.monitors.length]);
+            } else {
+                base = this.$t("tvPanelRemaining", [this.listedMonitors.length, this.monitors.length]);
+            }
 
             if (this.pageCount > 1) {
                 return `${base}  ·  ${this.$t("tvPanelPage", [this.pageIndex + 1, this.pageCount])}`;
@@ -450,6 +465,27 @@ export default {
         },
 
         /**
+         * Sort weight of a status for the mass-outage list: the more broken, the earlier.
+         * @param {number|null} status Heartbeat status, or null when the monitor has no beats.
+         * @returns {number} Rank, lower first.
+         */
+        statusRank(status) {
+            if (status === DOWN) {
+                return 0;
+            }
+            if (status === PENDING) {
+                return 1;
+            }
+            if (status === MAINTENANCE) {
+                return 2;
+            }
+            if (status === UP) {
+                return 3;
+            }
+            return 4;
+        },
+
+        /**
          * CSS class of a list row, by status.
          * @param {object} monitor Monitor of the row.
          * @returns {string} Class name.
@@ -615,10 +651,6 @@ export default {
         margin-left: auto;
         font-size: 30px;
         font-weight: 700;
-    }
-
-    &__overflow {
-        opacity: 0.85;
     }
 
     &__single {
@@ -847,6 +879,12 @@ export default {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    &__cause {
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--tv-row-accent);
     }
 
     &__status {
