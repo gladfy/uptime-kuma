@@ -263,3 +263,28 @@ que acabou de cair — e é justamente o serviço fora do ar que o painel existe
 #### Scenario: Falha na atualização
 - **WHEN** uma atualização falha
 - **THEN** o painel mantém o último quadro conhecido em vez de esvaziar a tela, e volta a tentar no ciclo seguinte
+
+### Requirement: O painel não afirma situação que não leu
+
+Enquanto não houver nenhuma leitura bem-sucedida, o painel SHALL NOT exibir contagem de monitores
+nem afirmar normalidade, e SHALL avisar que está sem leitura do servidor. O aviso SHALL distinguir
+"ainda carregando" de "a leitura falhou", para não piscar em toda abertura de página.
+
+Havendo quadro anterior em tela, a leitura que falha SHALL manter o quadro e SHALL marcar no
+cabeçalho que a última leitura falhou.
+
+Um painel que não conseguiu ler não sabe de nada, e "0 monitores · todos normais" numa parede é a
+exata mentira que ele existe para impedir. O recarregamento periódico da tela tornou esse estado
+alcançável por temporizador — antes só chegava nele quem recarregasse a página na mão.
+
+#### Scenario: Servidor fora quando o painel abre
+- **WHEN** o painel carrega e a leitura falha
+- **THEN** a tela avisa que está sem leitura do servidor, e em lugar nenhum afirma que os serviços estão normais
+
+#### Scenario: Abertura normal não pisca o aviso
+- **WHEN** o painel carrega e a leitura demora um instante, mas dá certo
+- **THEN** o aviso de sem leitura não chega a aparecer
+
+#### Scenario: Quadro velho continua, sem fingir que é de agora
+- **WHEN** o painel já mostrava dados e a leitura seguinte falha
+- **THEN** o quadro anterior permanece e o cabeçalho marca que a última leitura falhou

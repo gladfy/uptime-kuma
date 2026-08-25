@@ -8,7 +8,10 @@
                     <h1 class="tv-title">{{ heading }}</h1>
                 </div>
                 <div class="tv-header__clock">
-                    <p>{{ $t("tvPanelUpdated", [lastUpdateText]) }}</p>
+                    <p :class="{ 'tv-header__stale': loaded && leituraFalhou }">
+                        {{ $t("tvPanelUpdated", [lastUpdateText])
+                        }}<span v-if="loaded && leituraFalhou"> · {{ $t("tvPanelStale") }}</span>
+                    </p>
                     <p>{{ $t("tvPanelNextRead", [countdownText]) }}</p>
                 </div>
             </header>
@@ -101,6 +104,17 @@
                             ></div>
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <!-- Sem leitura nenhuma: o lugar do destaque não pode ficar vazio, senão a parede
+                 inteira passa por painel de tudo certo. A distinção entre "ainda carregando" e
+                 "falhou" é o que impede este aviso de piscar em toda carga de página. -->
+            <section v-else-if="!loaded && leituraFalhou" class="tv-blind">
+                <span class="tv-blind__dot"></span>
+                <div>
+                    <p class="tv-blind__title">{{ $t("tvPanelNoRead") }}</p>
+                    <p class="tv-blind__hint">{{ $t("tvPanelNoReadHint") }}</p>
                 </div>
             </section>
 
@@ -209,6 +223,7 @@ export default {
             title: "",
             monitors: [],
             loaded: false,
+            leituraFalhou: false,
             lastUpdate: null,
             countdown: SITUATION_SECONDS,
             page: 0,
@@ -293,6 +308,11 @@ export default {
         summary() {
             let base;
 
+            if (!this.loaded) {
+                // Nothing read yet: say so instead of counting zero monitors as "all normal".
+                return this.leituraFalhou ? this.$t("tvPanelNoRead") : "";
+            }
+
             if (this.downMonitors.length === 0) {
                 base = this.$t("tvPanelAllNormal", [this.monitors.length]);
             } else if (this.overflowing) {
@@ -376,12 +396,19 @@ export default {
                     this.detectChange(res.data.monitors);
                     this.monitors = res.data.monitors;
                     this.loaded = true;
+                    this.leituraFalhou = false;
                     this.lastUpdate = dayjs();
                     this.aplicarIntervaloDeRecarga(res.data.refreshInterval);
                 })
                 .catch(() => {
                     // Keep the previous frame and try again on the next cycle. The interval stays
                     // as it was: a failed read says nothing about how often to read.
+                    //
+                    // What must NOT stay as it was is the panel's claim about the situation: with
+                    // nothing read, "all normal" is a lie — the exact lie this panel exists to
+                    // prevent. It became reachable by a timer when the screen started reloading
+                    // itself, instead of only when a person reloaded it.
+                    this.leituraFalhou = true;
                 })
                 .then(() => {
                     this.countdown = SITUATION_SECONDS;
@@ -768,6 +795,12 @@ body.tv-panel-body {
         font-size: 24px;
         color: var(--tv-text-secondary);
     }
+
+    /* Aplicado no <p>, então ganha do color herdado do bloco acima, em qualquer ordem. */
+    &__stale {
+        color: var(--tv-warning);
+        font-weight: 700;
+    }
 }
 
 .tv-eyebrow {
@@ -879,6 +912,38 @@ body.tv-panel-body {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 12px;
         border-top: 1px solid var(--tv-divider);
+    }
+}
+
+/* ---- Sem leitura do servidor ---- */
+.tv-blind {
+    flex: 0 0 auto;
+    background: var(--tv-surface);
+    border-radius: var(--tv-r-card);
+    border: 3px solid var(--tv-warning);
+    box-shadow: var(--tv-shadow-card);
+    padding: 32px 36px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+
+    &__dot {
+        flex: 0 0 auto;
+        width: 22px;
+        height: 22px;
+        border-radius: 99px;
+        background: var(--tv-warning);
+        animation: tv-dot-pulse 1.1s ease-in-out infinite;
+    }
+
+    &__title {
+        font-size: 40px;
+        font-weight: 800;
+    }
+
+    &__hint {
+        font-size: 24px;
+        color: var(--tv-text-secondary);
     }
 }
 
