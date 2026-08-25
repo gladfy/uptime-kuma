@@ -7,7 +7,7 @@
 #     cloudflared, nscd/sudo — ver tabela no CLAUDE.md
 #   - roda como usuario node (uid 1000) por padrao
 #
-# Build:  docker build -f docker/winker.dockerfile -t winker/uptime-kuma:local .
+# Build:  docker build -f docker/winker.dockerfile -t tiwinker/uptime-kuma:local .
 # K8s:    runAsUser 1000, fsGroup 1000 em /app/data,
 #         capabilities.add: ["NET_RAW"] p/ monitores de ping
 ############################################################

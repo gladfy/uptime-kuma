@@ -12,8 +12,9 @@ funcionalidades que faltam no upstream. Destino de producao: **monitor-clientes.
   (workflows, CNAME, CLAUDE.md/AGENTS.md/CODE_OF_CONDUCT.md do upstream) resolvem-se mantendo a remocao.
 - **Node 22** para desenvolver (`nvm use 22`). O `engines` exige `>= 20.4.0` e o server **recusa**
   versoes banidas (20.0–20.3) no boot (`server/server.js`).
-- **Workflows:** mantivemos so `auto-test.yml`, `validate.yml` e `codeql-analysis.yml`. O resto
-  (release, docker push, bots de comunidade) foi removido — eram do upstream e falhariam aqui.
+- **Workflows:** do upstream mantivemos so `auto-test.yml`, `validate.yml` e `codeql-analysis.yml`
+  (release, docker push e bots de comunidade foram removidos — falhariam aqui). O
+  `build-and-push.yml` e NOSSO, nao do upstream: publica a imagem propria no Docker Hub.
 - **i18n:** o upstream so aceita mudanca em `src/lang/en.json` (o resto vem do Weblate). No fork
   podemos editar `pt-BR.json` direto, MAS cada edicao vira conflito no proximo merge do upstream —
   prefira chaves novas (aditivas) a alterar traducao existente. Insira a chave nova no MEIO do
@@ -157,3 +158,22 @@ require de caminho novo fora desses, a imagem quebra no boot — ajustar o COPY.
 K8s: `runAsUser: 1000`, `fsGroup: 1000` no volume de `/app/data`, `capabilities.add: ["NET_RAW"]`
 para monitores de ping, probe httpGet `/` porta 3001 com `initialDelaySeconds` generoso (~60s+,
 migrations rodam no boot).
+
+### Publicacao (`.github/workflows/build-and-push.yml`)
+
+Push em `master` builda e publica no Docker Hub, registry **`tiwinker/*`** (ADR-0006 do repo
+`infrastructure`; conta privada — o cluster puxa com o imagePullSecret `dockerhub-winker`).
+
+Cada build publica **duas tags imutaveis** e nenhuma tag movel:
+
+| Tag | Forma | Para que serve |
+|---|---|---|
+| release | `tiwinker/uptime-kuma:2.5.3-winker.<run>` | e a que vai no `image:` do deployment |
+| commit | `tiwinker/uptime-kuma:sha-<7 chars>` | achar a imagem a partir de um commit do git |
+
+**Nao publicamos `latest` nem `prod`.** Tag movel tira o rollback por tag e faz o
+`kubectl describe` mentir sobre o que esta rodando — o manifest pina a tag de release. O digest
+sai no resumo da execucao do workflow, para quem quiser pinar por digest.
+
+Secrets exigidos: `DOCKER_USERNAME` e `DOCKER_PASSWORD` (mesmos nomes usados pelo fork do
+Chatwoot). Build e `linux/amd64` so — os nodes do EKS que rodam o Kuma sao `t3.medium` (amd64).

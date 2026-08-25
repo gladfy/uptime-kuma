@@ -9,7 +9,7 @@ services:
     build:
       context: .
       dockerfile: docker/winker.dockerfile
-    image: winker/uptime-kuma:local
+    image: tiwinker/uptime-kuma:local
     restart: unless-stopped
     ports:
       - "3001:3001"

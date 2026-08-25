@@ -1,0 +1,112 @@
+# Builda a imagem propria do fork (docker/winker.dockerfile) e publica no Docker Hub.
+#
+# Registry: tiwinker/* (ADR-0006 do repo infrastructure) — conta privada.
+# Tags: SEMPRE imutaveis. Nao publicamos `latest` nem `prod` de proposito:
+# o manifest do k8s pina a tag, e tag movel tira o rollback por tag.
+#
+# Secrets exigidos no repo/org: DOCKER_USERNAME, DOCKER_PASSWORD.
+name: build-and-push
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions: {}
+
+# Duas execucoes em paralelo publicariam tags fora de ordem; a fila e serial.
+concurrency:
+  group: build-and-push
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with: { persist-credentials: false }
+
+      # O login-action falha com mensagem generica quando o secret nao existe;
+      # este passo nomeia o que falta antes de gastar o build.
+      - name: Confere os secrets do registry
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$DOCKER_USERNAME" ] && missing="$missing DOCKER_USERNAME"
+          [ -z "$DOCKER_PASSWORD" ] && missing="$missing DOCKER_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Secret(s) ausente(s):$missing — cadastre em Settings > Secrets > Actions."
+            exit 1
+          fi
+
+      # A tag de release casa a versao do upstream com o numero do build:
+      # 2.5.3-winker.7 diz de que versao do Kuma saiu e qual build do fork e.
+      # A tag sha- existe para achar a imagem a partir de um commit do git.
+      - name: Deriva as tags da imagem
+        id: meta
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          version="$(node -p "require('./package.json').version")"
+          release="tiwinker/uptime-kuma:${version}-winker.${RUN_NUMBER}"
+          commit="tiwinker/uptime-kuma:sha-${SHA:0:7}"
+          {
+            echo "release=${release}"
+            echo "commit=${commit}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publicando: ${release} e ${commit}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build e push
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/winker.dockerfile
+          # Os nodes do EKS que rodam o Kuma sao amd64 (t3.medium); build
+          # multi-arch aqui so custaria tempo de QEMU.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.release }}
+            ${{ steps.meta.outputs.commit }}
+          # provenance gera manifest list com entradas "unknown/unknown" no Hub,
+          # que confundem na hora de conferir a imagem publicada.
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Resumo
+        env:
+          RELEASE: ${{ steps.meta.outputs.release }}
+          COMMIT_TAG: ${{ steps.meta.outputs.commit }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          {
+            echo "### Imagem publicada"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Tag de release | \`${RELEASE}\` |"
+            echo "| Tag por commit | \`${COMMIT_TAG}\` |"
+            echo "| Digest | \`${DIGEST}\` |"
+            echo ""
+            echo "Para subir em producao, aponte o \`image:\` do deployment em"
+            echo "\`helm-packages/tools/uptimekuma/deployment-uptimekuma.yaml\` (repo infrastructure)"
+            echo "para a **tag de release** acima."
+          } >> "$GITHUB_STEP_SUMMARY"
