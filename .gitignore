@@ -25,3 +25,9 @@ extra/exe-builder/obj
 .vs
 .vscode
 .devcontainer
+
+# Handoff de design do painel de parede: fonts.css e referencia-visual.html sao ~1,1 MB
+# quase so da mesma fonte em base64. A fonte que o painel realmente usa (pesos 400 e 700)
+# esta versionada em src/assets/fonts/plus-jakarta-sans.css.
+/docs/design_handoff_status_destaque/fonts.css
+/docs/design_handoff_status_destaque/referencia-visual.html

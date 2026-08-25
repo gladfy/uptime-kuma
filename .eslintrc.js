@@ -1,5 +1,11 @@
 module.exports = {
-    ignorePatterns: ["test/*.js", "server/modules/*", "src/util.js"],
+    ignorePatterns: [
+        "test/*.js",
+        "server/modules/*",
+        "src/util.js",
+        // Design reference material, not application source: prototypes handed off as-is.
+        "docs/**",
+    ],
     root: true,
     env: {
         browser: true,

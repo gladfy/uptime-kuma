@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Painel funcional — destaque de serviço fora do ar</title>
+<link rel="stylesheet" href="./fonts.css">
+<link rel="stylesheet" href="./winker-tokens-styles.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  a { color: var(--color-primary); text-decoration: none; }
+  a:hover { color: #8d1144; }
+  #palco { position: absolute; inset: 0; display: grid; place-items: center; }
+  #painel {
+    width: 1920px; height: 1080px; box-sizing: border-box;
+    transform-origin: center;
+    background: var(--canvas); color: var(--text-strong); font-family: var(--font);
+    padding: 40px 64px; display: flex; flex-direction: column; gap: 28px; overflow: hidden;
+  }
+  #demo {
+    position: fixed; right: 16px; bottom: 16px; z-index: 9;
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(0,0,0,.72); padding: 10px 14px; border-radius: 999px;
+  }
+  #demo p { margin: 0; color: #fff; font: 600 13px var(--font); opacity: .75; }
+  #demo button {
+    font: 700 13px var(--font); color: #111; background: #fff;
+    border: 0; border-radius: 999px; padding: 8px 14px; cursor: pointer;
+  }
+  @keyframes pulseDot { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.3; transform:scale(.8); } }
+  @keyframes alertaPisca {
+    0%,100% { box-shadow: var(--shadow-alert), 0 0 0 0 rgba(245,61,61,.55); border-color: var(--color-danger); }
+    50% { box-shadow: var(--shadow-alert), 0 0 0 18px rgba(245,61,61,0); border-color: rgba(245,61,61,.35); }
+  }
+  @keyframes cardPisca {
+    0%,100% { background: rgba(245,61,61,.16); border-color: var(--color-danger); box-shadow: 0 0 0 0 rgba(245,61,61,.5); }
+    50% { background: rgba(245,61,61,.04); border-color: rgba(245,61,61,.3); box-shadow: 0 0 0 12px rgba(245,61,61,0); }
+  }
+  @keyframes okPisca {
+    0%,100% { box-shadow: var(--shadow-card), 0 0 0 0 rgba(34,197,94,.5); }
+    50% { box-shadow: var(--shadow-card), 0 0 0 16px rgba(34,197,94,0); }
+  }
+</style>
+</head>
+<body>
+<div id="palco"><div id="painel"></div></div>
+
+<!-- Controles de demonstração: remover em produção. -->
+<div id="demo">
+  <p>Demo</p>
+  <button type="button" data-nivel="0">Tudo normal</button>
+  <button type="button" data-nivel="1">1 queda</button>
+  <button type="button" data-nivel="2">5 quedas</button>
+</div>
+
+<script src="./painel.js"></script>
+<script>
+  const painel = new Painel(document.getElementById('painel'));
+
+  document.querySelectorAll('#demo button').forEach(b => b.addEventListener('click', () => {
+    painel.nivel = Number(b.dataset.nivel);
+    painel.render();
+  }));
+
+  // Encaixa a tela de 1920×1080 em qualquer janela, para conferir o layout fora da TV.
+  function encaixar() {
+    const el = document.getElementById('painel');
+    el.style.transform = 'scale(' + Math.min(innerWidth / 1920, innerHeight / 1080) + ')';
+  }
+  addEventListener('resize', encaixar);
+  encaixar();
+</script>
+</body>
+</html>

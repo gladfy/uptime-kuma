@@ -1,0 +1,391 @@
+@import "./fonts.css";
+
+/* ============================================================================
+   Winker App 2 — Design System V2 (.new-layout)
+   Biblioteca de componentes extraída FIELMENTE de winker-components/src/app/app.scss
+   Fonte: Plus Jakarta Sans · Cantos arredondados · tokens verificados (2026-07)
+   ============================================================================ */
+
+:root {
+  /* ---- Marca (white-label: sobrescrito em runtime; default = Winker) ---- */
+  --color-primary: #b11655;
+  --color-primary-rgb: 177, 22, 85;
+  --color-primary-contrast: #ffffff;
+  --color-secondary: #f89c27;
+  --color-secondary-rgb: 248, 156, 39;
+  --color-secondary-contrast: #000000;
+
+  /* ---- Semânticas ---- */
+  --color-success: forestgreen;
+  --color-warning: orange;
+  --color-danger: #f53d3d;
+  --color-info: #0288d1;
+  --color-tertiary: grey;
+
+  /* ---- Neutras fixas do tema V2 (NÃO seguem white-label) ---- */
+  --text-strong: #3d3d3d;
+  --text-secondary: #656565;
+  --surface: #ffffff;
+  --surface-alert: #f6f6f6;
+  --surface-hover: #efefef;
+  --border: #dcdcdc;
+  --divider: #eef0f3;
+  --canvas: #f4f5f7;
+
+  /* ---- Estados de botão primário (tints fixos) ---- */
+  --btn-primary-hover: #9b1847;
+  --btn-primary-active: #7e1d42;
+  --toast-success: #22c55e;
+
+  /* ---- Dark mode V2 ---- */
+  --dark-bg: #1a1a1a;
+  --dark-surface: #2d2d2d;
+  --dark-border: #3a3a3a;
+  --dark-text: #f0f0f0;
+  --dark-text-2: #cccccc;
+
+  /* ---- Raios ---- */
+  --r-btn: 12px;
+  --r-outline: 4px;
+  --r-card: 16px;
+  --r-searchbar: 12px;
+  --r-alert: 20px;
+  --r-alert-radio: 8px;
+  --r-checkbox: 4px;
+  --r-badge: 99px;
+  --r-toast: 16px;
+  --r-sheet: 24px;
+
+  /* ---- Sombras ---- */
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-alert: 0px 20px 25px -5px rgba(0, 0, 0, 0.1), 0px 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --shadow-toggle: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  /* ---- Tipografia ---- */
+  --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ============================================================================
+   Página de demonstração (frame dos cards)
+   ============================================================================ */
+.demo {
+  font-family: var(--font);
+  background: var(--canvas);
+  color: var(--text-strong);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  margin: 0;
+  padding: 28px;
+  min-height: 100%;
+}
+.demo__head { margin-bottom: 24px; }
+.demo__title {
+  font-weight: 700; font-size: 22px; line-height: 1.2; letter-spacing: -0.44px;
+  color: var(--text-strong); margin: 0 0 6px;
+}
+.demo__sub {
+  font-weight: 400; font-size: 14px; line-height: 1.5; letter-spacing: -0.28px;
+  color: var(--text-secondary); margin: 0; max-width: 60ch;
+}
+.demo__grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.section {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 20px; flex: 1 1 260px; min-width: 0;
+}
+.section__label {
+  font-weight: 600; font-size: 12px; line-height: 1.3; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--text-secondary); margin: 0 0 14px;
+}
+.stack { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.stack--row { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.caption {
+  font-weight: 500; font-size: 12px; line-height: 1.3; letter-spacing: -0.24px;
+  color: var(--text-secondary); margin: 0;
+}
+.chip {
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 11px; color: var(--text-secondary);
+  background: var(--canvas); border: 1px solid var(--border); border-radius: 6px;
+  padding: 2px 7px; display: inline-block; white-space: nowrap;
+}
+
+/* ============================================================================
+   Tipografia — papéis reais do V2
+   ============================================================================ */
+.t-navbar-title { font: 600 18px/1.3 var(--font); letter-spacing: -0.36px; color: var(--text-strong); }
+.t-sheet-title  { font: 600 24px/1.3 var(--font); letter-spacing: -0.48px; color: var(--text-strong); }
+.t-alert-title  { font: 600 20px/1.2 var(--font); letter-spacing: -0.40px; color: var(--text-strong); }
+.t-card-title   { font: 600 18px/1.2 var(--font); letter-spacing: -0.36px; color: var(--text-strong); }
+.t-item-value   { font: 600 16px/1.2 var(--font); letter-spacing: -0.32px; color: var(--text-strong); }
+.t-btn          { font: 500 16px/1.3 var(--font); letter-spacing: -0.32px; }
+.t-btn-outline  { font: 600 14px/1.2 var(--font); letter-spacing: -0.28px; }
+.t-body         { font: 400 14px/1.5 var(--font); letter-spacing: -0.28px; color: var(--text-secondary); }
+.t-label        { font: 500 12px/1.3 var(--font); letter-spacing: -0.24px; color: var(--text-secondary); }
+.t-badge        { font: 600 12px/1.3 var(--font); letter-spacing: -0.24px; }
+
+/* ============================================================================
+   Botões
+   ============================================================================ */
+.wk-btn {
+  font-family: var(--font); text-transform: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: none; outline: none; -webkit-appearance: none; appearance: none;
+  transition: background-color .15s ease, border-color .15s ease, opacity .15s ease, color .15s ease;
+}
+.wk-btn--primary {
+  background: var(--color-primary); color: var(--color-primary-contrast);
+  border-radius: var(--r-btn); padding: 16px 18px;
+  font-weight: 500; font-size: 16px; line-height: 1.3; letter-spacing: -0.32px;
+}
+.wk-btn--primary:hover:not([disabled])  { background: var(--btn-primary-hover); }
+.wk-btn--primary:active:not([disabled]) { background: var(--btn-primary-active); }
+.wk-btn--primary[disabled] {
+  background: rgba(101, 101, 101, 0.3); color: #656565; cursor: not-allowed;
+}
+.wk-btn--secondary {
+  background: #fff; border: 1px solid var(--border); color: var(--text-strong);
+  border-radius: var(--r-btn); padding: 16px 18px;
+  font-weight: 500; font-size: 16px; line-height: 1.3; letter-spacing: -0.32px;
+}
+.wk-btn--secondary:hover:not([disabled])  { background: var(--surface-hover); border-color: var(--surface-hover); }
+.wk-btn--secondary:active:not([disabled]) { background: var(--surface-hover); border-color: var(--surface-hover); color: var(--color-primary); }
+.wk-btn--secondary[disabled] { color: rgba(101, 101, 101, 0.5); cursor: not-allowed; }
+.wk-btn--outline {
+  background: rgba(var(--color-primary-rgb), 0.1);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.5);
+  color: var(--color-primary); border-radius: var(--r-outline); padding: 14px;
+  font-weight: 600; font-size: 14px; line-height: 1.2; letter-spacing: -0.28px;
+}
+.wk-btn--ghost {
+  background: transparent; border: none; color: var(--text-strong);
+  border-radius: var(--r-btn); padding: 16px 18px;
+  font-weight: 500; font-size: 16px; line-height: 1.3; letter-spacing: -0.32px;
+}
+.wk-btn--ghost:hover:not([disabled])  { opacity: .7; }
+.wk-btn--ghost:active:not([disabled]) { color: var(--color-primary); opacity: 1; }
+.wk-btn--block { display: flex; width: 100%; }
+
+/* ============================================================================
+   Searchbar
+   ============================================================================ */
+.wk-searchbar { padding: 4px 0; width: 100%; }
+.wk-searchbar__field { position: relative; }
+.wk-searchbar__input {
+  width: 100%; font-family: var(--font);
+  font-weight: 500; font-size: 16px; line-height: 1.3; letter-spacing: -0.32px;
+  color: var(--text-strong); background: #fff; border: 1px solid var(--border);
+  border-radius: var(--r-searchbar); padding: 12px 12px 12px 40px; min-height: 56px;
+  box-shadow: none; outline: none;
+}
+.wk-searchbar__input::placeholder { color: var(--text-secondary); font-weight: 500; }
+.wk-searchbar__icon {
+  position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; color: var(--text-secondary); pointer-events: none;
+}
+
+/* ============================================================================
+   Toggle
+   ============================================================================ */
+.wk-toggle {
+  position: relative; width: 40px; height: 24px; border-radius: 9999px;
+  background: rgba(101, 101, 101, 0.15); border: none; cursor: pointer; flex: none;
+  transition: background-color .2s ease;
+}
+.wk-toggle__knob {
+  position: absolute; left: 3px; top: 3px; width: 18px; height: 18px;
+  background: #fff; border-radius: 50%; box-shadow: var(--shadow-toggle);
+  transition: transform .2s ease;
+}
+.wk-toggle.is-on { background: var(--color-primary); }
+.wk-toggle.is-on .wk-toggle__knob { transform: translateX(16px); background: var(--color-primary-contrast); }
+
+/* ============================================================================
+   Checkbox / Radio (estilo dos controles de ion-alert V2)
+   ============================================================================ */
+.wk-choice { display: flex; align-items: center; gap: 8px; padding: 16px; border-radius: var(--r-alert-radio); }
+.wk-choice.is-checked { background: rgba(var(--color-primary-rgb), 0.1); }
+.wk-choice__label { font-weight: 400; font-size: 14px; line-height: 1.5; letter-spacing: -0.28px; color: var(--text-strong); }
+.wk-checkbox {
+  width: 16px; height: 16px; border: 1px solid var(--border); border-radius: var(--r-checkbox);
+  flex: none; position: relative; background: #fff;
+}
+.is-checked .wk-checkbox { background: var(--color-primary); border-color: var(--color-primary); }
+.is-checked .wk-checkbox::after {
+  content: ''; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px;
+  border: solid var(--color-primary-contrast); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.wk-radio {
+  width: 16px; height: 16px; border: 1px solid var(--border); border-radius: 50%;
+  flex: none; position: relative; background: #fff;
+}
+.is-checked .wk-radio { border-color: var(--color-primary); }
+.is-checked .wk-radio::after {
+  content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary);
+}
+
+/* ============================================================================
+   Card
+   ============================================================================ */
+.wk-card {
+  background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow-card);
+  overflow: hidden; width: 100%;
+}
+.wk-card__header { padding: 20px 20px 0; }
+.wk-card__title { font-weight: 600; font-size: 18px; line-height: 1.2; letter-spacing: -0.36px; color: var(--text-strong); margin: 0; }
+.wk-card__subtitle { font-weight: 400; font-size: 14px; line-height: 1.5; letter-spacing: -0.28px; color: var(--text-secondary); margin: 4px 0 0; }
+.wk-card__content { padding: 20px; }
+.wk-item { padding: 12px 0; border-bottom: 1px solid var(--divider); }
+.wk-item:last-child { border-bottom: none; }
+.wk-item__label { font-weight: 500; font-size: 12px; line-height: 1.3; letter-spacing: -0.24px; color: var(--text-secondary); margin: 0 0 4px; }
+.wk-item__value { font-weight: 600; font-size: 16px; line-height: 1.2; letter-spacing: -0.32px; color: var(--text-strong); margin: 0; }
+
+/* ============================================================================
+   Badge
+   ============================================================================ */
+.wk-badge {
+  display: inline-block; font-weight: 600; font-size: 12px; line-height: 1.3; letter-spacing: -0.24px;
+  padding: 4px 10px; border-radius: var(--r-badge);
+  background: var(--color-primary); color: var(--color-primary-contrast);
+}
+.wk-badge--count { background: var(--color-primary); }
+
+/* ============================================================================
+   Navbar / Header
+   ============================================================================ */
+.wk-navbar {
+  display: flex; align-items: center; gap: 8px; background: #fff;
+  padding: 8px 12px; min-height: 56px; border-radius: 12px 12px 0 0;
+}
+.wk-navbar__btn {
+  width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-strong); background: transparent; border: none; cursor: pointer;
+}
+.wk-navbar__title {
+  flex: 1; font-weight: 600; font-size: 18px; line-height: 1.3; letter-spacing: -0.36px;
+  color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ============================================================================
+   Segment / Super-tabs
+   ============================================================================ */
+.wk-tabs { display: flex; background: #fff; border-radius: 12px 12px 0 0; }
+.wk-tab {
+  position: relative; flex: 1; text-align: center; padding: 14px 8px; cursor: pointer;
+  font-weight: 500; font-size: 14px; line-height: 1.3; letter-spacing: -0.28px; color: var(--text-secondary);
+  background: transparent; border: none; font-family: var(--font);
+}
+.wk-tab.is-selected { font-weight: 600; color: var(--color-primary); }
+.wk-tab.is-selected::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 3px;
+  border-radius: 3px 3px 0 0; background: var(--color-primary);
+}
+
+/* ============================================================================
+   Action sheet
+   ============================================================================ */
+.wk-sheet {
+  background: #fff; border-radius: 24px 24px 0 0; padding: 24px 10px 12px; width: 100%; max-width: 420px;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.12);
+}
+.wk-sheet__title {
+  font-weight: 600; font-size: 24px; line-height: 1.3; letter-spacing: -0.48px; color: var(--text-strong);
+  padding: 8px 48px 16px 14px; margin: 0; text-align: left;
+}
+.wk-sheet__btn {
+  display: flex; align-items: center; justify-content: flex-start; gap: 12px; width: 100%;
+  min-height: 72px; padding: 18px 14px; text-align: left; background: #fff; border: none; cursor: pointer;
+  font-family: var(--font); font-weight: 600; font-size: 18px; line-height: 1.2; letter-spacing: -0.36px;
+  color: var(--text-secondary);
+}
+.wk-sheet__btn:hover { background: var(--surface-alert); }
+.wk-sheet__btn .wk-sheet__icon { width: 24px; height: 24px; color: var(--text-strong); flex: none; }
+
+/* ============================================================================
+   Alert
+   ============================================================================ */
+.wk-alert {
+  background: var(--surface-alert); border-radius: var(--r-alert); padding: 24px;
+  box-shadow: var(--shadow-alert); max-width: 392px; width: 100%;
+}
+.wk-alert__title { font-weight: 600; font-size: 20px; line-height: 1.2; letter-spacing: -0.4px; color: var(--text-strong); margin: 0; text-align: left; }
+.wk-alert__msg { font-weight: 400; font-size: 14px; line-height: 1.5; letter-spacing: -0.28px; color: var(--text-secondary); margin: 8px 0 32px; text-align: left; }
+.wk-alert__actions { display: flex; gap: 10px; }
+.wk-alert__btn {
+  flex: 1; border-radius: var(--r-btn); padding: 16px 18px; min-height: 56px; cursor: pointer;
+  font-family: var(--font); font-weight: 500; font-size: 16px; line-height: 1.3; letter-spacing: -0.32px;
+  text-transform: none; border: none;
+}
+.wk-alert__btn--cancel { background: #fff; border: 1px solid var(--border); color: var(--text-strong); }
+.wk-alert__btn--confirm { background: var(--color-primary); color: var(--color-primary-contrast); }
+
+/* ============================================================================
+   Toast de sucesso
+   ============================================================================ */
+.wk-toast {
+  background: #fff; border-radius: var(--r-toast); box-shadow: var(--shadow-alert);
+  padding: 20px; max-width: 420px; width: 100%;
+}
+.wk-toast__msg {
+  position: relative; padding-left: 32px;
+  font-family: var(--font); font-weight: 400; font-size: 16px; line-height: 1.3; color: var(--text-strong);
+}
+.wk-toast__msg::before {
+  content: '✓'; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; border-radius: 50%; background: var(--toast-success); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700;
+}
+
+/* ============================================================================
+   Swatches (foundations)
+   ============================================================================ */
+.sw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.sw { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #fff; }
+.sw__chip { height: 64px; }
+.sw__meta { padding: 8px 10px; }
+.sw__name { font-weight: 600; font-size: 13px; line-height: 1.3; letter-spacing: -0.26px; color: var(--text-strong); margin: 0; }
+.sw__val { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--text-secondary); margin: 2px 0 0; }
+.sw__role { font-size: 11px; line-height: 1.35; color: var(--text-secondary); margin: 4px 0 0; }
+
+/* radii demo */
+.radii-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; }
+.radii { text-align: center; }
+.radii__box { height: 76px; background: rgba(var(--color-primary-rgb), 0.1); border: 1.5px solid var(--color-primary); }
+
+/* elevation demo */
+.elev-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; }
+.elev__box { height: 76px; background: #fff; border-radius: 16px; }
+
+/* spacing demo */
+.spacer { background: rgba(var(--color-primary-rgb), 0.12); border-radius: 4px; }
+.touch-box {
+  display: flex; align-items: center; justify-content: center; background: rgba(var(--color-primary-rgb), 0.08);
+  border: 1px dashed rgba(var(--color-primary-rgb), 0.5); border-radius: 8px; color: var(--color-primary);
+  font-weight: 600; font-size: 13px;
+}
+
+/* type specimen */
+.type-row { padding: 14px 0; border-bottom: 1px solid var(--divider); display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.type-row:last-child { border-bottom: none; }
+.type-row__spec { flex: none; }
+
+/* dark preview surface */
+.dark-preview { background: var(--dark-bg); border-radius: 12px; padding: 16px; }
+.dark-preview .sw { border-color: var(--dark-border); background: var(--dark-surface); }
+.dark-preview .sw__name { color: var(--dark-text); }
+.dark-preview .sw__val, .dark-preview .sw__role { color: var(--dark-text-2); }
+
+/* pattern list */
+.pattern { border-left: 3px solid var(--color-primary); padding: 4px 0 4px 16px; }
+.pattern__name { font-weight: 600; font-size: 15px; line-height: 1.3; letter-spacing: -0.3px; color: var(--text-strong); margin: 0 0 4px; }
+.pattern__desc { font-weight: 400; font-size: 13px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
+
+/* filter pill (pattern reference) */
+.wk-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9999px;
+  background: #fff; border: 1px solid var(--border); color: var(--text-strong);
+  font-weight: 500; font-size: 13px; letter-spacing: -0.26px; cursor: pointer;
+}
+.wk-pill .wk-badge { padding: 1px 7px; font-size: 11px; }

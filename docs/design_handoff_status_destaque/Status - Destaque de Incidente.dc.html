@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/winker-app-design-system-5f20a06d-3d00-4d7a-836a-1703c7ebba4c/fonts.css">
+<link rel="stylesheet" href="_ds/winker-app-design-system-5f20a06d-3d00-4d7a-836a-1703c7ebba4c/styles.css">
+<script src="_ds/winker-app-design-system-5f20a06d-3d00-4d7a-836a-1703c7ebba4c/_ds_bundle.js"></script>
+<style>
+  body { margin:0; background:var(--canvas); font-family:var(--font); }
+  a { color: var(--color-primary); text-decoration: none; }
+  a:hover { color: var(--btn-primary-hover); }
+  @keyframes pulseDot { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.3; transform:scale(.8); } }
+  @keyframes alertaPisca {
+    0%, 100% { box-shadow: var(--shadow-alert), 0 0 0 0 rgba(245,61,61,.55); border-color: var(--color-danger); }
+    50% { box-shadow: var(--shadow-alert), 0 0 0 18px rgba(245,61,61,0); border-color: rgba(245,61,61,.35); }
+  }
+  @keyframes cardPisca {
+    0%, 100% { background: rgba(245,61,61,.16); border-color: var(--color-danger); box-shadow: 0 0 0 0 rgba(245,61,61,.5); }
+    50% { background: rgba(245,61,61,.04); border-color: rgba(245,61,61,.3); box-shadow: 0 0 0 12px rgba(245,61,61,0); }
+  }
+  @keyframes okPisca {
+    0%, 100% { box-shadow: var(--shadow-card), 0 0 0 0 rgba(34,197,94,.5); }
+    50% { box-shadow: var(--shadow-card), 0 0 0 16px rgba(34,197,94,0); }
+  }
+</style>
+</helmet>
+<div style="width:1920px; height:1080px; overflow:hidden; box-sizing:border-box; background:var(--canvas); font-family:var(--font); color:var(--text-strong); padding:40px 64px 40px; display:flex; flex-direction:column; gap:28px;">
+
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:40px;">
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <p style="margin:0; font-size:22px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--color-primary);">Winker · Monitoramento</p>
+      <h1 style="margin:0; font-size:64px; font-weight:800; letter-spacing:-.02em; line-height:1;">Status dos serviços</h1>
+    </div>
+    <div style="display:flex; align-items:center; gap:24px;">
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+        <p style="margin:0; font-size:24px; color:var(--text-secondary);">Atualizado {{ agora }}</p>
+        <p style="margin:0; font-size:24px; color:var(--text-secondary);">Próxima leitura em {{ contagem }}</p>
+      </div>
+      <button onClick="{{ alternar }}" class="wk-btn wk-btn--outline t-btn-outline" style="min-height:56px; font-size:20px;">{{ rotuloSimulacao }}</button>
+    </div>
+  </div>
+
+  <sc-if value="{{ temIncidente }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:0 0 auto; display:flex; flex-direction:column; gap:0; border-radius:var(--r-card); overflow:hidden; box-shadow:var(--shadow-alert); border:3px solid var(--color-danger); animation:{{ animDestaque }};">
+      <div style="background:var(--color-danger); color:#fff; padding:22px 36px; display:flex; align-items:center; gap:20px;">
+        <span style="width:22px; height:22px; border-radius:99px; background:#fff; animation:pulseDot 1.1s ease-in-out infinite;"></span>
+        <p style="margin:0; font-size:34px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;">{{ tituloAlerta }}</p>
+        <p style="margin:0 0 0 auto; font-size:30px; font-weight:700;">{{ qtdForaTexto }}</p>
+      </div>
+
+      <sc-if value="{{ umFora }}" hint-placeholder-val="{{ true }}">
+        <sc-for list="{{ foraDoAr }}" as="m" hint-placeholder-count="1">
+          <div style="background:var(--surface); padding:28px 36px; display:flex; flex-direction:column; gap:20px; border-top:1px solid var(--divider);">
+            <div style="display:flex; align-items:center; gap:40px; flex-wrap:wrap;">
+              <h2 style="margin:0; font-size:48px; font-weight:800; letter-spacing:-.02em; line-height:1.05;">{{ m.nome }}</h2>
+              <div style="display:flex; align-items:center; gap:14px; padding:12px 22px; border-radius:var(--r-badge); background:rgba(245,61,61,.1);">
+                <span style="width:14px; height:14px; border-radius:99px; background:var(--color-danger);"></span>
+                <p style="margin:0; font-size:28px; font-weight:800; color:var(--color-danger);">{{ m.erro }}</p>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <p style="margin:0; font-size:20px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary);">Histórico · últimos 60 minutos</p>
+              <div style="display:flex; gap:6px; align-items:flex-end;">
+                <sc-for list="{{ m.barras }}" as="b" hint-placeholder-count="45">
+                  <div style="width:24px; height:52px; border-radius:4px; background:{{ b.c }};"></div>
+                </sc-for>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:20px; color:var(--text-secondary);">
+                <span>{{ m.janela }}</span>
+                <span>agora</span>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </sc-if>
+
+      <sc-if value="{{ variosFora }}" hint-placeholder-val="{{ false }}">
+        <div style="background:var(--surface); padding:16px; display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; border-top:1px solid var(--divider);">
+          <sc-for list="{{ foraDoAr }}" as="m" hint-placeholder-count="5">
+            <div style="background:rgba(245,61,61,.06); border:2px solid rgba(245,61,61,.35); border-radius:var(--r-card); padding:14px 18px; display:flex; flex-direction:column; gap:10px; animation:{{ m.anim }};">
+              <div style="display:flex; align-items:flex-start; gap:12px;">
+                <h3 style="margin:0; flex:1 1 auto; font-size:30px; font-weight:800; letter-spacing:-.01em; line-height:1.15;">{{ m.nome }}</h3>
+                <sc-if value="{{ m.novo }}" hint-placeholder-val="{{ false }}">
+                  <span class="wk-badge t-badge" style="background:var(--color-danger); color:#fff; font-size:16px; letter-spacing:.06em; white-space:nowrap; flex:0 0 auto;">mudou agora</span>
+                </sc-if>
+              </div>
+              <p style="margin:0; font-size:22px; font-weight:700; color:var(--color-danger);">{{ m.erro }}</p>
+              <div style="display:flex; gap:3px; align-items:flex-end; margin-top:auto;">
+                <sc-for list="{{ m.barras }}" as="b" hint-placeholder-count="45">
+                  <div style="width:8px; height:34px; border-radius:2px; background:{{ b.c }};"></div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ tudoOk }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:0 0 auto; background:var(--surface); border-radius:var(--r-card); border:1px solid var(--divider); box-shadow:var(--shadow-card); padding:40px 36px; display:flex; align-items:center; gap:22px; animation:{{ animOk }};">
+      <span style="width:22px; height:22px; border-radius:99px; background:var(--color-success);"></span>
+      <p style="margin:0; font-size:44px; font-weight:800;">Todos os serviços operando normalmente</p>
+    </div>
+  </sc-if>
+
+  <div style="flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:12px;">
+    <div style="display:flex; align-items:baseline; gap:20px;">
+      <h2 style="margin:0; font-size:34px; font-weight:800;">Serviços</h2>
+      <p style="margin:0; font-size:24px; color:var(--text-secondary);">{{ resumo }}</p>
+    </div>
+
+    <div ref="{{ refLista }}" style="flex:1 1 auto; min-height:0; overflow:hidden; background:var(--divider); border-radius:var(--r-card); box-shadow:var(--shadow-card); border:1px solid var(--divider); display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); column-gap:1px; align-content:start;">
+      <sc-for list="{{ monitores }}" as="m" hint-placeholder-count="10">
+        <div style="display:flex; align-items:center; gap:20px; padding:14px 28px; border-top:1px solid var(--divider); background:{{ m.fundo }};">
+          <div style="width:8px; align-self:stretch; border-radius:99px; background:{{ m.cor }};"></div>
+          <p style="margin:0; flex:1 1 auto; min-width:0; font-size:24px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ m.nome }}</p>
+          <p style="margin:0; flex:0 0 auto; width:130px; font-size:20px; font-weight:700; color:{{ m.cor }};">{{ m.status }}</p>
+          <div style="display:flex; gap:2px; align-items:flex-end; flex:0 0 auto;">
+            <sc-for list="{{ m.barrasCurtas }}" as="b" hint-placeholder-count="22">
+              <div style="width:6px; height:26px; border-radius:2px; background:{{ b.c }};"></div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1920,&quot;height&quot;:1080},&quot;quantosFora&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[0,1,2],&quot;default&quot;:1,&quot;tsType&quot;:&quot;0 | 1 | 2&quot;,&quot;section&quot;:&quot;Estado&quot;,&quot;unit&quot;:&quot;0 = normal · 1 = uma queda · 2 = cinco quedas&quot;}}">
+const V = { ok: 'var(--color-success)', warn: 'var(--color-warning)', down: 'var(--color-danger)', none: '#e6e8eb' };
+
+function barras(spec) {
+  const out = [];
+  spec.forEach(([n, k]) => { for (let i = 0; i < n; i++) out.push({ c: V[k] }); });
+  return out;
+}
+
+const OK = barras([[45, 'ok']]);
+
+const BASE = [
+  { id: 'jf', nome: 'JF - Arch Home - Situator', quedaEm: 2,
+    erro: 'HTTP 000 · timeout 30s', janela: '35m',
+    barras: barras([[18, 'none'], [3, 'warn'], [24, 'down']]) },
+  { id: 'situator', nome: 'Situator (grupo)', quedaEm: 9, status: 'Degradado',
+    erro: 'HTTP 502 · bad gateway', janela: '56m',
+    barras: barras([[26, 'ok'], [2, 'warn'], [17, 'down']]) },
+  { id: 'guardian', nome: 'Guardian - Situator', quedaEm: 5,
+    erro: 'HTTP 504 · gateway timeout', janela: '55m',
+    barras: barras([[31, 'ok'], [2, 'warn'], [12, 'down']]) },
+  { id: 'stv', nome: 'STV - Canoas - Situator', quedaEm: 5,
+    erro: 'HTTP 500 · internal error', janela: '55m',
+    barras: barras([[36, 'ok'], [1, 'warn'], [8, 'down']]) },
+  { id: 'api', nome: 'API Winker - Produção', quedaEm: 5,
+    erro: 'Conexão recusada (ECONNREFUSED)', janela: '55m',
+    barras: barras([[28, 'ok'], [3, 'warn'], [14, 'down']]) },
+  { id: 'push', nome: 'Notificações push', quedaEm: 5,
+    erro: 'HTTP 429 · rate limit', janela: '55m',
+    barras: barras([[38, 'ok'], [2, 'warn'], [5, 'down']]) },
+  { id: 'portaria', nome: 'Portaria remota - Canoas', quedaEm: 9, janela: '55m', barras: OK },
+  { id: 'boletos', nome: 'Emissão de boletos', quedaEm: 9, janela: '55m', barras: OK },
+  { id: 'app', nome: 'App morador - iOS/Android', quedaEm: 9, janela: '55m', barras: OK },
+  { id: 'cam', nome: 'Câmeras - Arch Home', quedaEm: 9, janela: '55m', barras: OK }
+];
+
+const CIDADES = ['Canoas', 'Porto Alegre', 'Novo Hamburgo', 'São Leopoldo', 'Gravataí', 'Viamão', 'Sapucaia', 'Cachoeirinha', 'Esteio', 'Alvorada'];
+const PRODUTOS = ['Situator', 'Guardian', 'Portaria', 'Câmeras'];
+CIDADES.forEach((c, i) => PRODUTOS.forEach((p, j) => {
+  if (BASE.length < 50) BASE.push({ id: 'g' + i + j, nome: p + ' - ' + c, quedaEm: 9, janela: '55m', barras: OK });
+}));
+
+class Component extends DCLogic {
+  state = { modo: null, seg: 16, piscando: false, pagina: 0, linhas: 5 };
+
+  componentDidMount() {
+    this._t = setInterval(() => this.setState(s => ({ seg: s.seg > 0 ? s.seg - 1 : 60 })), 1000);
+    this._p = setInterval(() => this.setState(s => ({ pagina: s.pagina + 1 })), 15000);
+    requestAnimationFrame(() => this.medir());
+  }
+  componentWillUnmount() { clearInterval(this._t); clearInterval(this._p); clearTimeout(this._pisca); }
+
+  componentDidUpdate() { this.medir(); }
+
+  medir() {
+    const el = this._lista;
+    if (!el || !el.firstElementChild) return;
+    const alturaLinha = el.firstElementChild.getBoundingClientRect().height;
+    if (!alturaLinha) return;
+    const linhas = Math.max(1, Math.floor(el.clientHeight / alturaLinha));
+    if (linhas !== this.state.linhas) this.setState({ linhas: linhas });
+  }
+
+  renderVals() {
+    const modo = this.state.modo ?? this.props.quantosFora ?? 1;
+    const nivel = modo === 0 ? 0 : modo === 1 ? 2 : 5;
+    const lista = BASE.map(m => {
+      const down = m.quedaEm <= nivel;
+      const degradado = !down && m.id === 'situator' && nivel > 0;
+      return Object.assign({}, m, {
+        cor: down ? V.down : degradado ? V.warn : V.ok,
+        fundo: down ? 'rgba(245,61,61,.07)' : 'var(--surface)',
+        status: down ? 'Fora do ar' : degradado ? 'Degradado' : 'Normal',
+        barras: down || degradado ? m.barras : OK,
+        down: down,
+        alerta: degradado,
+        barrasCurtas: (down || degradado ? m.barras : OK).slice(-22),
+        fundo: down ? 'rgba(245,61,61,.07)' : degradado ? 'rgba(255,165,0,.1)' : 'var(--surface)'
+      });
+    });
+    const fora = lista.filter(m => m.down);
+    const restantes = fora.length ? lista.filter(m => !m.down) : lista;
+
+    // Paginação automática: a lista rotaciona a cada 15s
+    // capacidade medida do container (2 colunas × linhas que caibam de fato)
+    const porPagina = Math.max(2, (this.state.linhas || 5) * 2);
+    const paginas = Math.max(1, Math.ceil(restantes.length / porPagina));
+    const pagina = this.state.pagina % paginas;
+    // última página retrocede para encher a tela em vez de mostrar só o resto
+    const inicio = Math.min(pagina * porPagina, Math.max(0, restantes.length - porPagina));
+    const ordenada = restantes.slice(inicio, inicio + porPagina);
+
+    // Piscar por 15s a cada mudança de situação; marca quais monitores mudaram
+    const ids = fora.map(m => m.id);
+    const chave = ids.join(',');
+    if (this._chave !== undefined && this._chave !== chave) {
+      const antes = this._chave ? this._chave.split(',').filter(Boolean) : [];
+      this._mudaram = ids.filter(id => antes.indexOf(id) === -1);
+      clearTimeout(this._pisca);
+      this._pisca = setTimeout(() => this.setState({ piscando: false }), 15000);
+      if (!this.state.piscando) setTimeout(() => this.setState({ piscando: true }), 0);
+    }
+    this._chave = chave;
+    const piscando = this.state.piscando;
+    const mudaram = piscando ? (this._mudaram || []) : [];
+    const foraMarcado = fora.map(m => Object.assign({}, m, {
+      novo: mudaram.indexOf(m.id) !== -1,
+      anim: mudaram.indexOf(m.id) !== -1 ? 'cardPisca .9s ease-in-out infinite' : 'none'
+    }));
+
+    return {
+      temIncidente: fora.length > 0,
+      tudoOk: fora.length === 0,
+      umFora: fora.length === 1,
+      variosFora: fora.length > 1,
+      foraDoAr: foraMarcado,
+      monitores: ordenada,
+      resumo: (fora.length ? 'Demais monitores · ' + restantes.length + ' de ' + BASE.length : BASE.length + ' monitores · todos normais') + (paginas > 1 ? '  ·  página ' + (pagina + 1) + '/' + paginas : ''),
+      qtdForaTexto: fora.length + ' de ' + BASE.length + ' monitores',
+      tituloAlerta: fora.length === 1 ? 'Serviço fora do ar' : 'Serviços fora do ar',
+      animDestaque: piscando ? 'alertaPisca 1s ease-in-out infinite' : 'none',
+      animOk: piscando ? 'okPisca 1s ease-in-out infinite' : 'none',
+      refLista: el => { this._lista = el; },
+      alternar: () => this.setState({ modo: (modo + 1) % 3 }),
+      rotuloSimulacao: modo === 0 ? 'Simular 1 queda' : modo === 1 ? 'Simular 5 quedas' : 'Ver estado normal',
+      agora: '18:38:20',
+      contagem: '00:' + String(this.state.seg).padStart(2, '0')
+    };
+  }
+}
+</script>
+</body>
+</html>
