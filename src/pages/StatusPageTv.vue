@@ -145,8 +145,17 @@ import dayjs from "dayjs";
 import datetime from "../mixins/datetime";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 
-/** Seconds between reads. Must stay in step with the endpoint cache (status-page-router.js). */
-const REFRESH_SECONDS = 60;
+/**
+ * Seconds between reads when the status page has no interval configured.
+ *
+ * The real value comes from the payload — it is the same "Refresh Interval" the administrator sets
+ * on the status page. The floor exists because that setting accepts any number, and a wall panel
+ * reading every second would hammer the endpoint without seeing anything new: a status change
+ * already busts the endpoint cache (`apicache.clear()` on an important heartbeat), so reading
+ * faster than the monitors themselves check adds nothing.
+ */
+const REFRESH_SECONDS_DEFAULT = 60;
+const REFRESH_SECONDS_MIN = 5;
 
 /** How often the list rotates to the next page. */
 const PAGE_MS = 15000;
@@ -190,9 +199,10 @@ export default {
             monitors: [],
             loaded: false,
             lastUpdate: null,
-            countdown: REFRESH_SECONDS,
+            countdown: REFRESH_SECONDS_DEFAULT,
             page: 0,
             rows: 5,
+            refreshSeconds: REFRESH_SECONDS_DEFAULT,
             pulsing: false,
             changedIds: [],
             previousDownKey: undefined,
@@ -305,12 +315,6 @@ export default {
 
         this.fetchData();
 
-        this.feedTimer = setInterval(() => {
-            // Refit on every read: this panel stays on a wall for weeks, and a TV that changes
-            // resolution without firing `resize` would otherwise stay wrong until someone reloads.
-            this.fit();
-            this.fetchData();
-        }, REFRESH_SECONDS * 1000);
         this.countdownTimer = setInterval(() => {
             this.countdown = this.countdown > 0 ? this.countdown - 1 : 0;
         }, 1000);
@@ -336,7 +340,7 @@ export default {
     },
 
     beforeUnmount() {
-        clearInterval(this.feedTimer);
+        clearTimeout(this.feedTimer);
         clearInterval(this.countdownTimer);
         clearInterval(this.pageTimer);
         clearTimeout(this.pulseTimer);
@@ -361,12 +365,48 @@ export default {
                     this.monitors = res.data.monitors;
                     this.loaded = true;
                     this.lastUpdate = dayjs();
-                    this.countdown = REFRESH_SECONDS;
+                    this.aplicarIntervalo(res.data.refreshInterval);
                 })
                 .catch(() => {
-                    // Keep the previous frame and try again on the next cycle.
-                    this.countdown = REFRESH_SECONDS;
+                    // Keep the previous frame and try again on the next cycle. The interval stays
+                    // as it was: a failed read says nothing about how often to read.
+                })
+                .then(() => {
+                    this.countdown = this.refreshSeconds;
+                    this.agendarProximaLeitura();
                 });
+        },
+
+        /**
+         * Adopt the interval the status page publishes, with a floor.
+         * @param {number} segundos Interval declared in the payload.
+         * @returns {void}
+         */
+        aplicarIntervalo(segundos) {
+            const proposto = Number(segundos);
+
+            this.refreshSeconds =
+                Number.isFinite(proposto) && proposto > 0
+                    ? Math.max(REFRESH_SECONDS_MIN, Math.round(proposto))
+                    : REFRESH_SECONDS_DEFAULT;
+        },
+
+        /**
+         * Schedule the next read. A chain of timeouts, not a fixed interval: the administrator can
+         * change the setting while the panel is on the wall, and the next read has to obey the new
+         * value without anyone touching the TV.
+         * @returns {void}
+         */
+        agendarProximaLeitura() {
+            clearTimeout(this.feedTimer);
+
+            this.feedTimer = setTimeout(() => {
+                // Refit on every read: this panel stays on a wall for weeks, and a TV that changes
+                // resolution without firing `resize` would otherwise stay wrong until someone
+                // reloads.
+                this.fit();
+                this.fetchData();
+            }, this.refreshSeconds * 1000);
         },
 
         /**
@@ -942,9 +982,9 @@ body.tv-panel-body {
 }
 
 .tv-badge {
-    background: var(--tv-danger);
+    background: #ff2d2d;
     color: #fff;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 700;
     letter-spacing: 0.06em;
     white-space: nowrap;
@@ -1207,15 +1247,15 @@ body.tv-panel-body {
 @keyframes tv-card-pulse {
     0%,
     100% {
-        background: rgba(245, 61, 61, 0.16);
-        border-color: var(--tv-danger);
-        box-shadow: 0 0 0 0 rgba(245, 61, 61, 0.5);
+        background: rgba(245, 61, 61, 0.24);
+        border-color: #ff2d2d;
+        box-shadow: 0 0 0 0 rgba(245, 61, 61, 0.75);
     }
 
     50% {
-        background: rgba(245, 61, 61, 0.04);
-        border-color: rgba(245, 61, 61, 0.3);
-        box-shadow: 0 0 0 12px rgba(245, 61, 61, 0);
+        background: rgba(245, 61, 61, 0.05);
+        border-color: var(--tv-danger);
+        box-shadow: 0 0 0 20px rgba(245, 61, 61, 0);
     }
 }
 
