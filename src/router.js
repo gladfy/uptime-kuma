@@ -11,6 +11,9 @@ import List from "./pages/List.vue";
 const Settings = () => import("./pages/Settings.vue");
 import Setup from "./pages/Setup.vue";
 import StatusPage from "./pages/StatusPage.vue";
+// Lazy on purpose: the panel embeds its own webfont, and an eager import would push ~250 KB
+// of base64 into the CSS bundle that every other page of the application downloads.
+const StatusPageTv = () => import("./pages/StatusPageTv.vue");
 import Entry from "./pages/Entry.vue";
 import ManageStatusPage from "./pages/ManageStatusPage.vue";
 import AddStatusPage from "./pages/AddStatusPage.vue";
@@ -180,6 +183,10 @@ const routes = [
     {
         path: "/status",
         component: StatusPage,
+    },
+    {
+        path: "/status/:slug/tv",
+        component: StatusPageTv,
     },
     {
         path: "/status/:slug",

@@ -4,7 +4,8 @@ const { UptimeKumaServer } = require("../uptime-kuma-server");
 const StatusPage = require("../model/status_page");
 const { allowDevAllOrigin, sendHttpError } = require("../util-server");
 const { R } = require("redbean-node");
-const { badgeConstants } = require("../../src/util");
+const { badgeConstants, UP } = require("../../src/util");
+const { sanitizeHeartbeatMessage } = require("../util/sanitize-heartbeat-message");
 const { makeBadge } = require("badge-maker");
 const { UptimeCalculator } = require("../uptime-calculator");
 
@@ -278,6 +279,140 @@ router.get("/api/status-page/:slug/badge", cache("5 minutes"), async (request, r
 
         response.type("image/svg+xml");
         response.send(svg);
+    } catch (error) {
+        sendHttpError(response, error.message);
+    }
+});
+
+/**
+ * How many heartbeats the wall panel gets per monitor.
+ * The design's highlighted card draws the full history; the list slices the tail of this same set.
+ */
+const TV_BEAT_LIMIT = 45;
+
+/**
+ * Resolve which monitors the wall panel shows for a status page.
+ *
+ * Starts from the page's own curation (the monitor_group rows of its public sections) and applies
+ * the group rule: a group monitor with "show children" enabled is replaced by its children. Keeping
+ * both would show the same outage twice — a child going down also takes its parent group down —
+ * and would count it twice in the "N of T" headline.
+ * @param {number} statusPageID ID of the status page.
+ * @returns {Promise<number[]>} Monitor IDs to render, without duplicates.
+ */
+async function tvMonitorIDList(statusPageID) {
+    const listed = await R.getCol(
+        `
+        SELECT monitor_group.monitor_id FROM monitor_group, \`group\`
+        WHERE monitor_group.group_id = \`group\`.id
+        AND public = 1
+        AND \`group\`.status_page_id = ?
+    `,
+        [statusPageID]
+    );
+
+    const expandedGroupIDs = await R.getCol(
+        `
+        SELECT monitor_group.monitor_id FROM monitor_group, \`group\`, monitor
+        WHERE monitor_group.group_id = \`group\`.id
+        AND monitor.id = monitor_group.monitor_id
+        AND \`group\`.public = 1
+        AND \`group\`.status_page_id = ?
+        AND monitor_group.show_children = 1
+        AND monitor.type = 'group'
+    `,
+        [statusPageID]
+    );
+
+    const expanded = new Set(expandedGroupIDs.map(Number));
+    const result = [];
+
+    for (const groupMonitorID of expandedGroupIDs) {
+        const childIDs = await R.getCol("SELECT id FROM monitor WHERE parent = ? AND active = 1", [groupMonitorID]);
+        result.push(...childIDs);
+    }
+
+    // The expanded group itself drops out: its children already carry the same outage, with detail.
+    for (const monitorID of listed) {
+        if (!expanded.has(Number(monitorID))) {
+            result.push(monitorID);
+        }
+    }
+
+    return [...new Set(result.map(Number))];
+}
+
+// Wall panel (TV) feed.
+// One payload on purpose: the monitor list and the heartbeats travel together under the same cache.
+// Composing the panel from the two existing endpoints would put a 5-minute cache next to a 1-minute
+// one, and a freshly added monitor would have beats but no row — disappearing from the screen with
+// no error at all.
+router.get("/api/status-page/:slug/tv", cache("1 minutes"), async (request, response) => {
+    allowDevAllOrigin(response);
+
+    try {
+        const slug = request.params.slug.toLowerCase();
+        const statusPage = await R.findOne("status_page", " slug = ? ", [slug]);
+
+        // This endpoint publishes more than the status page does (the error label), so unpublishing
+        // has to close it. Missing and unpublished answer the same way on purpose.
+        if (!statusPage || !statusPage.published) {
+            sendHttpError(response, "Status Page Not Found");
+            return;
+        }
+
+        const monitorIDList = await tvMonitorIDList(statusPage.id);
+        const monitors = [];
+
+        for (const monitorID of monitorIDList) {
+            const monitor = await R.getRow("SELECT id, name, type FROM monitor WHERE id = ?", [monitorID]);
+
+            if (!monitor) {
+                continue;
+            }
+
+            // `msg` is read here and never forwarded: only the sanitized label leaves this function.
+            const rows = await R.getAll(
+                `
+                    SELECT status, time, msg FROM heartbeat
+                    WHERE monitor_id = ?
+                    ORDER BY time DESC
+                    LIMIT ?
+            `,
+                [monitorID, TV_BEAT_LIMIT]
+            );
+
+            const latest = rows[0];
+            const status = latest ? Number(latest.status) : null;
+
+            const entry = {
+                id: Number(monitor.id),
+                name: monitor.name,
+                type: monitor.type,
+                status,
+                beats: rows
+                    .slice()
+                    .reverse()
+                    .map((row) => ({
+                        status: Number(row.status),
+                        time: row.time,
+                    })),
+            };
+
+            // A monitor that is fine has nothing to explain, and its success message ("200 - OK")
+            // is not something a public payload needs to carry.
+            if (latest && status !== UP) {
+                entry.errorLabel = sanitizeHeartbeatMessage(latest.msg);
+            }
+
+            monitors.push(entry);
+        }
+
+        response.json({
+            title: statusPage.title,
+            refreshInterval: 60,
+            monitors,
+        });
     } catch (error) {
         sendHttpError(response, error.message);
     }

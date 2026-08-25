@@ -1,0 +1,1000 @@
+<template>
+    <div class="tv-stage">
+        <div class="tv-frame" :style="frameStyle">
+            <!-- Cabeçalho -->
+            <header class="tv-header">
+                <div class="tv-header__identity">
+                    <p class="tv-eyebrow">{{ $t("tvPanelEyebrow") }}</p>
+                    <h1 class="tv-title">{{ heading }}</h1>
+                </div>
+                <div class="tv-header__clock">
+                    <p>{{ $t("tvPanelUpdated", [lastUpdateText]) }}</p>
+                    <p>{{ $t("tvPanelNextRead", [countdownText]) }}</p>
+                </div>
+            </header>
+
+            <!-- Bloco de destaque: quem está fora do ar -->
+            <section v-if="downMonitors.length > 0" class="tv-alert" :class="{ 'tv-alert--pulsing': pulsing }">
+                <div class="tv-alert__band">
+                    <span class="tv-alert__dot"></span>
+                    <p class="tv-alert__title">
+                        {{ downMonitors.length === 1 ? $t("tvPanelServiceDown") : $t("tvPanelServicesDown") }}
+                    </p>
+                    <p class="tv-alert__count">
+                        {{ $t("tvPanelDownCount", [downMonitors.length, monitors.length]) }}
+                        <span v-if="hiddenDownCount > 0" class="tv-alert__overflow">
+                            · {{ $t("tvPanelMoreDown", [hiddenDownCount]) }}
+                        </span>
+                    </p>
+                </div>
+
+                <!-- Uma queda: card grande com o histórico inteiro -->
+                <div v-if="downMonitors.length === 1" class="tv-alert__single">
+                    <div class="tv-alert__headline">
+                        <h2>{{ downMonitors[0].name }}</h2>
+                        <div class="tv-pill">
+                            <span class="tv-pill__dot"></span>
+                            <p>{{ downMonitors[0].errorLabel }}</p>
+                        </div>
+                    </div>
+                    <div class="tv-history">
+                        <p class="tv-history__label">
+                            {{ $t("tvPanelHistory", [historyWindow(downMonitors[0])]) }}
+                        </p>
+                        <div class="tv-bars tv-bars--lg">
+                            <div
+                                v-for="(beat, index) in paddedBeats(downMonitors[0], HISTORY_LENGTH)"
+                                :key="index"
+                                class="tv-bar"
+                                :class="beatClass(beat)"
+                            ></div>
+                        </div>
+                        <div class="tv-history__axis">
+                            <span>{{ historyWindow(downMonitors[0]) }}</span>
+                            <span>{{ $t("tvPanelNow") }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Várias quedas: grade de cards compactos -->
+                <div v-else class="tv-alert__grid">
+                    <div
+                        v-for="monitor in visibleDownMonitors"
+                        :key="monitor.id"
+                        class="tv-card"
+                        :class="{ 'tv-card--pulsing': isJustChanged(monitor) }"
+                    >
+                        <div class="tv-card__top">
+                            <h3>{{ monitor.name }}</h3>
+                            <span v-if="isJustChanged(monitor)" class="tv-badge">{{ $t("tvPanelJustChanged") }}</span>
+                        </div>
+                        <p class="tv-card__error">{{ monitor.errorLabel }}</p>
+                        <div class="tv-bars tv-bars--sm">
+                            <div
+                                v-for="(beat, index) in paddedBeats(monitor, HISTORY_LENGTH)"
+                                :key="index"
+                                class="tv-bar"
+                                :class="beatClass(beat)"
+                            ></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tudo normal -->
+            <section v-else-if="loaded" class="tv-ok" :class="{ 'tv-ok--pulsing': pulsing }">
+                <span class="tv-ok__dot"></span>
+                <p>{{ $t("tvPanelAllOperational") }}</p>
+            </section>
+
+            <!-- Lista dos demais -->
+            <section class="tv-list">
+                <div class="tv-list__head">
+                    <h2>{{ $t("tvPanelServices") }}</h2>
+                    <p>{{ summary }}</p>
+                </div>
+                <div ref="grid" class="tv-list__grid">
+                    <div v-for="monitor in visibleMonitors" :key="monitor.id" class="tv-row" :class="rowClass(monitor)">
+                        <div class="tv-row__marker"></div>
+                        <p class="tv-row__name">{{ monitor.name }}</p>
+                        <p class="tv-row__status">{{ statusLabel(monitor.status) }}</p>
+                        <div class="tv-bars tv-bars--xs">
+                            <div
+                                v-for="(beat, index) in paddedBeats(monitor, ROW_HISTORY_LENGTH)"
+                                :key="index"
+                                class="tv-bar"
+                                :class="beatClass(beat)"
+                            ></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</template>
+
+<script>
+import axios from "axios";
+import dayjs from "dayjs";
+import datetime from "../mixins/datetime";
+import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
+
+/** Seconds between reads. Must stay in step with the endpoint cache (status-page-router.js). */
+const REFRESH_SECONDS = 60;
+
+/** How often the list rotates to the next page, and how long a change keeps pulsing. */
+const PAGE_MS = 15000;
+const PULSE_MS = 15000;
+
+/**
+ * Cards the highlight block may show at once.
+ *
+ * The canvas is fixed at 1920x1080 with overflow hidden and the block does not shrink, so beyond a
+ * certain count it silently spills past the bottom edge — in exactly the situation the panel exists
+ * for. Nine is three rows of three: the vertical budget fits four, but the fourth leaves the list
+ * with a single row, and a panel that only shows what is broken stops answering "is the rest fine?".
+ */
+const MAX_HIGHLIGHT_CARDS = 9;
+
+/** Bars drawn in the highlighted history, and in the compact row history. */
+const HISTORY_LENGTH = 45;
+const ROW_HISTORY_LENGTH = 22;
+
+export default {
+    mixins: [datetime],
+
+    data() {
+        return {
+            HISTORY_LENGTH,
+            ROW_HISTORY_LENGTH,
+            slug: "",
+            title: "",
+            monitors: [],
+            loaded: false,
+            lastUpdate: null,
+            countdown: REFRESH_SECONDS,
+            page: 0,
+            rows: 5,
+            pulsing: false,
+            changedIds: [],
+            previousDownKey: undefined,
+            scale: 1,
+        };
+    },
+
+    computed: {
+        /** @returns {string} Heading of the panel: the status page title, or a generic fallback */
+        heading() {
+            return this.title || this.$t("tvPanelTitle");
+        },
+
+        /** @returns {object} Inline style that fits the fixed canvas into the window */
+        frameStyle() {
+            return {
+                transform: `scale(${this.scale})`,
+            };
+        },
+
+        /** @returns {object[]} Monitors that are down. Maintenance is not an outage. */
+        downMonitors() {
+            return this.monitors.filter((monitor) => monitor.status === DOWN);
+        },
+
+        /** @returns {object[]} The down monitors that fit in the highlight block */
+        visibleDownMonitors() {
+            return this.downMonitors.slice(0, MAX_HIGHLIGHT_CARDS);
+        },
+
+        /** @returns {number} How many down monitors did not fit */
+        hiddenDownCount() {
+            return Math.max(0, this.downMonitors.length - MAX_HIGHLIGHT_CARDS);
+        },
+
+        /** @returns {object[]} Monitors the list shows: the ones not promoted to the highlight */
+        listedMonitors() {
+            if (this.downMonitors.length > 0) {
+                return this.monitors.filter((monitor) => monitor.status !== DOWN);
+            }
+            return this.monitors;
+        },
+
+        /** @returns {number} Items per page, from the measured capacity of the grid (2 columns) */
+        perPage() {
+            return Math.max(2, this.rows * 2);
+        },
+
+        /** @returns {number} Total number of pages */
+        pageCount() {
+            return Math.max(1, Math.ceil(this.listedMonitors.length / this.perPage));
+        },
+
+        /** @returns {number} Current page index, wrapped */
+        pageIndex() {
+            return this.page % this.pageCount;
+        },
+
+        /** @returns {object[]} Monitors on the current page. The last page backs up to stay full. */
+        visibleMonitors() {
+            const start = Math.min(
+                this.pageIndex * this.perPage,
+                Math.max(0, this.listedMonitors.length - this.perPage)
+            );
+            return this.listedMonitors.slice(start, start + this.perPage);
+        },
+
+        /** @returns {string} Right-hand summary of the list section */
+        summary() {
+            const base =
+                this.downMonitors.length > 0
+                    ? this.$t("tvPanelRemaining", [this.listedMonitors.length, this.monitors.length])
+                    : this.$t("tvPanelAllNormal", [this.monitors.length]);
+
+            if (this.pageCount > 1) {
+                return `${base}  ·  ${this.$t("tvPanelPage", [this.pageIndex + 1, this.pageCount])}`;
+            }
+            return base;
+        },
+
+        /** @returns {string} Clock of the last successful read */
+        lastUpdateText() {
+            return this.lastUpdate ? this.time(this.lastUpdate) : "--:--:--";
+        },
+
+        /** @returns {string} Countdown to the next read, as mm:ss */
+        countdownText() {
+            const minutes = Math.floor(this.countdown / 60);
+            const seconds = this.countdown % 60;
+            return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+        },
+    },
+
+    mounted() {
+        this.slug = this.$route.params.slug || "default";
+
+        this.fetchData();
+
+        this.feedTimer = setInterval(() => this.fetchData(), REFRESH_SECONDS * 1000);
+        this.countdownTimer = setInterval(() => {
+            this.countdown = this.countdown > 0 ? this.countdown - 1 : 0;
+        }, 1000);
+        this.pageTimer = setInterval(() => {
+            this.page += 1;
+        }, PAGE_MS);
+
+        window.addEventListener("resize", this.fit);
+        this.fit();
+        this.$nextTick(() => requestAnimationFrame(this.measure));
+    },
+
+    updated() {
+        requestAnimationFrame(this.measure);
+    },
+
+    beforeUnmount() {
+        clearInterval(this.feedTimer);
+        clearInterval(this.countdownTimer);
+        clearInterval(this.pageTimer);
+        clearTimeout(this.pulseTimer);
+        window.removeEventListener("resize", this.fit);
+    },
+
+    methods: {
+        /**
+         * Read the panel feed. A failed read keeps the last known frame on screen: a wall panel
+         * that blanks out on a hiccup is worse than one showing a slightly stale picture.
+         * @returns {void}
+         */
+        fetchData() {
+            axios
+                .get(`/api/status-page/${this.slug}/tv`)
+                .then((res) => {
+                    this.title = res.data.title;
+                    this.detectChange(res.data.monitors);
+                    this.monitors = res.data.monitors;
+                    this.loaded = true;
+                    this.lastUpdate = dayjs();
+                    this.countdown = REFRESH_SECONDS;
+                })
+                .catch(() => {
+                    // Keep the previous frame and try again on the next cycle.
+                    this.countdown = REFRESH_SECONDS;
+                });
+        },
+
+        /**
+         * Compare the set of down monitors with the previous read and start the pulse when it moved.
+         * Only the monitors that just entered the set are marked, so "went down now" stays visually
+         * distinct from "has been down for an hour".
+         * @param {object[]} incoming Monitors from the current read.
+         * @returns {void}
+         */
+        detectChange(incoming) {
+            const downIds = incoming.filter((monitor) => monitor.status === DOWN).map((monitor) => monitor.id);
+            const key = downIds.join(",");
+
+            if (this.previousDownKey !== undefined && this.previousDownKey !== key) {
+                const before = this.previousDownKey ? this.previousDownKey.split(",").filter(Boolean) : [];
+                this.changedIds = downIds.filter((id) => !before.includes(String(id)));
+                this.pulsing = true;
+
+                clearTimeout(this.pulseTimer);
+                this.pulseTimer = setTimeout(() => {
+                    this.pulsing = false;
+                    this.changedIds = [];
+                }, PULSE_MS);
+            }
+
+            this.previousDownKey = key;
+        },
+
+        /**
+         * Measure how many rows fit in the list grid. Derived from a real rendered row, never a
+         * constant: the space left for the list depends on how tall the highlight block grew.
+         * @returns {void}
+         */
+        measure() {
+            const grid = this.$refs.grid;
+
+            if (!grid || !grid.firstElementChild) {
+                return;
+            }
+
+            const rowHeight = grid.firstElementChild.getBoundingClientRect().height;
+
+            if (!rowHeight) {
+                return;
+            }
+
+            const rows = Math.max(1, Math.floor(grid.clientHeight / rowHeight));
+
+            // Guard against an update loop: only write when the measurement actually moved.
+            if (rows !== this.rows) {
+                this.rows = rows;
+            }
+        },
+
+        /**
+         * Fit the fixed canvas into the current window.
+         * @returns {void}
+         */
+        fit() {
+            this.scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        },
+
+        /**
+         * Did this monitor enter the down set in the last change?
+         * @param {object} monitor Monitor to check.
+         * @returns {boolean} True while it should pulse and carry the badge.
+         */
+        isJustChanged(monitor) {
+            return this.pulsing && this.changedIds.includes(monitor.id);
+        },
+
+        /**
+         * Beats padded at the front so the bar count is stable even with a short history.
+         * @param {object} monitor Monitor whose beats to render.
+         * @param {number} length How many bars to draw.
+         * @returns {(object|null)[]} Beats, oldest first, with nulls where there is no data.
+         */
+        paddedBeats(monitor, length) {
+            const beats = (monitor.beats || []).slice(-length);
+            const padding = new Array(Math.max(0, length - beats.length)).fill(null);
+            return padding.concat(beats);
+        },
+
+        /**
+         * CSS class for one history bar.
+         * @param {object|null} beat The beat, or null when there is no data.
+         * @returns {string} Class name.
+         */
+        beatClass(beat) {
+            if (!beat) {
+                return "tv-bar--empty";
+            }
+            if (beat.status === DOWN) {
+                return "tv-bar--down";
+            }
+            if (beat.status === PENDING) {
+                return "tv-bar--pending";
+            }
+            if (beat.status === MAINTENANCE) {
+                return "tv-bar--maintenance";
+            }
+            return "tv-bar--up";
+        },
+
+        /**
+         * How far back the drawn history reaches, derived from the beats themselves.
+         * A heartbeat is written on each monitor's own interval, so a fixed bar count is not a
+         * fixed duration and the label cannot be hardcoded.
+         * @param {object} monitor Monitor whose window to describe.
+         * @returns {string} Humanised window, empty when there is nothing to measure.
+         */
+        historyWindow(monitor) {
+            const beats = this.paddedBeats(monitor, HISTORY_LENGTH).filter(Boolean);
+
+            if (beats.length === 0) {
+                return "";
+            }
+
+            const minutes = dayjs().diff(dayjs.utc(beats[0].time), "minute");
+
+            if (minutes < 1) {
+                return this.$t("tvPanelWindowNow");
+            }
+            if (minutes < 60) {
+                return this.$t("tvPanelWindowMinutes", [minutes]);
+            }
+            return this.$t("tvPanelWindowHours", [Math.floor(minutes / 60)]);
+        },
+
+        /**
+         * Label of a monitor status.
+         * @param {number} status Heartbeat status.
+         * @returns {string} Localised label.
+         */
+        statusLabel(status) {
+            if (status === DOWN) {
+                return this.$t("tvPanelStatusDown");
+            }
+            if (status === PENDING) {
+                return this.$t("tvPanelStatusDegraded");
+            }
+            if (status === MAINTENANCE) {
+                return this.$t("tvPanelStatusMaintenance");
+            }
+            if (status === UP) {
+                return this.$t("tvPanelStatusNormal");
+            }
+            return this.$t("tvPanelStatusUnknown");
+        },
+
+        /**
+         * CSS class of a list row, by status.
+         * @param {object} monitor Monitor of the row.
+         * @returns {string} Class name.
+         */
+        rowClass(monitor) {
+            if (monitor.status === DOWN) {
+                return "tv-row--down";
+            }
+            if (monitor.status === PENDING) {
+                return "tv-row--pending";
+            }
+            if (monitor.status === MAINTENANCE) {
+                return "tv-row--maintenance";
+            }
+            return "tv-row--up";
+        },
+    },
+};
+</script>
+
+<!-- The @font-face rules stay out of the scoped block: at-rules are not scoped, and keeping them
+     apart makes it explicit that the only thing this component adds globally is the font family. -->
+<!-- eslint-disable-next-line vue-scoped-css/enforce-style-type -->
+<style>
+@import "../assets/fonts/plus-jakarta-sans.css";
+</style>
+
+<style lang="scss" scoped>
+.tv-stage {
+    /* Tokens of the Winker Design System V2, as specified in the design handoff.
+       --color-* are the brand/semantic tokens; the neutrals are fixed in the V2 theme. */
+    --tv-primary: #b11655;
+    --tv-success: forestgreen;
+    --tv-warning: orange;
+    --tv-danger: #f53d3d;
+    --tv-info: #0288d1;
+    --tv-text-strong: #3d3d3d;
+    --tv-text-secondary: #656565;
+    --tv-surface: #ffffff;
+    --tv-border: #dcdcdc;
+    --tv-divider: #eef0f3;
+    --tv-canvas: #f4f5f7;
+    --tv-r-card: 16px;
+    --tv-r-badge: 99px;
+    --tv-shadow-card: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --tv-shadow-alert:
+        0 20px 25px -5px rgba(0, 0, 0, 0.1),
+        0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    --tv-font: "Plus Jakarta Sans", -apple-system, blinkmacsystemfont, "Segoe UI", roboto, system-ui, sans-serif;
+    --tv-empty: #e6e8eb;
+
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: #000;
+    overflow: hidden;
+}
+
+.tv-frame {
+    width: 1920px;
+    height: 1080px;
+    box-sizing: border-box;
+    transform-origin: center;
+    background: var(--tv-canvas);
+    color: var(--tv-text-strong);
+    font-family: var(--tv-font);
+    padding: 40px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    overflow: hidden;
+
+    * {
+        box-sizing: border-box;
+    }
+
+    p,
+    h1,
+    h2,
+    h3 {
+        margin: 0;
+    }
+}
+
+/* ---- Cabeçalho ---- */
+.tv-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 40px;
+
+    &__identity {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    &__clock {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        font-size: 24px;
+        color: var(--tv-text-secondary);
+    }
+}
+
+.tv-eyebrow {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--tv-primary);
+}
+
+.tv-title {
+    font-size: 64px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+
+/* ---- Bloco de destaque ---- */
+.tv-alert {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--tv-r-card);
+    overflow: hidden;
+    box-shadow: var(--tv-shadow-alert);
+    border: 3px solid var(--tv-danger);
+
+    &--pulsing {
+        animation: tv-alert-pulse 1s ease-in-out infinite;
+    }
+
+    &__band {
+        background: var(--tv-danger);
+        color: #fff;
+        padding: 22px 36px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    &__dot {
+        width: 22px;
+        height: 22px;
+        border-radius: 99px;
+        background: #fff;
+        animation: tv-dot-pulse 1.1s ease-in-out infinite;
+    }
+
+    &__title {
+        font-size: 34px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    &__count {
+        margin-left: auto;
+        font-size: 30px;
+        font-weight: 700;
+    }
+
+    &__overflow {
+        opacity: 0.85;
+    }
+
+    &__single {
+        background: var(--tv-surface);
+        padding: 28px 36px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        border-top: 1px solid var(--tv-divider);
+    }
+
+    &__headline {
+        display: flex;
+        align-items: center;
+        gap: 40px;
+        flex-wrap: wrap;
+
+        h2 {
+            font-size: 48px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.05;
+        }
+    }
+
+    &__grid {
+        background: var(--tv-surface);
+        padding: 16px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        border-top: 1px solid var(--tv-divider);
+    }
+}
+
+.tv-pill {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 22px;
+    border-radius: var(--tv-r-badge);
+    background: rgba(245, 61, 61, 0.1);
+
+    p {
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--tv-danger);
+    }
+
+    &__dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 99px;
+        background: var(--tv-danger);
+    }
+}
+
+.tv-history {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &__label {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--tv-text-secondary);
+    }
+
+    &__axis {
+        display: flex;
+        justify-content: space-between;
+        font-size: 20px;
+        color: var(--tv-text-secondary);
+    }
+}
+
+.tv-card {
+    background: rgba(245, 61, 61, 0.06);
+    border: 2px solid rgba(245, 61, 61, 0.35);
+    border-radius: var(--tv-r-card);
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &--pulsing {
+        animation: tv-card-pulse 0.9s ease-in-out infinite;
+    }
+
+    &__top {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+
+        h3 {
+            flex: 1 1 auto;
+            min-width: 0;
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            line-height: 1.15;
+        }
+    }
+
+    &__error {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--tv-danger);
+    }
+
+    .tv-bars {
+        margin-top: auto;
+    }
+}
+
+.tv-badge {
+    background: var(--tv-danger);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    border-radius: var(--tv-r-badge);
+}
+
+/* ---- Tudo normal ---- */
+.tv-ok {
+    flex: 0 0 auto;
+    background: var(--tv-surface);
+    border-radius: var(--tv-r-card);
+    border: 1px solid var(--tv-divider);
+    box-shadow: var(--tv-shadow-card);
+    padding: 40px 36px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+
+    &--pulsing {
+        animation: tv-ok-pulse 1s ease-in-out infinite;
+    }
+
+    &__dot {
+        width: 22px;
+        height: 22px;
+        border-radius: 99px;
+        background: var(--tv-success);
+    }
+
+    p {
+        font-size: 44px;
+        font-weight: 800;
+    }
+}
+
+/* ---- Lista ---- */
+.tv-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    &__head {
+        display: flex;
+        align-items: baseline;
+        gap: 20px;
+
+        h2 {
+            font-size: 34px;
+            font-weight: 800;
+        }
+
+        p {
+            font-size: 24px;
+            color: var(--tv-text-secondary);
+        }
+    }
+
+    &__grid {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+
+        /* The divider colour showing through the 1px column gap is what draws the separators. */
+        background: var(--tv-divider);
+        border-radius: var(--tv-r-card);
+        box-shadow: var(--tv-shadow-card);
+        border: 1px solid var(--tv-divider);
+        display: grid;
+
+        /* minmax(0, 1fr) is required: with 1fr the rows overflow the container width. */
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: 1px;
+        align-content: start;
+    }
+}
+
+.tv-row {
+    /* One accent per row state: the marker and the status text always agree, and a new state is
+       one variable rather than a pair of overrides that can drift apart. */
+    --tv-row-accent: var(--tv-success);
+
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 28px;
+    border-top: 1px solid var(--tv-divider);
+    background: var(--tv-surface);
+
+    &__marker {
+        width: 8px;
+        align-self: stretch;
+        border-radius: 99px;
+        background: var(--tv-row-accent);
+    }
+
+    &__name {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 24px;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    &__status {
+        flex: 0 0 auto;
+        width: 130px;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--tv-row-accent);
+    }
+
+    &--down {
+        --tv-row-accent: var(--tv-danger);
+
+        background: rgba(245, 61, 61, 0.07);
+    }
+
+    &--pending {
+        --tv-row-accent: var(--tv-warning);
+
+        background: rgba(255, 165, 0, 0.1);
+    }
+
+    &--maintenance {
+        --tv-row-accent: var(--tv-info);
+
+        background: rgba(2, 136, 209, 0.08);
+    }
+}
+
+/* ---- Barras de histórico ---- */
+.tv-bars {
+    display: flex;
+    align-items: flex-end;
+    flex: 0 0 auto;
+
+    &--lg {
+        gap: 6px;
+
+        .tv-bar {
+            width: 24px;
+            height: 52px;
+            border-radius: 4px;
+        }
+    }
+
+    &--sm {
+        gap: 3px;
+
+        .tv-bar {
+            width: 8px;
+            height: 34px;
+            border-radius: 2px;
+        }
+    }
+
+    &--xs {
+        gap: 2px;
+
+        .tv-bar {
+            width: 6px;
+            height: 26px;
+            border-radius: 2px;
+        }
+    }
+}
+
+.tv-bar {
+    background: var(--tv-empty);
+
+    &--up {
+        background: var(--tv-success);
+    }
+
+    &--pending {
+        background: var(--tv-warning);
+    }
+
+    &--down {
+        background: var(--tv-danger);
+    }
+
+    &--maintenance {
+        background: var(--tv-info);
+    }
+
+    &--empty {
+        background: var(--tv-empty);
+    }
+}
+
+/* ---- Animações ---- */
+@keyframes tv-dot-pulse {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+}
+
+@keyframes tv-alert-pulse {
+    0%,
+    100% {
+        box-shadow:
+            var(--tv-shadow-alert),
+            0 0 0 0 rgba(245, 61, 61, 0.55);
+        border-color: var(--tv-danger);
+    }
+
+    50% {
+        box-shadow:
+            var(--tv-shadow-alert),
+            0 0 0 18px rgba(245, 61, 61, 0);
+        border-color: rgba(245, 61, 61, 0.35);
+    }
+}
+
+@keyframes tv-card-pulse {
+    0%,
+    100% {
+        background: rgba(245, 61, 61, 0.16);
+        border-color: var(--tv-danger);
+        box-shadow: 0 0 0 0 rgba(245, 61, 61, 0.5);
+    }
+
+    50% {
+        background: rgba(245, 61, 61, 0.04);
+        border-color: rgba(245, 61, 61, 0.3);
+        box-shadow: 0 0 0 12px rgba(245, 61, 61, 0);
+    }
+}
+
+@keyframes tv-ok-pulse {
+    0%,
+    100% {
+        box-shadow:
+            var(--tv-shadow-card),
+            0 0 0 0 rgba(34, 197, 94, 0.5);
+    }
+
+    50% {
+        box-shadow:
+            var(--tv-shadow-card),
+            0 0 0 16px rgba(34, 197, 94, 0);
+    }
+}
+</style>
