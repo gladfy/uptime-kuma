@@ -90,10 +90,10 @@ fora do ar pode ficar representado apenas por um número.
 - **WHEN** todos os 50 monitores do slug estão em `DOWN`
 - **THEN** o bloco de destaque (a faixa) continua inteiramente visível dentro dos 1080 px e a lista mantém ao menos uma linha
 
-### Requirement: Mudança de situação dispara pulso de 15 segundos
+### Requirement: Mudança de situação dispara pulso de 30 segundos
 
 O sistema SHALL comparar o conjunto de monitores em `DOWN` com o do ciclo anterior e, quando ele
-mudar, SHALL pulsar o bloco de destaque (ou o cartão de tudo normal) por 15 segundos, cancelando
+mudar, SHALL pulsar o bloco de destaque (ou o cartão de tudo normal) por 30 segundos, cancelando
 o temporizador anterior.
 
 Os monitores que **entraram** em `DOWN` nessa mudança SHALL pulsar individualmente e exibir o
@@ -104,16 +104,33 @@ selo "mudou agora"; os que já estavam fora SHALL permanecer estáticos.
 - **THEN** o card do que acabou de cair pulsa e traz o selo "mudou agora", e o do que já estava fora não pulsa
 
 #### Scenario: O pulso termina
-- **WHEN** passam 15 segundos desde a última mudança de situação
+- **WHEN** passam 30 segundos desde a última mudança de situação
 - **THEN** o pulso para e o selo "mudou agora" some
 
 #### Scenario: Mudança durante o pulso
-- **WHEN** uma nova mudança acontece antes de os 15 segundos terminarem
+- **WHEN** uma nova mudança acontece antes de os 30 segundos terminarem
 - **THEN** o temporizador reinicia e o selo passa a marcar os monitores da mudança nova
 
 #### Scenario: Recuperação também é mudança
 - **WHEN** o último monitor em `DOWN` volta a `UP`
-- **THEN** o cartão de tudo normal é exibido e pulsa por 15 segundos
+- **THEN** o cartão de tudo normal é exibido e pulsa por 30 segundos
+
+### Requirement: O destaque tem movimento contínuo enquanto houver queda
+
+Enquanto ao menos um monitor estiver em `DOWN`, o sistema SHALL manter movimento na faixa do
+destaque, independente de o pulso estar ativo, e SHALL intensificá-lo enquanto o pulso durar.
+
+O pulso é a notícia ("mudou agora") e termina; o movimento é o estado ("ainda está fora") e só
+termina com a queda. Sem ele o bloco fica imóvel depois de 30 segundos, que é quando uma queda de
+horas vira paisagem e some da atenção de quem passa pela sala.
+
+#### Scenario: Queda antiga continua se anunciando
+- **WHEN** os 30 segundos do pulso terminaram e o monitor continua em `DOWN`
+- **THEN** a faixa do destaque mantém o movimento, agora sem o pulso
+
+#### Scenario: Tudo normal não tem movimento
+- **WHEN** nenhum monitor está em `DOWN`
+- **THEN** o painel mostra o cartão de tudo normal, sem a faixa e sem o movimento
 
 ### Requirement: A lista pagina sozinha com capacidade medida
 

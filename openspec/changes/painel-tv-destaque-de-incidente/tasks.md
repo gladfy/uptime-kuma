@@ -63,3 +63,10 @@ id e por isso nunca precisou de ordem nem de filtro de `active`.
 - [ ] 7.7 **N+1 de consultas.** Uma `R.getRow` de monitor mais uma de heartbeats por monitor (~102 consultas para 50 monitores). O cache de 1 minuto não amortiza porque `apicache.clear()` dispara a cada heartbeat importante. Dá para resolver em duas consultas.
 
 - [ ] 7.8 **Cobrir nos testes o que passou batido.** Os 9 testes de `test-status-page-tv-endpoint.js` passam COM os defeitos 7.1, 7.2 e 7.3 presentes: o cenário semeia só monitores ativos, nunca asserta ordem, e o grupo expandido sempre tem filho ativo. A cobertura tem o formato do que foi imaginado, não do contrato escrito no spec.
+
+## 8. Ajuste de intensidade do destaque (25/08/2026)
+
+- [x] 8.1 Pulso de 15 s para 30 s (`PULSE_MS`), com o spec e os quatro cenários atualizados junto.
+- [x] 8.2 Onda contínua na faixa do destaque (três senóides, decisão 9 do design), presente enquanto houver queda e intensificada durante o pulso.
+- [x] 8.3 Pulso mais forte: anel de 18 px para 32 px e sempre saturado (antes a borda desbotava no meio do ciclo), faixa batendo para um vermelho mais fundo, ponto branco com anel de farol, halo permanente no bloco.
+- [x] 8.4 Verificado no navegador: a onda anda (transform muda entre dois instantes), o pulso disparado por mudança real ainda está ativo em t=29 s e apagado em t=33 s, e o conteúdo continua dentro do canvas em 940x530 e 1920x1080.

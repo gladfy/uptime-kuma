@@ -15,7 +15,30 @@
 
             <!-- Bloco de destaque: quem está fora do ar -->
             <section v-if="downMonitors.length > 0" class="tv-alert" :class="{ 'tv-alert--pulsing': pulsing }">
-                <div class="tv-alert__band">
+                <div class="tv-alert__band" :class="{ 'tv-alert__band--pulsing': pulsing }">
+                    <!-- Onda contínua enquanto houver queda, e não só durante o pulso: passados os
+                         30 s o bloco ficava imóvel, que é quando uma queda vira paisagem e some da
+                         atenção de quem passa pela sala. -->
+                    <div class="tv-wave" :class="{ 'tv-wave--pulsing': pulsing }" aria-hidden="true">
+                        <svg class="tv-wave__layer tv-wave__layer--back" viewBox="0 0 1200 120" preserveAspectRatio="none">
+                            <path
+                                vector-effect="non-scaling-stroke"
+                                d="M0,60 q75,-58 150,0 t150,0 t150,0 t150,0 t150,0 t150,0 t150,0 t150,0"
+                            />
+                        </svg>
+                        <svg class="tv-wave__layer tv-wave__layer--mid" viewBox="0 0 1200 120" preserveAspectRatio="none">
+                            <path
+                                vector-effect="non-scaling-stroke"
+                                d="M0,60 q75,-40 150,0 t150,0 t150,0 t150,0 t150,0 t150,0 t150,0 t150,0"
+                            />
+                        </svg>
+                        <svg class="tv-wave__layer tv-wave__layer--front" viewBox="0 0 1200 120" preserveAspectRatio="none">
+                            <path
+                                vector-effect="non-scaling-stroke"
+                                d="M0,60 q75,-26 150,0 t150,0 t150,0 t150,0 t150,0 t150,0 t150,0 t150,0"
+                            />
+                        </svg>
+                    </div>
                     <span class="tv-alert__dot"></span>
                     <p class="tv-alert__title">
                         {{ downMonitors.length === 1 ? $t("tvPanelServiceDown") : $t("tvPanelServicesDown") }}
@@ -125,9 +148,17 @@ import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 /** Seconds between reads. Must stay in step with the endpoint cache (status-page-router.js). */
 const REFRESH_SECONDS = 60;
 
-/** How often the list rotates to the next page, and how long a change keeps pulsing. */
+/** How often the list rotates to the next page. */
 const PAGE_MS = 15000;
-const PULSE_MS = 15000;
+
+/**
+ * How long a change keeps pulsing.
+ *
+ * Thirty seconds, not fifteen: nobody watches a wall panel, they glance at it. Fifteen seconds is
+ * short enough to fall entirely between two glances, and then the change that the pulse exists to
+ * announce is never seen by anyone.
+ */
+const PULSE_MS = 30000;
 
 /**
  * Cards the highlight block may show at once.
@@ -679,41 +710,61 @@ body.tv-panel-body {
     flex-direction: column;
     border-radius: var(--tv-r-card);
     overflow: hidden;
-    box-shadow: var(--tv-shadow-alert);
-    border: 3px solid var(--tv-danger);
+
+    /* O halo permanente engorda o bloco mesmo parado: fora do pulso, o destaque disputa
+       atenção com uma sala inteira, não com o resto da tela. */
+    box-shadow:
+        var(--tv-shadow-alert),
+        0 0 0 5px rgba(245, 61, 61, 0.18);
+    border: 4px solid var(--tv-danger);
 
     &--pulsing {
         animation: tv-alert-pulse 1s ease-in-out infinite;
     }
 
     &__band {
+        position: relative;
         background: var(--tv-danger);
         color: #fff;
-        padding: 22px 36px;
+        padding: 30px 36px;
         display: flex;
         align-items: center;
         gap: 20px;
+
+        &--pulsing {
+            animation: tv-band-flash 1s ease-in-out infinite;
+        }
     }
 
     &__dot {
-        width: 22px;
-        height: 22px;
+        position: relative;
+        z-index: 1;
+        width: 26px;
+        height: 26px;
         border-radius: 99px;
         background: #fff;
         animation: tv-dot-pulse 1.1s ease-in-out infinite;
     }
 
     &__title {
+        position: relative;
+        z-index: 1;
         font-size: 34px;
         font-weight: 800;
         letter-spacing: 0.06em;
         text-transform: uppercase;
+
+        /* A onda passa por baixo do texto: a sombra garante a leitura no pico claro dela. */
+        text-shadow: 0 2px 6px rgba(120, 0, 0, 0.45);
     }
 
     &__count {
+        position: relative;
+        z-index: 1;
         margin-left: auto;
         font-size: 30px;
         font-weight: 700;
+        text-shadow: 0 2px 6px rgba(120, 0, 0, 0.45);
     }
 
     &__single {
@@ -746,6 +797,65 @@ body.tv-panel-body {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 12px;
         border-top: 1px solid var(--tv-divider);
+    }
+}
+
+/* ---- Onda do destaque ----
+   Três senóides em velocidades diferentes, como a onda dos assistentes de IA. A translação fica
+   nas camadas e a amplitude no pai, para os dois transforms não disputarem o mesmo elemento. */
+.tv-wave {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0.72;
+    transform: scaleY(1);
+    transition:
+        transform 0.4s ease-out,
+        opacity 0.4s ease-out;
+
+    /* Enquanto a mudança é notícia a onda cresce e clareia. Amplitude e opacidade ficam aqui, no
+       pai, porque a translação de cada camada já ocupa o transform delas. */
+    &--pulsing {
+        opacity: 1;
+        transform: scaleY(1.4);
+    }
+
+    &__layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+
+        /* 200% + translateX(-50%) fecha o ciclo sem emenda: a largura do container cobre duas
+           ondas inteiras do viewBox, então o fim coincide com o começo. */
+        width: 200%;
+        height: 100%;
+        fill: none;
+        stroke: #fff;
+        animation: tv-wave-travel 9s linear infinite;
+        will-change: transform;
+    }
+
+    &__layer--back {
+        opacity: 0.26;
+        stroke-width: 9;
+        animation-duration: 13s;
+    }
+
+    &__layer--mid {
+        opacity: 0.4;
+        stroke-width: 6;
+        animation-duration: 9s;
+        animation-direction: reverse;
+    }
+
+    &__layer--front {
+        opacity: 0.62;
+        stroke-width: 4;
+        animation-duration: 6.5s;
     }
 }
 
@@ -1044,11 +1154,13 @@ body.tv-panel-body {
     100% {
         opacity: 1;
         transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
     }
 
     50% {
-        opacity: 0.3;
-        transform: scale(0.8);
+        opacity: 0.35;
+        transform: scale(0.62);
+        box-shadow: 0 0 0 16px rgba(255, 255, 255, 0);
     }
 }
 
@@ -1057,15 +1169,38 @@ body.tv-panel-body {
     100% {
         box-shadow:
             var(--tv-shadow-alert),
-            0 0 0 0 rgba(245, 61, 61, 0.55);
-        border-color: var(--tv-danger);
+            0 0 0 0 rgba(245, 61, 61, 0.85);
+        border-color: #ff2d2d;
     }
 
     50% {
         box-shadow:
             var(--tv-shadow-alert),
-            0 0 0 18px rgba(245, 61, 61, 0);
-        border-color: rgba(245, 61, 61, 0.35);
+            0 0 0 32px rgba(245, 61, 61, 0);
+        border-color: var(--tv-danger);
+    }
+}
+
+/* A faixa bate entre o vermelho da marca de erro e um mais fundo. Fundo, e não mais claro: no
+   claro o texto branco de cima perde contraste justo no instante que devia chamar mais. */
+@keyframes tv-band-flash {
+    0%,
+    100% {
+        background: var(--tv-danger);
+    }
+
+    50% {
+        background: #b81414;
+    }
+}
+
+@keyframes tv-wave-travel {
+    from {
+        transform: translateX(0);
+    }
+
+    to {
+        transform: translateX(-50%);
     }
 }
 

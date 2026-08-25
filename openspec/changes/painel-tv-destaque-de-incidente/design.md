@@ -187,6 +187,26 @@ quando `status_page.published = 0`.
 endpoint do upstream de carona — mas a superfície nova nasce com a regra estrita, para que
 "despublicar" signifique o que o administrador espera. Custo de merge: zero, é arquivo/rota nova.
 
+### 9. Onda contínua na faixa, e o pulso em dois níveis
+
+O destaque tinha um único estado forte — o pulso de 15 s — e depois dele ficava parado. Numa parede
+que ninguém observa, parado é invisível: a queda de duas horas some da atenção junto com o pulso.
+
+**Decisão:** dois níveis. (a) **Estado**, enquanto houver queda: três senóides brancas em
+velocidades diferentes atravessam a faixa vermelha, no espírito da onda dos assistentes de IA —
+movimento permanente, baixo contraste, sem piscar. (b) **Notícia**, durante o pulso: a onda cresce e
+clareia, a faixa bate entre o vermelho de erro e um mais fundo, o anel do bloco vai a 32 px e o
+ponto branco vira farol. E o pulso passa de 15 s para **30 s**, porque quinze segundos cabem
+inteiros entre duas olhadas.
+
+**Por que faixa mais fundo, e não mais clara:** o texto de cima é branco. Clarear o fundo é perder
+contraste justo no instante em que ele devia chamar mais.
+
+**Custo:** três `<svg>` animados por `transform: translateX`, sempre que houver queda. É o
+compositor, não layout; a translação fica nas camadas e a amplitude no pai, para os dois transforms
+não disputarem o mesmo elemento. Nada aqui é mais novo que CSS transforms — a mesma régua da
+correção de encaixe, ditada pelo browser da TV.
+
 ## Risks / Trade-offs
 
 - **[Mensagem nova de monitor type novo vira `Sem resposta` genérico]** → É o comportamento
