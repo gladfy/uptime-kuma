@@ -3,6 +3,13 @@ const { io } = require("socket.io-client");
 const BASE = "http://localhost:3005";
 const socket = io(BASE);
 
+/**
+ * Emit a socket.io event and resolve with its acknowledgement.
+ * @param {string} event Event name.
+ * @param {...any} args Arguments forwarded to the server.
+ * @returns {Promise<any>} The acknowledgement payload.
+ * @throws {Error} When the server acknowledges with ok === false.
+ */
 function emit(event, ...args) {
     return new Promise((resolve, reject) => {
         socket.emit(event, ...args, (res) => {
@@ -15,6 +22,13 @@ function emit(event, ...args) {
     });
 }
 
+/**
+ * Assert a condition, logging it when it holds.
+ * @param {any} cond Condition to check.
+ * @param {string} msg Description of what is being asserted.
+ * @returns {void}
+ * @throws {Error} When the condition is falsy.
+ */
 function assert(cond, msg) {
     if (!cond) {
         throw new Error("ASSERT: " + msg);
