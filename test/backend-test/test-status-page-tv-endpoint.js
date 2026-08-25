@@ -59,6 +59,7 @@ describe("Endpoint do painel de parede (/api/status-page/:slug/tv)", () => {
         statusPage.icon = "/icon.svg";
         statusPage.theme = "auto";
         statusPage.published = true;
+        statusPage.auto_refresh_interval = 45;
         await R.store(statusPage);
 
         pageGroup = R.dispense("group");
@@ -180,7 +181,7 @@ describe("Endpoint do painel de parede (/api/status-page/:slug/tv)", () => {
 
         assert.strictEqual(status, 200);
         assert.strictEqual(body.title, "NOC Winker");
-        assert.strictEqual(body.refreshInterval, 60);
+        assert.strictEqual(body.refreshInterval, 45, "o painel recebe o intervalo configurado na página, não um fixo");
 
         const nomes = body.monitors.map((m) => m.name).sort();
         assert.deepStrictEqual(nomes, ["Emissão de boletos", "Grupo Situator", "Portaria remota"]);
@@ -189,6 +190,22 @@ describe("Endpoint do painel de parede (/api/status-page/:slug/tv)", () => {
             assert.ok(Number.isInteger(monitor.id), "monitor precisa de id");
             assert.ok(Array.isArray(monitor.beats), "monitor precisa de batidas");
             assert.ok(monitor.beats.every((b) => "status" in b && "time" in b));
+        }
+    });
+
+    test("página sem intervalo configurado cai no padrão de 60 s", async () => {
+        await montarPagina(false);
+
+        const anterior = statusPage.auto_refresh_interval;
+        statusPage.auto_refresh_interval = null;
+        await R.store(statusPage);
+
+        try {
+            const { body } = await pedir("noc");
+            assert.strictEqual(body.refreshInterval, 60);
+        } finally {
+            statusPage.auto_refresh_interval = anterior;
+            await R.store(statusPage);
         }
     });
 

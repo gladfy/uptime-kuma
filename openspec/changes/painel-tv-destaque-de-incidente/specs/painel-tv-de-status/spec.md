@@ -221,14 +221,27 @@ sem depender de rede externa.
 - **WHEN** o painel é aberto num navegador sem acesso à internet
 - **THEN** a fonte do design é aplicada e as medidas do layout se mantêm
 
-### Requirement: A atualização é periódica e visível
+### Requirement: A atualização é periódica, visível e configurada na status page
 
-O painel SHALL atualizar os dados em intervalo fixo e SHALL exibir o horário da última leitura e
-a contagem regressiva para a próxima.
+O painel SHALL atualizar os dados no intervalo configurado em "Intervalo de atualização" da
+própria status page — a mesma configuração que a página pública usa — e SHALL exibir o horário da
+última leitura e a contagem regressiva para a próxima.
+
+O intervalo SHALL ser relido a cada ciclo, de modo que mudá-lo na configuração passe a valer sem
+recarregar o painel. Valor ausente, zero ou não numérico SHALL cair no padrão de 60 s, e valor
+abaixo de 5 s SHALL ser elevado a 5 s.
 
 #### Scenario: Contador regressivo
 - **WHEN** o painel acabou de atualizar
 - **THEN** a contagem regressiva reinicia no intervalo configurado e decresce a cada segundo
+
+#### Scenario: A configuração muda com o painel ligado
+- **WHEN** o administrador altera o "Intervalo de atualização" da status page
+- **THEN** a leitura seguinte do painel já obedece ao novo valor, sem ninguém tocar na TV
+
+#### Scenario: Página sem intervalo configurado
+- **WHEN** a status page não tem intervalo gravado
+- **THEN** o painel lê a cada 60 segundos
 
 #### Scenario: Falha na atualização
 - **WHEN** uma atualização falha

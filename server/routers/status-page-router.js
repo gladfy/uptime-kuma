@@ -410,7 +410,11 @@ router.get("/api/status-page/:slug/tv", cache("1 minutes"), async (request, resp
 
         response.json({
             title: statusPage.title,
-            refreshInterval: 60,
+
+            // O mesmo "Intervalo de atualização" que o administrador configura na status page —
+            // publicar 60 fixo aqui fazia a configuração dele parar na porta do painel. O fallback
+            // cobre página antiga, gravada antes de a coluna existir.
+            refreshInterval: Number(statusPage.autoRefreshInterval) || 60,
             monitors,
         });
     } catch (error) {

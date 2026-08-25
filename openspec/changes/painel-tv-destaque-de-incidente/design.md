@@ -158,17 +158,26 @@ em ~30 s. Dentro do teto, nada muda.
 Os números acima usam entrelinha aproximada: a implementação **confere no render real** com o
 cenário de 50 monitores fora, e o teto é constante nomeada, num lugar só.
 
-### 6. Refresh de 60 s, com o cache do endpoint alinhado
+### 6. O refresh vem da configuração da status page (revisto em 25/08/2026)
 
-**Decisão:** painel atualiza a cada 60 s; o endpoint novo usa `cache("1 minutes")`.
+**Decisão original:** painel atualiza a cada 60 s fixos; o endpoint usa `cache("1 minutes")`.
 
-60 s casa com o contador do design ("Próxima leitura em 00:60") e com o intervalo default de
-heartbeat: pedir mais rápido que o intervalo do monitor devolve o mesmo dado. Baixar para 45 s é
-mudar **duas** constantes juntas — a do painel e a do cache; mexer numa só produz o pior dos
-mundos (o painel pede mais e recebe dado velho, e o pulso atrasa sem sinal na tela).
+**Revisão:** o intervalo passa a ser o **"Intervalo de atualização" da própria status page**
+(`status_page.auto_refresh_interval`), publicado no payload e relido a cada ciclo — com padrão de
+60 s e piso de 5 s. Havia uma configuração na tela que o painel ignorava: a página `situator`
+estava em 30 s e o telão lia de 60 em 60.
 
-Consequência aceita e registrada: entre a queda real e o destaque acender passa até um ciclo. O
-pulso de 15 s marca "mudou nesta leitura", não "mudou neste instante".
+O que derrubou a premissa original ("pedir mais rápido devolve o mesmo dado"): `apicache.clear()`
+dispara a cada heartbeat **importante** (`server/model/monitor.js`), ou seja, toda mudança de
+status invalida o cache na hora. Ler mais rápido que o cache não devolve dado velho quando o que
+importa mudou — devolve a queda mais cedo. O cache de 1 minuto segue protegendo o banco do
+regime permanente.
+
+Por isso a leitura virou uma **cadeia de `setTimeout`**, e não um `setInterval`: só assim mudar a
+configuração vale sem alguém ir até a TV recarregar a página.
+
+Consequência que continua valendo: entre a queda real e o destaque acender passa até um ciclo. O
+pulso de 30 s marca "mudou nesta leitura", não "mudou neste instante".
 
 ### 7. Fonte embutida como asset do build
 
