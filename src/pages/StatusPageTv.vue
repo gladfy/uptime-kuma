@@ -139,6 +139,10 @@ const PULSE_MS = 15000;
  */
 const MAX_HIGHLIGHT_CARDS = 9;
 
+/** The canvas the panel is drawn on, before it is fitted into the screen. Mirrors .tv-frame. */
+const CANVAS_WIDTH = 1920;
+const CANVAS_HEIGHT = 1080;
+
 /** Bars drawn in the highlighted history, and in the compact row history. */
 const HISTORY_LENGTH = 45;
 const ROW_HISTORY_LENGTH = 22;
@@ -162,6 +166,8 @@ export default {
             changedIds: [],
             previousDownKey: undefined,
             scale: 1,
+            offsetX: 0,
+            offsetY: 0,
         };
     },
 
@@ -174,7 +180,7 @@ export default {
         /** @returns {object} Inline style that fits the fixed canvas into the window */
         frameStyle() {
             return {
-                transform: `scale(${this.scale})`,
+                transform: `translate(${this.offsetX}px, ${this.offsetY}px) scale(${this.scale})`,
             };
         },
 
@@ -268,7 +274,12 @@ export default {
 
         this.fetchData();
 
-        this.feedTimer = setInterval(() => this.fetchData(), REFRESH_SECONDS * 1000);
+        this.feedTimer = setInterval(() => {
+            // Refit on every read: this panel stays on a wall for weeks, and a TV that changes
+            // resolution without firing `resize` would otherwise stay wrong until someone reloads.
+            this.fit();
+            this.fetchData();
+        }, REFRESH_SECONDS * 1000);
         this.countdownTimer = setInterval(() => {
             this.countdown = this.countdown > 0 ? this.countdown - 1 : 0;
         }, 1000);
@@ -276,7 +287,15 @@ export default {
             this.page += 1;
         }, PAGE_MS);
 
+        // A TV browser often reports its viewport only after the first paint (its own chrome
+        // collapses, the launcher hands over the screen), and not every one of them fires `resize`
+        // when that happens. The late refit costs nothing and is what keeps the panel centred.
         window.addEventListener("resize", this.fit);
+        window.addEventListener("orientationchange", this.fit);
+        this.refitTimer = setTimeout(this.fit, 1500);
+
+        document.body.classList.add("tv-panel-body");
+
         this.fit();
         this.$nextTick(() => requestAnimationFrame(this.measure));
     },
@@ -290,7 +309,10 @@ export default {
         clearInterval(this.countdownTimer);
         clearInterval(this.pageTimer);
         clearTimeout(this.pulseTimer);
+        clearTimeout(this.refitTimer);
         window.removeEventListener("resize", this.fit);
+        window.removeEventListener("orientationchange", this.fit);
+        document.body.classList.remove("tv-panel-body");
     },
 
     methods: {
@@ -354,7 +376,11 @@ export default {
                 return;
             }
 
-            const rowHeight = grid.firstElementChild.getBoundingClientRect().height;
+            // offsetHeight, not getBoundingClientRect(): the frame is scaled by a transform, so
+            // the rect comes back in visual pixels while grid.clientHeight is in layout pixels.
+            // Dividing one by the other counted 1/scale times more rows than fit, and the surplus
+            // spilled past the bottom edge of the canvas, hidden by overflow.
+            const rowHeight = grid.firstElementChild.offsetHeight;
 
             if (!rowHeight) {
                 return;
@@ -369,11 +395,28 @@ export default {
         },
 
         /**
-         * Fit the fixed canvas into the current window.
+         * Fit the fixed canvas into the current window, and centre it.
+         *
+         * The centring is arithmetic instead of CSS alignment on purpose — see the note on
+         * .tv-stage. `document.documentElement.clientWidth` is read first because it is the layout
+         * viewport: it ignores the overflow this canvas produces, which `window.innerWidth` does
+         * not on every engine.
          * @returns {void}
          */
         fit() {
-            this.scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const root = document.documentElement;
+            const width = root.clientWidth || window.innerWidth;
+            const height = root.clientHeight || window.innerHeight;
+
+            // A viewport of zero is a browser that has not laid the page out yet. Keeping the last
+            // known fit beats scaling the panel to nothing.
+            if (!width || !height) {
+                return;
+            }
+
+            this.scale = Math.min(width / CANVAS_WIDTH, height / CANVAS_HEIGHT);
+            this.offsetX = Math.round((width - CANVAS_WIDTH * this.scale) / 2);
+            this.offsetY = Math.round((height - CANVAS_HEIGHT * this.scale) / 2);
         },
 
         /**
@@ -511,6 +554,15 @@ export default {
 <!-- eslint-disable-next-line vue-scoped-css/enforce-style-type -->
 <style>
 @import "../assets/fonts/plus-jakarta-sans.css";
+
+/* Not scoped: the panel takes over the whole screen, and a body margin or a stray scroll shifts a
+   fixed layer on the older engines this runs on. Applied only while the panel is mounted. */
+body.tv-panel-body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #000;
+}
 </style>
 
 <style lang="scss" scoped>
@@ -537,19 +589,30 @@ export default {
     --tv-font: "Plus Jakarta Sans", -apple-system, blinkmacsystemfont, "Segoe UI", roboto, system-ui, sans-serif;
     --tv-empty: #e6e8eb;
 
+    /* Explicit offsets, and an explicit translate in fit(), on purpose: the panel landed off the
+       bottom-right corner on the built-in browser of a TCL TV set. Reproduced by emulating an
+       engine that ignores `inset` (it is Chromium 87+, newer than a TV browser is likely to be):
+       the stage then never anchors to the viewport, and grid centring is a no-op here anyway,
+       because the track is sized by the 1920x1080 frame itself. Either failure leaves the frame's
+       centre at (960, 540) of a viewport half that size, which is where the TV put it. Nothing
+       below is newer than CSS transforms, which that browser demonstrably runs. */
     position: fixed;
-    inset: 0;
-    display: grid;
-    place-items: center;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     background: #000;
     overflow: hidden;
 }
 
 .tv-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 1920px;
     height: 1080px;
     box-sizing: border-box;
-    transform-origin: center;
+    transform-origin: 0 0;
     background: var(--tv-canvas);
     color: var(--tv-text-strong);
     font-family: var(--tv-font);
