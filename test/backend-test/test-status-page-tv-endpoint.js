@@ -193,7 +193,7 @@ describe("Endpoint do painel de parede (/api/status-page/:slug/tv)", () => {
         }
     });
 
-    test("página sem intervalo configurado cai no padrão de 60 s", async () => {
+    test("página sem intervalo configurado cai no padrão do app (300 s)", async () => {
         await montarPagina(false);
 
         const anterior = statusPage.auto_refresh_interval;
@@ -202,7 +202,7 @@ describe("Endpoint do painel de parede (/api/status-page/:slug/tv)", () => {
 
         try {
             const { body } = await pedir("noc");
-            assert.strictEqual(body.refreshInterval, 60);
+            assert.strictEqual(body.refreshInterval, 300);
         } finally {
             statusPage.auto_refresh_interval = anterior;
             await R.store(statusPage);

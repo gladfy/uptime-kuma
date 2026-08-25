@@ -146,16 +146,27 @@ import datetime from "../mixins/datetime";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 
 /**
- * Seconds between reads when the status page has no interval configured.
+ * Seconds between reads of the situation. Fixed and short on purpose: this is how long an outage
+ * can sit on a wall without being on the wall. It is NOT the configured interval — that one
+ * reloads the whole screen (see below), and tying detection to it would mean a page set to five
+ * minutes takes five minutes to show a service that just died.
  *
- * The real value comes from the payload — it is the same "Refresh Interval" the administrator sets
- * on the status page. The floor exists because that setting accepts any number, and a wall panel
- * reading every second would hammer the endpoint without seeing anything new: a status change
- * already busts the endpoint cache (`apicache.clear()` on an important heartbeat), so reading
- * faster than the monitors themselves check adds nothing.
+ * Thirty seconds costs nothing: the endpoint caches for a minute, but a status change busts that
+ * cache on the spot (`apicache.clear()` on an important heartbeat, server/model/monitor.js), so a
+ * read that lands after a change gets the change, not the cached copy.
  */
-const REFRESH_SECONDS_DEFAULT = 60;
-const REFRESH_SECONDS_MIN = 5;
+const SITUATION_SECONDS = 30;
+
+/**
+ * The configured "Refresh Interval" of the status page reloads the whole screen.
+ *
+ * This is the one thing on the panel nobody can do from the sofa: a wall TV never picks up a new
+ * version of the page by itself. The floor is well above the pulse, because a reload takes the
+ * panel off the air for a moment and wipes what it knew — reloading faster than the pulse would
+ * swallow the very announcement the panel exists to make.
+ */
+const RELOAD_SECONDS_DEFAULT = 300;
+const RELOAD_SECONDS_MIN = 120;
 
 /** How often the list rotates to the next page. */
 const PAGE_MS = 15000;
@@ -199,10 +210,10 @@ export default {
             monitors: [],
             loaded: false,
             lastUpdate: null,
-            countdown: REFRESH_SECONDS_DEFAULT,
+            countdown: SITUATION_SECONDS,
             page: 0,
             rows: 5,
-            refreshSeconds: REFRESH_SECONDS_DEFAULT,
+            reloadSeconds: RELOAD_SECONDS_DEFAULT,
             pulsing: false,
             changedIds: [],
             previousDownKey: undefined,
@@ -341,6 +352,7 @@ export default {
 
     beforeUnmount() {
         clearTimeout(this.feedTimer);
+        clearTimeout(this.reloadTimer);
         clearInterval(this.countdownTimer);
         clearInterval(this.pageTimer);
         clearTimeout(this.pulseTimer);
@@ -365,30 +377,60 @@ export default {
                     this.monitors = res.data.monitors;
                     this.loaded = true;
                     this.lastUpdate = dayjs();
-                    this.aplicarIntervalo(res.data.refreshInterval);
+                    this.aplicarIntervaloDeRecarga(res.data.refreshInterval);
                 })
                 .catch(() => {
                     // Keep the previous frame and try again on the next cycle. The interval stays
                     // as it was: a failed read says nothing about how often to read.
                 })
                 .then(() => {
-                    this.countdown = this.refreshSeconds;
+                    this.countdown = SITUATION_SECONDS;
                     this.agendarProximaLeitura();
                 });
         },
 
         /**
-         * Adopt the interval the status page publishes, with a floor.
+         * Adopt the reload interval the status page publishes, with a floor.
          * @param {number} segundos Interval declared in the payload.
          * @returns {void}
          */
-        aplicarIntervalo(segundos) {
+        aplicarIntervaloDeRecarga(segundos) {
             const proposto = Number(segundos);
-
-            this.refreshSeconds =
+            const novo =
                 Number.isFinite(proposto) && proposto > 0
-                    ? Math.max(REFRESH_SECONDS_MIN, Math.round(proposto))
-                    : REFRESH_SECONDS_DEFAULT;
+                    ? Math.max(RELOAD_SECONDS_MIN, Math.round(proposto))
+                    : RELOAD_SECONDS_DEFAULT;
+
+            // Reagendar a cada leitura adiaria o recarregamento para sempre — a leitura acontece a
+            // cada 30 s. Só mexe no timer quando o valor muda, ou quando ainda não há timer.
+            if (novo !== this.reloadSeconds || !this.reloadTimer) {
+                this.reloadSeconds = novo;
+                this.agendarRecarregamento();
+            }
+        },
+
+        /**
+         * Schedule the full screen reload.
+         * @returns {void}
+         */
+        agendarRecarregamento() {
+            clearTimeout(this.reloadTimer);
+            this.reloadTimer = setTimeout(this.recarregarTela, this.reloadSeconds * 1000);
+        },
+
+        /**
+         * Reload the page, unless a change is being announced right now.
+         * @returns {void}
+         */
+        recarregarTela() {
+            // Um recarregamento no meio do pulso engoliria o anúncio: a página volta sem memória do
+            // ciclo anterior, e a mudança que estava piscando some sem ter sido vista.
+            if (this.pulsing) {
+                this.reloadTimer = setTimeout(this.recarregarTela, PULSE_MS);
+                return;
+            }
+
+            window.location.reload();
         },
 
         /**
@@ -406,7 +448,7 @@ export default {
                 // reloads.
                 this.fit();
                 this.fetchData();
-            }, this.refreshSeconds * 1000);
+            }, SITUATION_SECONDS * 1000);
         },
 
         /**

@@ -158,14 +158,34 @@ em ~30 s. Dentro do teto, nada muda.
 Os números acima usam entrelinha aproximada: a implementação **confere no render real** com o
 cenário de 50 monitores fora, e o teto é constante nomeada, num lugar só.
 
-### 6. O refresh vem da configuração da status page (revisto em 25/08/2026)
+### 6. Dois ritmos: situação a cada 30 s, tela inteira na configuração (revisto em 25/08/2026)
 
 **Decisão original:** painel atualiza a cada 60 s fixos; o endpoint usa `cache("1 minutes")`.
 
-**Revisão:** o intervalo passa a ser o **"Intervalo de atualização" da própria status page**
-(`status_page.auto_refresh_interval`), publicado no payload e relido a cada ciclo — com padrão de
-60 s e piso de 5 s. Havia uma configuração na tela que o painel ignorava: a página `situator`
-estava em 30 s e o telão lia de 60 em 60.
+**Revisão, em dois passos no mesmo dia.** O primeiro foi ligar o painel ao **"Intervalo de
+atualização" da própria status page** (`status_page.auto_refresh_interval`) — havia uma
+configuração na tela que o painel ignorava: a página `situator` estava em 30 s e o telão lia de 60
+em 60.
+
+O segundo passo desfez metade disso, porque a pergunta seguinte derrubou a ideia: e se o valor
+configurado for 300 s (o default do app), a queda espera cinco minutos para aparecer? Esperaria.
+Detecção não pode depender de uma configuração cujo texto fala de **recarregar o site**.
+
+Então são **dois ritmos**, e cada um responde a uma pergunta diferente:
+
+| Ritmo | Quanto | De onde vem | Responde |
+|---|---|---|---|
+| Leitura da situação | 30 s, fixo | constante do painel | quanto tempo uma queda fica fora da parede |
+| Recarregamento da tela | configurado (padrão 300 s, piso 120 s) | `auto_refresh_interval` | como um telão que ninguém toca roda uma versão nova |
+
+O recarregamento é `location.reload()` de verdade — o que o rótulo do campo sempre prometeu
+("fará uma atualização completa do site") e que **nem a status page faz**: lá o mesmo campo só
+reagenda a releitura dos dados. A divergência é deliberada: numa TV de parede, recarregar é a única
+forma de a página trocar de versão, e ninguém vai até lá fazer isso.
+
+Piso de 120 s porque o recarregamento tira o painel do ar por um instante e apaga o que ele sabia
+(`previousDownKey`); mais rápido que isso ele passaria a engolir o próprio pulso. Pela mesma razão,
+um recarregamento que vença **durante** o pulso espera o pulso terminar.
 
 O que derrubou a premissa original ("pedir mais rápido devolve o mesmo dado"): `apicache.clear()`
 dispara a cada heartbeat **importante** (`server/model/monitor.js`), ou seja, toda mudança de

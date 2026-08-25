@@ -221,27 +221,44 @@ sem depender de rede externa.
 - **WHEN** o painel é aberto num navegador sem acesso à internet
 - **THEN** a fonte do design é aplicada e as medidas do layout se mantêm
 
-### Requirement: A atualização é periódica, visível e configurada na status page
+### Requirement: A situação é relida a cada 30 s, e a tela inteira no intervalo configurado
 
-O painel SHALL atualizar os dados no intervalo configurado em "Intervalo de atualização" da
-própria status page — a mesma configuração que a página pública usa — e SHALL exibir o horário da
-última leitura e a contagem regressiva para a próxima.
+O painel SHALL reler a situação a cada 30 segundos, ritmo fixo, e SHALL exibir o horário da última
+leitura e a contagem regressiva para a próxima.
 
-O intervalo SHALL ser relido a cada ciclo, de modo que mudá-lo na configuração passe a valer sem
-recarregar o painel. Valor ausente, zero ou não numérico SHALL cair no padrão de 60 s, e valor
-abaixo de 5 s SHALL ser elevado a 5 s.
+Separadamente, o painel SHALL recarregar a página inteira no "Intervalo de atualização" configurado
+na própria status page, com padrão de 300 s (o default do app para o campo) e piso de 120 s. Esse
+intervalo SHALL ser relido a cada ciclo, de modo que alterá-lo passe a valer sem ninguém tocar na
+TV.
+
+São dois ritmos porque são dois problemas. O primeiro é quanto tempo uma queda fica de fora da
+parede; o segundo é como um telão que ninguém toca passa a rodar uma versão nova da página. Amarrar
+um ao outro faz uma página configurada em cinco minutos levar cinco minutos para mostrar um serviço
+que acabou de cair — e é justamente o serviço fora do ar que o painel existe para anunciar.
+
+#### Scenario: Queda aparece no ritmo da leitura, não no do recarregamento
+- **WHEN** um serviço cai com o intervalo configurado em 300 segundos
+- **THEN** ele aparece no bloco de destaque em até 30 segundos
 
 #### Scenario: Contador regressivo
-- **WHEN** o painel acabou de atualizar
-- **THEN** a contagem regressiva reinicia no intervalo configurado e decresce a cada segundo
+- **WHEN** o painel acabou de reler a situação
+- **THEN** a contagem regressiva reinicia em 30 segundos e decresce a cada segundo
 
-#### Scenario: A configuração muda com o painel ligado
-- **WHEN** o administrador altera o "Intervalo de atualização" da status page
-- **THEN** a leitura seguinte do painel já obedece ao novo valor, sem ninguém tocar na TV
+#### Scenario: A tela se renova sozinha
+- **WHEN** vence o intervalo configurado
+- **THEN** a página inteira recarrega, e o telão passa a rodar a versão publicada mais recente sem ninguém ir até ele
+
+#### Scenario: O recarregamento não engole o anúncio
+- **WHEN** o recarregamento venceria durante o pulso de uma mudança
+- **THEN** ele espera o pulso terminar antes de recarregar
+
+#### Scenario: Intervalo abaixo do piso
+- **WHEN** o intervalo configurado é menor que 120 segundos
+- **THEN** a página recarrega a cada 120 segundos, e a leitura da situação segue nos seus 30 segundos
 
 #### Scenario: Página sem intervalo configurado
 - **WHEN** a status page não tem intervalo gravado
-- **THEN** o painel lê a cada 60 segundos
+- **THEN** a página recarrega a cada 300 segundos
 
 #### Scenario: Falha na atualização
 - **WHEN** uma atualização falha

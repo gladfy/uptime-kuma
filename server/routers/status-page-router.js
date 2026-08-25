@@ -411,10 +411,11 @@ router.get("/api/status-page/:slug/tv", cache("1 minutes"), async (request, resp
         response.json({
             title: statusPage.title,
 
-            // O mesmo "Intervalo de atualização" que o administrador configura na status page —
-            // publicar 60 fixo aqui fazia a configuração dele parar na porta do painel. O fallback
-            // cobre página antiga, gravada antes de a coluna existir.
-            refreshInterval: Number(statusPage.autoRefreshInterval) || 60,
+            // O mesmo "Intervalo de atualização" que o administrador configura na status page. No
+            // painel ele rege o RECARREGAMENTO da tela, não a leitura da situação — que tem ritmo
+            // próprio e curto. O fallback é o default do app para a coluna (página antiga, gravada
+            // antes de ela existir, vem nula).
+            refreshInterval: Number(statusPage.autoRefreshInterval) || 300,
             monitors,
         });
     } catch (error) {
