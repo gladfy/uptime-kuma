@@ -826,6 +826,11 @@ body.tv-panel-body {
     border-radius: var(--tv-r-card);
     overflow: hidden;
 
+    /* O bloco inteiro é vermelho, e não só a faixa: com o corpo branco, de longe o destaque
+       era uma tarja em cima de um card igual aos da lista. Tudo que fica por cima dele é branco. */
+    background: var(--tv-danger);
+    color: #fff;
+
     /* O halo permanente engorda o bloco mesmo parado: fora do pulso, o destaque disputa
        atenção com uma sala inteira, não com o resto da tela. */
     box-shadow:
@@ -883,12 +888,11 @@ body.tv-panel-body {
     }
 
     &__single {
-        background: var(--tv-surface);
         padding: 28px 36px;
         display: flex;
         flex-direction: column;
         gap: 20px;
-        border-top: 1px solid var(--tv-divider);
+        border-top: 1px solid rgba(255, 255, 255, 0.28);
     }
 
     &__headline {
@@ -902,16 +906,32 @@ body.tv-panel-body {
             font-weight: 800;
             letter-spacing: -0.02em;
             line-height: 1.05;
+            color: #fff;
+            text-shadow: 0 2px 6px rgba(120, 0, 0, 0.45);
         }
     }
 
     &__grid {
-        background: var(--tv-surface);
         padding: 16px;
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 12px;
-        border-top: 1px solid var(--tv-divider);
+        border-top: 1px solid rgba(255, 255, 255, 0.28);
+    }
+
+    /* As barras mantêm a legenda da lista (vermelho = queda, verde = normal): sobre o vermelho
+       do bloco a barra de queda sumiria, então cada régua ganha uma bandeja branca em vez de
+       trocar de cor e passar a dizer outra coisa que a lista de baixo. */
+    .tv-bars {
+        background: #fff;
+        padding: 8px 10px;
+        border-radius: 10px;
+    }
+
+    /* Selo "mudou agora" invertido: vermelho sobre vermelho não é selo. */
+    .tv-badge {
+        background: #fff;
+        color: var(--tv-danger);
     }
 }
 
@@ -1012,7 +1032,7 @@ body.tv-panel-body {
     gap: 14px;
     padding: 12px 22px;
     border-radius: var(--tv-r-badge);
-    background: rgba(245, 61, 61, 0.1);
+    background: #fff;
 
     p {
         font-size: 28px;
@@ -1038,20 +1058,20 @@ body.tv-panel-body {
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: var(--tv-text-secondary);
+        color: rgba(255, 255, 255, 0.85);
     }
 
     &__axis {
         display: flex;
         justify-content: space-between;
         font-size: 20px;
-        color: var(--tv-text-secondary);
+        color: rgba(255, 255, 255, 0.85);
     }
 }
 
 .tv-card {
-    background: rgba(245, 61, 61, 0.06);
-    border: 2px solid rgba(245, 61, 61, 0.35);
+    background: rgba(255, 255, 255, 0.14);
+    border: 2px solid rgba(255, 255, 255, 0.45);
     border-radius: var(--tv-r-card);
     padding: 14px 18px;
     display: flex;
@@ -1080,7 +1100,7 @@ body.tv-panel-body {
     &__error {
         font-size: 22px;
         font-weight: 700;
-        color: var(--tv-danger);
+        color: #fff;
     }
 
     .tv-bars {
@@ -1351,18 +1371,19 @@ body.tv-panel-body {
     }
 }
 
+/* O card agora vive sobre o vermelho do bloco: o pulso bate em branco, que é o que contrasta ali. */
 @keyframes tv-card-pulse {
     0%,
     100% {
-        background: rgba(245, 61, 61, 0.24);
-        border-color: #ff2d2d;
-        box-shadow: 0 0 0 0 rgba(245, 61, 61, 0.75);
+        background: rgba(255, 255, 255, 0.34);
+        border-color: #fff;
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.75);
     }
 
     50% {
-        background: rgba(245, 61, 61, 0.05);
-        border-color: var(--tv-danger);
-        box-shadow: 0 0 0 20px rgba(245, 61, 61, 0);
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.45);
+        box-shadow: 0 0 0 20px rgba(255, 255, 255, 0);
     }
 }
 
