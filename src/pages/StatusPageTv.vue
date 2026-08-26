@@ -920,10 +920,10 @@ body.tv-panel-body {
     }
 
     /* As barras mantêm a legenda da lista (vermelho = queda, verde = normal): sobre o vermelho
-       do bloco a barra de queda sumiria, então cada régua ganha uma bandeja branca em vez de
+       do bloco a barra de queda sumiria, então cada régua ganha uma bandeja cinza em vez de
        trocar de cor e passar a dizer outra coisa que a lista de baixo. */
     .tv-bars {
-        background: #fff;
+        background: #bebebe;
         padding: 8px 10px;
         border-radius: 10px;
     }
@@ -1070,7 +1070,10 @@ body.tv-panel-body {
 }
 
 .tv-card {
-    background: rgba(255, 255, 255, 0.14);
+    /* Card cinza sobre o vermelho do bloco: o contraste vem do fundo, e o texto volta a ser
+       escuro — branco sobre este cinza não se lê a distância. */
+    background: #bebebe;
+    color: var(--tv-text-strong);
     border: 2px solid rgba(255, 255, 255, 0.45);
     border-radius: var(--tv-r-card);
     padding: 14px 18px;
@@ -1100,7 +1103,7 @@ body.tv-panel-body {
     &__error {
         font-size: 22px;
         font-weight: 700;
-        color: #fff;
+        color: var(--tv-text-strong);
     }
 
     .tv-bars {
@@ -1371,17 +1374,16 @@ body.tv-panel-body {
     }
 }
 
-/* O card agora vive sobre o vermelho do bloco: o pulso bate em branco, que é o que contrasta ali. */
+/* O card é cinza sobre o vermelho do bloco: o fundo não bate, quem bate é a borda e o anel,
+   em branco, que é o que contrasta ali. */
 @keyframes tv-card-pulse {
     0%,
     100% {
-        background: rgba(255, 255, 255, 0.34);
         border-color: #fff;
         box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.75);
     }
 
     50% {
-        background: rgba(255, 255, 255, 0.1);
         border-color: rgba(255, 255, 255, 0.45);
         box-shadow: 0 0 0 20px rgba(255, 255, 255, 0);
     }
