@@ -149,7 +149,8 @@ jobs:
       # >= 3.17: e a primeira com --take-ownership. Sem ela, o primeiro upgrade
       # sobre objetos criados por `kubectl apply` falha com "invalid ownership
       # metadata" e o conserto vira anotar recurso de producao na mao.
-      HELM_VERSION: v3.18.4
+      HELM_VERSION: v3.22.1
+      HELM_SHA256: 896cf63684a42a723d61c980369d6e588330927deb13676ca0d85006dd6da0ea
     steps:
       # Credencial temporaria via OIDC (ADR-0014 do repo infrastructure): sem chave
       # AWS guardada no GitHub. A role so aceita este repo na branch master.
@@ -176,10 +177,11 @@ jobs:
             sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           }
           curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tgz
+          echo "${HELM_SHA256}  /tmp/helm.tgz" | sha256sum -c -
           tar -zxf /tmp/helm.tgz -C /tmp
           sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
-          helm version --short
-          helm plugin install https://github.com/hypnoglow/helm-s3.git
+          helm version --short | grep -q "^${HELM_VERSION}+" || { echo "helm diferente de ${HELM_VERSION}"; exit 1; }
+          helm plugin install https://github.com/hypnoglow/helm-s3.git --version v0.17.2
 
       - name: Baixa o chart publicado
         run: |
@@ -214,7 +216,7 @@ jobs:
             --namespace "$NAMESPACE" \
             --take-ownership \
             --set image.tag="$IMAGE_TAG" \
-            --wait --timeout 5m
+            --wait --timeout 180s
 
       # --wait ja falha se o rollout nao completar; isto deixa o motivo no log
       # em vez de so o codigo de saida.
