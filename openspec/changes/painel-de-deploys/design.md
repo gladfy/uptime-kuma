@@ -17,6 +17,17 @@ esta mudança: **todas as fontes já na primeira versão** (cluster, Bitbucket, 
 | uptime-kuma | GitHub Actions, **com** `--wait --timeout 5m` | `uptime-kuma` (1) — `monitor-infra` | `2.5.3-winker.<run>` |
 | 8 apps Amplify | Amplify | — | cada app tem uma branch em estágio `PRODUCTION` (`main` ou `master`) |
 
+**O resto do EKS (inventário de 31/10/2026, entra na fase 3).** Além das 12 releases acima, o
+`winkernetes` roda 18 releases que o painel não observava: `agua-gas`, `ms` (Superlógica), `status`,
+`integration-prod` e `integration-worker` em `microservices-prod`; `observer-prod` e
+`observer-worker` em `observer`; `site-prod`; `jambonz-worker` e `jambonz-vad`; `wk-face-api`
+(`facial`); `land`; `chat-api`; `ai-agents-prod`; `winker-mcp-prod` (`mcp-prod`); `audit-consumer`
+(`audit-platform`); `temporal`; e `prefect-server` (`big-data`). Várias têm o repositório no
+CodeCommit (Água/Gás, Superlógica, Integration, provavelmente o site), e Temporal e Prefect são
+charts de infraestrutura: não há pipeline no Bitbucket nem no GitHub para correlacionar. Os
+monitores Flow, N8N, Evolution API, Situator, Zabbix, VoIP, TURN, CAM, IA RAG, IA Process Doc e
+Phone não têm workload no EKS; Pro, Convite e Portaria Web são apps do Amplify.
+
 - O `winker-prod` usa `maxSurge 1`, `maxUnavailable 0` e `progressDeadlineSeconds 600`; a virada de
   29/10 levou 12 min (13:20 → 13:32 UTC).
 - O HPA muda `spec.replicas` o dia todo (o `winker-prod` estava com 8 de madrugada e 17 à tarde), e
@@ -164,7 +175,7 @@ pública; a consulta só exige a role de leitura, que o usuário já aceitou dar
 "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7) liga direto; sem SHA,
 liga à pipeline do mesmo projeto em andamento no início da virada ou concluída com sucesso até 20
 minutos antes; sem nada, "sem pipeline" — mas só se a fonte de pipeline do projeto estiver
-configurada. Com ela desligada (fases 1 e 2, ou um segredo ausente), o cartão mostra só a virada:
+configurada. Com ela desligada (fases 1 a 3, um segredo ausente ou projeto sem origem), o cartão mostra só a virada:
 rotular "sem pipeline" ali acusaria deploy manual em toda virada. Pelo mesmo motivo, o aviso
 "pipeline verde, nenhuma virada vista" só existe com o cluster sendo lido. O store decide isso pela
 situação de cada fonte, que ele já mantém para o rodapé. O projeto de uma release vem da configuração. A identidade
@@ -201,7 +212,7 @@ projetos de hoje:
 Validação no boot com mensagem que nomeia o campo errado; arquivo ausente ou inválido desliga
 todas as fontes de deploy (os namespaces do cluster e a região do Amplify também vêm dele) sem
 impedir o boot. A fase 2 já precisa do arquivo, só com `namespaces` e `projects`; os segredos só
-entram na fase 3. Mudar a configuração exige reiniciar o Kuma, aceitável para
+entram na fase 4. Mudar a configuração exige reiniciar o Kuma, aceitável para
 algo que muda quando nasce um repositório.
 
 *Alternativa descartada:* tela de configuração no Kuma com JSON em `setting` — mais trabalho de
@@ -231,11 +242,46 @@ Não é monitor type nem notification provider. As pontas são:
 | Início dos coletores | `server/server.js`, no callback do `listen` depois de `startMonitors()` | 1 linha aditiva | 1 |
 | Rota | `src/router.js` | 1 rota, import lazy | 1 |
 | Textos | `src/lang/en.json`, `src/lang/pt-BR.json` | chaves novas no meio | 1, e acréscimos nas seguintes |
-| Roteador de webhook | `server/server.js`, antes da linha 213 | 1 linha aditiva (`require` + `app.use`) | 3 |
-| Dependência | `package.json` | `@aws-sdk/client-amplify` | 4 |
+| Roteador de webhook | `server/server.js`, antes da linha 213 | 1 linha aditiva (`require` + `app.use`) | 4 |
+| Dependência | `package.json` | `@aws-sdk/client-amplify` | 5 |
 
 Esquecer a primeira ponta deixa as rotas de webhook respondendo 404; esquecer a terceira deixa o
 painel com todas as fontes "sem leitura".
+
+### 11. Projeto sem origem de pipeline
+
+**Decisão:** em `projects`, `source`, `repo` e `branch` passam a ser opcionais **juntos**: os três
+presentes (projeto com pipeline no Bitbucket ou no GitHub) ou os três ausentes (projeto só com
+virada). Parte deles presente é recusado, com a mensagem nomeando o que falta, porque quase sempre
+é um erro de digitação que deixaria o webhook sem casar em silêncio. Projeto sem origem nunca tem
+fonte de pipeline configurada: o cartão mostra só a virada, e o rótulo "Sem pipeline" nunca aparece
+para ele, mesmo depois que os segredos da fase 4 existirem.
+
+*Por quê:* o EKS tem virada de repositórios no CodeCommit e de charts de infraestrutura, e a falta de
+pipeline ali é o normal, não deploy manual. *Descartado:* um terceiro valor de `source`
+(`codecommit`) sem fonte por trás — prometeria uma integração que não existe; e manter a origem
+obrigatória com um repositório de mentira, que faria o rótulo "Sem pipeline" acusar deploy manual em
+toda virada dessas releases a partir da fase 4.
+
+### 12. Conferência de cobertura por relatório, não pelo painel
+
+**Decisão:** `extra/deploy-board-coverage.js`, rodado por uma pessoa, só leitura. Cruza três
+listas: (1) o que roda — Deployments, StatefulSets e CronJobs do contexto atual do `kubectl`,
+agrupados por release com a mesma regra do painel, e os apps do Amplify com branch `PRODUCTION`;
+(2) o que o painel observa — o ConfigMap do painel lido do cluster; (3) o que o Kuma monitora — os
+monitores e as tags `deploy`, pela API de socket com login pedido no terminal, sem guardar nada.
+Um item está coberto quando está na configuração, tem um monitor que confere o serviço e esse
+monitor tem a tag `deploy` apontando para ele. Worker e CronJob sem endereço próprio ficam cobertos
+por uma tag a mais no monitor do projeto. O que não deve ser monitorado vai para
+`extra/deploy-board-coverage-exclusions.json`, cada entrada com motivo; entrada sem motivo não
+vale. O relatório sai com código 1 quando há lacuna fora das exclusões, para poder ser repetido a
+cada aplicação nova. A classificação é função pura e tem teste.
+
+*Por quê:* a pergunta "o que está sem monitor?" é feita de vez em quando, por quem decide o que
+monitorar, e a resposta depende de credenciais que o pod não tem e não deve ter (listar o cluster
+inteiro, ler o Amplify antes da fase 5). *Descartado:* mostrar a cobertura no painel — exigiria
+ampliar o RBAC do Kuma para listar todos os namespaces, só para responder uma pergunta eventual; e
+uma conferência manual sem script, que não se repete igual da segunda vez.
 
 ## Risks / Trade-offs
 
@@ -262,7 +308,7 @@ painel com todas as fontes "sem leitura".
 
 ## Migration Plan
 
-A entrega é em quatro fases. Cada uma vai ao master do fork, passa pela pipeline dele (que faz
+A entrega é em seis fases. Cada uma vai ao master do fork, passa pela pipeline dele (que faz
 backup do banco antes do deploy) e é conferida em produção antes da seguinte. Nenhuma fase tem
 migration de banco, então o rollback é sempre de imagem ou de configuração.
 
@@ -286,18 +332,29 @@ migration de banco, então o rollback é sempre de imagem ou de configuração.
   rótulo "Sem pipeline"; `kubectl auth can-i` confirma que a ServiceAccount não lê Secrets.
 - Rollback: tirar `DEPLOY_BOARD_CONFIG` desliga a fonte; a permissão pode ficar.
 
-**Fase 3 — Pipelines.**
+**Fase 3 — Cobertura do EKS.**
+- Código: decisão 11 (origem opcional), com teste.
+- Infraestrutura: chart 0.3.0 com mais 12 namespaces (`microservices-prod`, `observer`,
+  `site-prod`, `jambonz-prod`, `facial`, `land`, `chat-api`, `ai-agents-prod`, `mcp-prod`,
+  `audit-platform`, `temporal`, `big-data`) e os projetos novos. O código sobe **antes** do chart:
+  a versão anterior recusaria projeto sem origem e desligaria todas as fontes.
+- Conferência: `kubectl auth can-i` nos namespaces novos; tags `deploy` nos monitores Água/Gás,
+  Superlógica, Status, Observer, Site, Jambonz Worker, Temporal e Prefect; uma virada nova no painel.
+- Rollback: voltar ao chart 0.2.0.
+
+**Fase 4 — Pipelines.**
 - Código: decisão 5 e a correlação completa da decisão 7; a linha do roteador no `server.js`.
 - Infraestrutura: Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`,
-  referenciado no Deployment. Cadastrar os webhooks: três no Bitbucket (`repo:push` e os dois de
-  build status) e dois no GitHub (`push`, `workflow_run`, `workflow_job`), apontando para
+  referenciado no Deployment. Cadastrar os webhooks: no Bitbucket (`repo:push` e os dois de build
+  status) e no GitHub (`push`, `workflow_run`, `workflow_job`), nos cinco repositórios da fase 2 e
+  nos da fase 3 que tiverem origem, apontando para
   `https://monitor-clientes.winker.com.br/api/deploy-board/webhook/<fonte>`, e conferir a primeira
   entrega de cada um no histórico do remetente (incluindo o formato do cabeçalho do Bitbucket).
 - Conferência: um merge real do condominio aparece num cartão só, do push à virada concluída.
 - Rollback: tirar os segredos faz as rotas responderem 404 e os cartões voltarem a mostrar só a
   virada.
 
-**Fase 4 — Amplify.**
+**Fase 5 — Amplify.**
 - Código: decisão 6 e a dependência.
 - Infraestrutura: role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com as quatro
   ações de leitura, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`; anotação
@@ -305,10 +362,23 @@ migration de banco, então o rollback é sempre de imagem ou de configuração.
 - Conferência: um build da branch de produção do `pro` aparece com os passos em até 60 s.
 - Rollback: tirar `amplify.region` do ConfigMap desliga a fonte.
 
+**Fase 6 — Conferência de cobertura.**
+- Código: decisão 12 (`extra/deploy-board-coverage.js`, a lista de exclusões e o teste da
+  classificação). Nada muda no servidor do Kuma.
+- Execução: rodar contra produção, registrar a tabela no change, fechar cada lacuna (monitor novo,
+  tag, release na configuração ou exclusão com motivo, decidido com o Erik) e rodar de novo até
+  zerar.
+- Rollback: não se aplica; o relatório não escreve em lugar nenhum.
+
 ## Open Questions
 
 - **Cabeçalho do Bitbucket:** conferir numa entrega real se o Bitbucket Cloud envia
   `X-Hub-Signature` com `sha256=`. Se vier outro formato, só a função de verificação muda.
+- **Origem dos projetos da fase 3:** Status (Bitbucket `winker/status` ou CodeCommit `status`),
+  Site, Jambonz VAD, wk-face-api, land, chat-api, ai-agents, winker-mcp e audit-consumer. Sem
+  confirmação, entram sem origem; acrescentar depois é só configuração.
+- **Monitor "Flow":** se ele confere algo em `api.winker.com.br`, é do gateway e ganha a tag
+  `gateway/gateway-prod`.
 - **Ligações que dependem de confirmação:** guest-link → "Convite" e gatekeeper-dashboard →
   "Portaria Web" parecem corresponder, mas não foram confirmadas. Os outros apps do Amplify ficam
   sem monitor até alguém dizer qual é.

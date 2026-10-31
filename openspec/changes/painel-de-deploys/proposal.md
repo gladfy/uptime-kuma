@@ -27,6 +27,11 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
 - **Jobs do Amplify por consulta.** O servidor consulta os jobs da branch de produção de cada app
   do Amplify (descoberta automática pelo estágio `PRODUCTION`), com permissão AWS só de leitura
   dada ao pod por IRSA.
+- **Projeto sem pipeline.** Repositório no CodeCommit e chart de infraestrutura (Temporal, Prefect)
+  também têm virada no EKS. O projeto pode ser configurado sem origem de pipeline: o cartão mostra
+  só a virada e nunca o rótulo "Sem pipeline".
+- **Conferência de cobertura.** Um relatório só de leitura compara o que roda no EKS e no Amplify com
+  a configuração do painel e as tags dos monitores do Kuma, e aponta o que está sem monitoramento.
 - **Correlação** entre pipeline e virada pelo SHA do commit na tag da imagem; quando a tag não
   carrega SHA, pela janela de tempo da pipeline do mesmo repositório. Virada sem pipeline
   correspondente aparece como "sem pipeline" (deploy manual).
@@ -38,19 +43,23 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
 
 ## Fases de entrega
 
-A implementação sai em quatro fases. Cada uma vai para produção sozinha, com só a infraestrutura
+A implementação sai em seis fases. Cada uma vai para produção sozinha, com só a infraestrutura
 dela, e a seguinte não muda o que a anterior entregou.
 
 | Fase | O que entra em produção | Infraestrutura e configuração |
 |---|---|---|
 | **1. Página e monitores** | `/deploys/<slug>` com login, duas colunas, monitores ao vivo e destaque de queda; a coluna de deploys mostra as fontes como "não configurada" | Nenhuma |
 | **2. Virada no cluster** | A virada de cada release, ao vivo; a marca "em deploy" e a correlação de queda nos monitores com a tag `deploy` | ServiceAccount do Kuma, leitura em 5 namespaces, ConfigMap com namespaces e projetos; marcar os monitores |
-| **3. Pipelines** | Merge, pipeline e virada num cartão só; jobs do GitHub | Secret com os segredos; cadastro dos 5 webhooks |
-| **4. Amplify** | Os 8 apps do Amplify, com passos do job | Role IAM por IRSA e anotação na ServiceAccount |
+| **3. Cobertura do EKS** | A virada das outras 18 releases do EKS (microsserviços, observer, site, jambonz, face-api, land, chat-api, ai-agents, mcp, audit-consumer, temporal, prefect); projeto sem origem de pipeline | Leitura em mais 12 namespaces e os projetos novos no ConfigMap; marcar os monitores |
+| **4. Pipelines** | Merge, pipeline e virada num cartão só; jobs do GitHub | Secret com os segredos; cadastro dos webhooks (os 5 da fase 2 e os dos projetos da fase 3 com origem no Bitbucket ou no GitHub) |
+| **5. Amplify** | Os 8 apps do Amplify, com passos do job | Role IAM por IRSA e anotação na ServiceAccount |
+| **6. Conferência de cobertura** | Relatório que cruza EKS e Amplify com a configuração do painel e as tags do Kuma; lacunas fechadas ou excluídas com motivo | Nenhuma nova; criar monitores e tags que faltarem |
 
 A ordem segue valor e custo: a virada é o que ninguém vê hoje e só precisa de permissão no
-cluster; os webhooks exigem rota pública e cadastro em cinco repositórios; o Amplify é independente
-e é a única fase com IAM e dependência nova.
+cluster, e a fase 3 estende o mesmo coletor ao resto do EKS sem código novo além da origem
+opcional; os webhooks exigem rota pública e cadastro em vários repositórios; o Amplify é
+independente e é a única fase com IAM e dependência nova. A conferência fica por último porque só
+faz sentido com todas as fontes ligadas: ela mede o que as anteriores deixaram de fora.
 
 ## Capabilities
 
@@ -63,6 +72,8 @@ e é a única fase com IAM e dependência nova.
   revisão, estados por release e a permissão só de leitura que isso exige.
 - `deploys-de-pipeline`: webhooks assinados do Bitbucket e do GitHub, consulta dos jobs do Amplify
   e a correlação de pipeline com virada.
+- `conferencia-de-cobertura`: o relatório que cruza o que roda no EKS e no Amplify com a
+  configuração do painel e as tags dos monitores, e a lista de exclusões com motivo.
 
 ### Modified Capabilities
 
@@ -82,19 +93,21 @@ Nenhuma. `openspec/specs/` está vazio, e a mudança não altera requisito da st
 - `src/lang/en.json` e `src/lang/pt-BR.json` — chaves novas no meio do arquivo.
 - `package.json` / `package-lock.json` — dependência nova `@aws-sdk/client-amplify`.
 - `src/mixins/socket.js` **não** muda: a rota fica fora de `/status`, então o socket abre normalmente.
-- Todo o resto é arquivo novo (`server/deploy-board/`, roteador, socket handler, página, testes).
+- Todo o resto é arquivo novo (`server/deploy-board/`, roteador, socket handler, página, testes e,
+  na fase 6, `extra/deploy-board-coverage.js` com a lista de exclusões).
 
 **Infraestrutura** (repositório `infrastructure`):
 - chart `helm-packages/tools/uptimekuma`: ServiceAccount própria para o Kuma (hoje ele roda com a
   `default`), ClusterRole de leitura de Deployments e CronJobs ligada por RoleBinding só nos
-  namespaces observados, ConfigMap com a configuração, Secret com os segredos dos webhooks e, na
-  fase 4, a anotação de IRSA na ServiceAccount;
+  namespaces observados (5 na fase 2, 17 a partir da fase 3), ConfigMap com a configuração, Secret
+  com os segredos dos webhooks e, na fase 5, a anotação de IRSA na ServiceAccount;
 - `terraform/`: a role IAM com as quatro ações de leitura do Amplify, no padrão de
   `terraform/iam-cost-exporter`.
 
-**Configuração fora do código:** cadastrar os webhooks nos cinco repositórios (três no Bitbucket,
-dois no GitHub) apontando para `monitor-clientes.winker.com.br` e marcar os monitores com a tag
-`deploy`.
+**Configuração fora do código:** cadastrar os webhooks nos repositórios com origem no Bitbucket ou
+no GitHub (os cinco da fase 2 e os da fase 3) apontando para `monitor-clientes.winker.com.br`,
+marcar os monitores com a tag `deploy` e, na fase 6, criar os monitores que a conferência apontar
+como faltando.
 
 ## Fora de escopo
 

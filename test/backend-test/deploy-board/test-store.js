@@ -197,6 +197,22 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(chat.label, "rolling");
         });
 
+        test("projeto sem origem de pipeline nunca é 'Sem pipeline', mesmo com as fontes de pipeline ligadas", () => {
+            store.setProjects([
+                ...PROJECTS,
+                { name: "temporal", source: null, releases: [{ namespace: "temporal", release: "temporal" }] },
+            ]);
+            store.setSource("bitbucket", "active");
+            store.setSource("github", "active");
+            store.upsertRollout(rollout({ id: "temporal/temporal:1", namespace: "temporal", release: "temporal", images: ["1.26.2"] }));
+            const temporal = store.snapshot().deploys.find((d) => d.project === "temporal");
+            assert.strictEqual(temporal.label, "rolling");
+            // Controle: na mesma situação, o projeto com origem ganha o rótulo.
+            store.upsertRollout(rollout());
+            const condominio = store.snapshot().deploys.find((d) => d.project === "condominio");
+            assert.strictEqual(condominio.label, "noPipeline");
+        });
+
         test("releases do mesmo commit são um deploy só; outro commit é outro deploy", () => {
             store.upsertRollout(rollout());
             store.upsertRollout(rollout({ id: "condominio/winker-integration:1", release: "winker-integration", desired: 2, updated: 0 }));

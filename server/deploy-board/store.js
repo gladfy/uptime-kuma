@@ -220,7 +220,9 @@ class DeployBoardStore {
      * @returns {object} Deploy with its derived fields: label, confirmation, release lines.
      */
     publicDeploy(deploy) {
-        const pipelineConfigured = this.sources[deploy.pipelineSource]?.state !== "unconfigured";
+        // A project without a pipeline source has nothing to match a rollout against: never "no pipeline".
+        const pipelineConfigured =
+            deploy.pipelineSource !== null && this.sources[deploy.pipelineSource]?.state !== "unconfigured";
         const cluster = this.sources.cluster.state;
         const rollouts = liveRollouts(deploy);
         return {

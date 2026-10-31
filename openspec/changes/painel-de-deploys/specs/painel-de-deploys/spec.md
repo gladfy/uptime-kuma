@@ -137,7 +137,8 @@ virada continua, o cartão SHALL dizer isso explicitamente.
 Rótulos do cartão: "Na pipeline", "Virando no cluster", "Sem progresso", "Virada travada",
 "Falhou", "No ar" e, para virada sem pipeline correspondente, "Sem pipeline".
 
-Quando a fonte de pipeline do projeto (Bitbucket ou GitHub) não está configurada, o cartão SHALL
+Quando a fonte de pipeline do projeto (Bitbucket ou GitHub) não está configurada, ou o projeto não
+tem origem de pipeline na configuração, o cartão SHALL
 mostrar só a virada, sem a seção de pipeline, e SHALL NOT usar o rótulo "Sem pipeline": a ausência
 de pipeline ali é falta de fonte, não deploy manual.
 
@@ -152,6 +153,10 @@ de pipeline ali é falta de fonte, não deploy manual.
 #### Scenario: Pipeline ainda não ligada
 - **WHEN** a fonte de pipeline do projeto não está configurada e uma release dele muda de revisão
 - **THEN** o cartão mostra só a virada, com o rótulo do estado dela, sem seção de pipeline e sem "Sem pipeline"
+
+#### Scenario: Projeto sem origem de pipeline
+- **WHEN** o projeto `temporal` está configurado sem origem de pipeline, os segredos do Bitbucket e do GitHub existem, e a release `temporal/temporal` muda de revisão
+- **THEN** o cartão mostra só a virada, sem seção de pipeline e sem "Sem pipeline"
 
 ### Requirement: Ordem e ciclo de vida dos cartões
 
