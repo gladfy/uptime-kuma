@@ -7,6 +7,12 @@ const PIPELINE_SOURCES = ["bitbucket", "github"];
 const NAMESPACE_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const RELEASE_RE = /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/;
 
+/**
+ * Fields of a project's pipeline. All present (a pipeline on Bitbucket or GitHub) or all absent (a
+ * repository on CodeCommit or an infrastructure chart: the rollout only).
+ */
+const PIPELINE_FIELDS = ["source", "repo", "branch"];
+
 /** owner/name, as Bitbucket and GitHub write it. */
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
@@ -57,14 +63,24 @@ function validateDeployBoardConfig(raw) {
             return fail(`${at}.name: "${p.name}" is repeated`);
         }
         names.add(p.name);
-        if (!PIPELINE_SOURCES.includes(p.source)) {
-            return fail(`${at}.source: expected one of ${PIPELINE_SOURCES.join(", ")}`);
-        }
-        if (typeof p.repo !== "string" || !REPO_RE.test(p.repo)) {
-            return fail(`${at}.repo: expected "<owner>/<name>"`);
-        }
-        if (typeof p.branch !== "string" || p.branch.trim() === "") {
-            return fail(`${at}.branch: expected a non-empty text`);
+        const present = PIPELINE_FIELDS.filter((f) => p[f] !== undefined);
+        if (present.length > 0) {
+            // Part of them is almost always a typo, and would leave the webhook never matching.
+            const missing = PIPELINE_FIELDS.find((f) => p[f] === undefined);
+            if (missing) {
+                return fail(
+                    `${at}.${missing}: required with ${present.join(" and ")} (source, repo and branch go together)`
+                );
+            }
+            if (!PIPELINE_SOURCES.includes(p.source)) {
+                return fail(`${at}.source: expected one of ${PIPELINE_SOURCES.join(", ")}`);
+            }
+            if (typeof p.repo !== "string" || !REPO_RE.test(p.repo)) {
+                return fail(`${at}.repo: expected "<owner>/<name>"`);
+            }
+            if (typeof p.branch !== "string" || p.branch.trim() === "") {
+                return fail(`${at}.branch: expected a non-empty text`);
+            }
         }
         if (!Array.isArray(p.releases)) {
             return fail(`${at}.releases: expected a list`);
@@ -86,9 +102,9 @@ function validateDeployBoardConfig(raw) {
 
         projects.push({
             name: p.name,
-            source: p.source,
-            repo: p.repo,
-            branch: p.branch,
+            source: p.source ?? null,
+            repo: p.repo ?? null,
+            branch: p.branch ?? null,
             releases,
         });
     }

@@ -91,6 +91,39 @@ describe("Configuração do painel de deploys", () => {
         }
     });
 
+    test("projeto sem origem de pipeline: aceito, com source, repo e branch nulos", () => {
+        const raw = variant({
+            namespaces: [...VALID.namespaces, "microservices-prod"],
+            projects: [...VALID.projects, { name: "agua-gas", releases: ["microservices-prod/agua-gas"] }],
+        });
+        const { config, error } = validateDeployBoardConfig(raw);
+        assert.strictEqual(error, null);
+        assert.deepStrictEqual(config.projects[2], {
+            name: "agua-gas",
+            source: null,
+            repo: null,
+            branch: null,
+            releases: [{ namespace: "microservices-prod", release: "agua-gas" }],
+        });
+        // O projeto com origem continua como estava.
+        assert.strictEqual(config.projects[0].source, "bitbucket");
+    });
+
+    test("origem incompleta: source, repo e branch vêm juntos, e a mensagem nomeia o que falta", () => {
+        const { source, repo, branch, ...semOrigem } = VALID.projects[0];
+        const cases = [
+            [{ ...semOrigem, repo, branch }, "projects[0].source"],
+            [{ ...semOrigem, source, branch }, "projects[0].repo"],
+            [{ ...semOrigem, source, repo }, "projects[0].branch"],
+            [{ ...semOrigem, source }, "projects[0].repo"],
+        ];
+        for (const [project, field] of cases) {
+            const { config, error } = validateDeployBoardConfig(variant({ projects: [project] }));
+            assert.strictEqual(config, null, `${field} deveria reprovar`);
+            assert.ok(error.startsWith(`${field}:`), `esperava erro em ${field}, veio: ${error}`);
+        }
+    });
+
     test("release num namespace que ninguém observa é recusada", () => {
         const raw = variant({ projects: [{ ...VALID.projects[0], releases: ["gateway-x/gateway-prod"] }] });
         const { error } = validateDeployBoardConfig(raw);
