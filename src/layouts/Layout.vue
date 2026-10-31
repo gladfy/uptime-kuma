@@ -33,6 +33,12 @@
             </a>
 
             <ul class="nav nav-pills">
+                <li v-if="$root.loggedIn && deployBoardPath" class="nav-item me-2">
+                    <router-link :to="deployBoardPath" class="nav-link">
+                        <font-awesome-icon icon="rocket" />
+                        {{ $t("deployBoardNavLink") }}
+                    </router-link>
+                </li>
                 <li v-if="$root.loggedIn" class="nav-item me-2">
                     <router-link to="/manage-status-page" class="nav-link">
                         <font-awesome-icon icon="stream" />
@@ -171,6 +177,9 @@ import compareVersions from "compare-versions";
 import { useToast } from "vue-toastification";
 const toast = useToast();
 
+/** Status page the deploy board opens with; the first one by title when it does not exist. */
+const DEPLOY_BOARD_SLUG = "winker";
+
 export default {
     components: {
         Login,
@@ -191,6 +200,13 @@ export default {
             classes[this.$root.theme] = true;
             classes["mobile"] = this.$root.isMobile;
             return classes;
+        },
+
+        /** @returns {string|null} Path of the deploy board, or null while there is no status page */
+        deployBoardPath() {
+            const pages = Object.values(this.$root.statusPageList);
+            const page = pages.find((p) => p.slug === DEPLOY_BOARD_SLUG) || pages[0];
+            return page ? `/deploys/${encodeURIComponent(page.slug)}` : null;
         },
 
         hasNewVersion() {

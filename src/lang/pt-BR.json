@@ -456,6 +456,7 @@
     "tvPanelStatusDown": "Fora do ar",
     "tvPanelStatusMaintenance": "Manutenção",
     "tvPanelStatusUnknown": "Sem dados",
+    "deployBoardNavLink": "Deploys",
     "deployBoardEyebrow": "Winker · Deploys",
     "deployBoardTitle": "Deploys e serviços",
     "deployBoardServices": "Serviços",

@@ -274,6 +274,7 @@
     "tvPanelStatusDown": "Down",
     "tvPanelStatusMaintenance": "Maintenance",
     "tvPanelStatusUnknown": "No data",
+    "deployBoardNavLink": "Deploys",
     "deployBoardEyebrow": "Winker · Deploys",
     "deployBoardTitle": "Deploys and services",
     "deployBoardServices": "Services",
