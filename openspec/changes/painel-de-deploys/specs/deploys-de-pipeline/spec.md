@@ -124,8 +124,10 @@ O projeto de uma release SHALL vir da configuração (lista de releases por proj
 ### Requirement: Configuração por arquivo, segredos por ambiente
 
 A configuração do painel SHALL vir de um arquivo JSON indicado por variável de ambiente, com:
-namespaces observados, projetos (nome, origem `bitbucket` ou `github`, repositório, branch de
-produção e releases `<namespace>/<release>`) e a região do Amplify. Os segredos dos webhooks SHALL
+namespaces observados, projetos (nome, releases `<namespace>/<release>` e, quando o projeto tem
+pipeline no Bitbucket ou no GitHub, origem `bitbucket` ou `github`, repositório e branch de
+produção) e a região do Amplify. Origem, repositório e branch SHALL vir juntos ou faltar juntos;
+projeto com só parte deles SHALL ser recusado, com a mensagem nomeando o campo que falta. Os segredos dos webhooks SHALL
 vir de variáveis de ambiente próprias e SHALL NOT estar no arquivo. Arquivo ausente ou inválido
 SHALL desligar todas as fontes de deploy (cluster, pipelines e Amplify, porque os namespaces e a
 região também vêm dele), com erro legível no log, sem impedir o boot.
@@ -133,6 +135,14 @@ região também vêm dele), com erro legível no log, sem impedir o boot.
 #### Scenario: Arquivo com erro
 - **WHEN** o arquivo de configuração tem JSON inválido
 - **THEN** o Kuma sobe, o log diz qual arquivo e qual erro, e o painel mostra as fontes como "não configuradas"
+
+#### Scenario: Projeto sem pipeline
+- **WHEN** o projeto `agua-gas` está configurado só com nome e a release `microservices-prod/agua-gas`, sem origem, repositório nem branch
+- **THEN** a configuração é aceita e a virada da release aparece no painel
+
+#### Scenario: Origem incompleta
+- **WHEN** um projeto tem `repo` e `branch` mas não tem `source`
+- **THEN** a configuração é recusada, o log nomeia `source` desse projeto, e o painel mostra as fontes como "não configuradas"
 
 ### Requirement: Histórico das últimas 24 horas em memória
 
