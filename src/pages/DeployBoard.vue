@@ -37,7 +37,7 @@
             </header>
 
             <main class="db-main">
-                <DeployColumn :board="board" />
+                <DeployColumn :board="board" :now="now" :format-duration="formatDuration" />
 
                 <section
                     class="db-services"
@@ -157,12 +157,15 @@ export default {
                     stateText: m.since
                         ? this.$t("deployBoardStateFor", [m.label, this.formatDuration(this.now - m.since)])
                         : m.label,
+                    deployLine: this.incidentDeployLine(m),
                 }));
         },
 
-        /** @returns {object[]} Monitors that stay in the grid */
+        /** @returns {object[]} Monitors that stay in the grid, with their deploy mark */
         gridMonitors() {
-            return this.monitors.filter((m) => m.tone !== "down" && m.tone !== "pending");
+            return this.monitors
+                .filter((m) => m.tone !== "down" && m.tone !== "pending")
+                .map((m) => ({ ...m, mark: this.deployMark(m) }));
         },
 
         /** @returns {{tone: string, title: string, sub: string}} Services verdict of the top bar */
@@ -206,7 +209,39 @@ export default {
             if (!anyOn) {
                 return { tone: "muted", title: this.$t("deployBoardNoSourcesShort"), sub: "" };
             }
+            const byState = (state) => this.board.deploys.filter((d) => d.state === state);
+            const verdicts = [
+                ["stuck", "bad", "deployBoardVerdictStuck"],
+                ["noProgress", "warn", "deployBoardVerdictNoProgress"],
+                ["updating", "rolling", "deployBoardVerdictRolling"],
+            ];
+            for (const [state, tone, key] of verdicts) {
+                const deploys = byState(state);
+                if (deploys.length) {
+                    return { tone, title: this.$t(key, [deploys.length]), sub: projectNames(deploys) };
+                }
+            }
+            if (this.board.sources.cluster.state === "stale") {
+                return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
+            }
             return { tone: "ok", title: this.$t("deployBoardNoDeploys"), sub: "" };
+        },
+
+        /**
+         * Deploys that a monitor can be linked to: the ones the cluster is vouching for right now.
+         * With the cluster off or not answering nothing is linked, so nothing is claimed.
+         * @returns {{active: object[], ended: object[]}|null} Deploys by release, or null.
+         */
+        clusterDeploys() {
+            if (!this.board || this.board.sources.cluster.state !== "active") {
+                return null;
+            }
+            const active = this.board.deploys.filter((d) => d.state !== "done");
+            const ended = [
+                ...this.board.deploys.filter((d) => d.state === "done"),
+                ...this.board.history.filter((h) => h.outcome === "done"),
+            ];
+            return { active, ended };
         },
 
         /** @returns {string} Wall clock */
@@ -364,11 +399,59 @@ export default {
             return {
                 id: entry.id,
                 name: monitor?.name || entry.name,
+                releases: deployTags(monitor),
                 tone,
                 label: this.$t(LABEL_KEYS[tone]),
                 since: last ? sinceOf(list) : null,
                 beats: beatsOf(list),
             };
+        },
+
+        /**
+         * Mark of a monitor in the grid. Only the deploy changes it; the colour stays Kuma's.
+         * @param {object} monitor Live monitor.
+         * @returns {string|null} "rolling", "stuck" or null.
+         */
+        deployMark(monitor) {
+            const deploys = this.clusterDeploys;
+            if (!deploys || !monitor.releases.length) {
+                return null;
+            }
+            const touching = deploys.active.filter((d) => touches(d, monitor.releases));
+            if (touching.some((d) => d.state === "stuck")) {
+                return "stuck";
+            }
+            return touching.length ? "rolling" : null;
+        },
+
+        /**
+         * Line about deploys in the highlight of a monitor that is down or pending. Omitted when the
+         * cluster is not being read: "no related deploy" can only be said by who reads the source.
+         * @param {object} monitor Live monitor.
+         * @returns {string|null} The line, or null.
+         */
+        incidentDeployLine(monitor) {
+            const deploys = this.clusterDeploys;
+            if (!deploys) {
+                return null;
+            }
+            if (!monitor.releases.length) {
+                return this.$t("deployBoardIncidentNoTag");
+            }
+            const running = deploys.active.find((d) => touches(d, monitor.releases));
+            if (running) {
+                return this.$t("deployBoardIncidentDeploying", [running.project]);
+            }
+            const start = monitor.since ?? this.now;
+            const before = deploys.ended
+                .filter((d) => touches(d, monitor.releases) && d.endedAt <= start && start - d.endedAt <= RELATED_MS)
+                .sort((a, b) => b.endedAt - a.endedAt)[0];
+            if (before) {
+                const release = before.releases.find((r) => monitor.releases.includes(`${r.namespace}/${r.release}`));
+                const line = this.$t("deployBoardIncidentAfter", [this.formatDuration(start - before.endedAt), release.release]);
+                return before.version ? `${line} · ${before.version}` : line;
+            }
+            return this.$t("deployBoardIncidentNoneRecent");
         },
 
         /**
@@ -389,6 +472,39 @@ export default {
         },
     },
 };
+
+/** A rollout that ended this long before an outage is named in its highlight. */
+const RELATED_MS = 60 * 60 * 1000;
+
+/**
+ * Releases a monitor is linked to, from its Kuma tags named "deploy" ("<namespace>/<release>").
+ * The "amplify/<app>" values belong to the Amplify source and are left out here.
+ * @param {object|undefined} monitor Monitor from the socket list.
+ * @returns {string[]} "<namespace>/<release>" values.
+ */
+function deployTags(monitor) {
+    return (monitor?.tags || [])
+        .filter((t) => t.name === "deploy" && typeof t.value === "string" && t.value.includes("/"))
+        .map((t) => t.value.trim())
+        .filter((v) => !v.startsWith("amplify/"));
+}
+
+/**
+ * @param {object} deploy Deploy or history entry.
+ * @param {string[]} releases "<namespace>/<release>" values of a monitor.
+ * @returns {boolean} Whether the deploy touches any of them.
+ */
+function touches(deploy, releases) {
+    return deploy.releases.some((r) => releases.includes(`${r.namespace}/${r.release}`));
+}
+
+/**
+ * @param {object[]} deploys Deploys.
+ * @returns {string} Their projects, comma separated, without repetition.
+ */
+function projectNames(deploys) {
+    return [...new Set(deploys.map((d) => d.project))].join(", ");
+}
 
 /** Tone → i18n key of its label. */
 const LABEL_KEYS = {
@@ -664,6 +780,17 @@ body.deploy-board-body .Vue-Toastification__container {
 
     .db-verdict-title {
         color: var(--db-bad);
+    }
+}
+
+.db-verdict[data-tone="rolling"] {
+    .db-verdict-dot {
+        background: var(--db-brand);
+        box-shadow: 0 0 0 0.3em color-mix(in srgb, var(--db-brand) 18%, transparent);
+    }
+
+    .db-verdict-title {
+        color: var(--db-brand);
     }
 }
 
