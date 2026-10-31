@@ -36,7 +36,7 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
 ## 4. Estado da virada
 
 - [x] 4.1 Criar `server/deploy-board/rollout-state.js` (puro): dado o retrato dos Deployments de uma release, devolve o estado (atualizando, sem progresso, travado, concluído) com o critério do `kubectl rollout status`, a soma de réplicas atualizadas sobre `spec.replicas`, réplicas 0 como concluído, e a extração dos campos permitidos do objeto (namespace, nome, release, revisão, tags de imagem, réplicas, condições).
-  - O rastreio com estado (linha de base, quem se junta a qual virada, substituição) ficou em `server/deploy-board/cluster-tracker.js`, separado do I/O. Objetos da mesma release alterados até 2 min depois do início são a mesma virada (o helm aplica um a um; o `gateway-cron` são 95 CronJobs). Revisão nova com a anterior ainda virando encerra a anterior como "substituída".
+  - O rastreio com estado (linha de base, quem se junta a qual virada, substituição) ficou em `server/deploy-board/cluster-tracker.js`, separado do I/O. Objetos da mesma release alterados até 2 min depois do início são a mesma virada (o helm aplica um a um; o `gateway-cron` são 95 CronJobs). Revisão nova com a anterior ainda virando encerra a anterior como "substituída". Exceção: a anterior TRAVADA não é substituída — continua travada até um deploy posterior do projeto concluir (cenário "Falha resolvida por deploy novo", que na prática é a mesma release). Deployment recém-criado (sem anotação de revisão, depois "1") é uma virada só.
 - [x] 4.2 Escrever `test/backend-test/deploy-board/test-rollout-state.js`: virada do `winker-prod` com `maxSurge 1`, `ProgressDeadlineExceeded`, release de vários Deployments (`gateway-worker`), réplicas 0, mudança só de réplicas pelo HPA (não é virada), template novo com a mesma tag (é virada), e a asserção de que env e volumes de um Deployment com credencial plantada não sobrevivem à extração.
 
 ## 5. Coletor do cluster
@@ -45,6 +45,7 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
   - Desvios do design: módulo `http`/`https` do Node em vez do axios (o watch é um stream lido linha a linha, que o `https` entrega direto), e `timeoutSeconds` de **60 s**, não 5 min: com 5 min um namespace quieto passaria de 2 min sem resposta e o painel o marcaria "sem leitura" sem motivo. Um watch mudo por 90 s é derrubado e a lista refeita (conexão meio aberta).
 - [x] 5.2 Linha de base no boot (release concluída não vira deploy; release no meio da virada aparece em andamento), relógio de "sem progresso" de 2 min e marca "sem leitura" quando o cluster passa de 2 min sem resposta.
 - [x] 5.3 CronJobs: contar os da release cujo template mudou junto ("N CronJobs na imagem nova"), sem bloquear o "concluído".
+  - Entra na virada quando a TAG da imagem muda, não pela `generation`: suspender o CronJob ou trocar o horário à mão também sobe a geração e não é deploy.
 - [x] 5.4 Escrever `test/backend-test/deploy-board/test-kubernetes-source.js` com servidor HTTP local no papel da API: eventos partidos no meio da linha, 410 seguido de relista sem virada falsa, 403 num namespace sem derrubar os outros, e ausência de token.
 
 ## 6. Deploys do cluster no painel

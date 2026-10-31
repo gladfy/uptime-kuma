@@ -148,6 +148,6 @@ describe("Estado da virada", () => {
         };
         const cronOut = extractCronJob(cron);
         assert.ok(!JSON.stringify(cronOut).includes(secret));
-        assert.deepStrictEqual(cronOut, { namespace: "gateway", name: "c1", release: "gateway-cron", generation: 3, images: ["abc1234"] });
+        assert.deepStrictEqual(cronOut, { namespace: "gateway", name: "c1", release: "gateway-cron", images: ["abc1234"] });
     });
 });

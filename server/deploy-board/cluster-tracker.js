@@ -131,9 +131,7 @@ class ClusterTracker {
             return;
         }
 
-        const changed =
-            !previous ||
-            (kind === "deployments" ? previous.revision !== kept.revision : previous.generation !== kept.generation);
+        const changed = !previous || (kind === "deployments" ? revisionChanged(previous, kept) : imagesChanged(previous, kept));
         if (changed) {
             this.touch(release, kind, kept.name, false);
         }
@@ -155,7 +153,9 @@ class ClusterTracker {
             rollout && rollout.state !== "superseded" && !rollout.changed[kind].has(name) && now - rollout.startedAt < JOIN_MS;
 
         if (!joinable) {
-            if (rollout && rollout.endedAt === null) {
+            // A stuck rollout is left as published: its card stays until a later deploy of the
+            // project finishes, and that is the store's call, not the tracker's.
+            if (rollout && rollout.endedAt === null && rollout.state !== "stuck") {
                 // A newer revision while the previous one was still rolling: that one will never end.
                 rollout.state = "superseded";
                 rollout.endedAt = now;
@@ -269,6 +269,28 @@ function publicRollout(rollout, objects) {
         // Container order kept: the first is the application, the rest are sidecars (nginx).
         images: [...images],
     };
+}
+
+/**
+ * A new Deployment is created without the revision annotation and gets "1" moments later: that is
+ * the same rollout, not a second one.
+ * @param {object} previous Kept Deployment before the event.
+ * @param {object} kept Kept Deployment after it.
+ * @returns {boolean} Whether the revision changed.
+ */
+function revisionChanged(previous, kept) {
+    return previous.revision !== "" && previous.revision !== kept.revision;
+}
+
+/**
+ * A CronJob joins a rollout when its image changes. Not by `generation`: suspending it or changing
+ * its schedule by hand also bumps the generation, and is not a deploy.
+ * @param {object} previous Kept CronJob before the event.
+ * @param {object} kept Kept CronJob after it.
+ * @returns {boolean} Whether the image tags changed.
+ */
+function imagesChanged(previous, kept) {
+    return previous.images.join(",") !== kept.images.join(",");
 }
 
 /**

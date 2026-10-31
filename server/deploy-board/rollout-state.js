@@ -86,8 +86,8 @@ function extractDeployment(obj) {
 }
 
 /**
- * The only fields of a CronJob the board keeps. `generation` moves when the spec changes (a new
- * image in the job template), and is how a CronJob joins a rollout.
+ * The only fields of a CronJob the board keeps. A new image in the job template is how a CronJob
+ * joins a rollout.
  * @param {object} obj CronJob from the API.
  * @returns {object} Kept fields.
  */
@@ -97,7 +97,6 @@ function extractCronJob(obj) {
         namespace: metadata.namespace || "",
         name: metadata.name || "",
         release: releaseOf(metadata),
-        generation: count(metadata.generation),
         images: tagsOf(obj?.spec?.jobTemplate?.spec?.template?.spec),
     };
 }

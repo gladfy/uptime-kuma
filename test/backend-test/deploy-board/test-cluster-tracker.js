@@ -2,6 +2,7 @@ const { describe, test, beforeEach } = require("node:test");
 const assert = require("node:assert");
 const { ClusterTracker, JOIN_MS } = require("../../../server/deploy-board/cluster-tracker");
 const { NO_PROGRESS_MS } = require("../../../server/deploy-board/rollout-state");
+const { DeployBoardStore, DONE_VISIBLE_MS } = require("../../../server/deploy-board/store");
 const { deployment, cronJob } = require("./k8s-fixtures");
 
 const RELEASES = ["condominio/winker-prod", "gateway/gateway-worker", "gateway/gateway-cron", "chat/chatwoot"];
@@ -142,10 +143,43 @@ describe("Viradas por release", () => {
         tracker.replace("gateway", "deployments", [deployment({ namespace: "gateway", name: "w", release: "gateway-worker", replicas: 2 })], true);
         tracker.replace("gateway", "cronjobs", [cronJob({ name: "limpeza", release: "gateway-worker" })], true);
         tracker.apply("deployments", "MODIFIED", deployment({ namespace: "gateway", name: "w", release: "gateway-worker", replicas: 2, revision: 8 }));
-        tracker.apply("cronjobs", "MODIFIED", cronJob({ name: "limpeza", release: "gateway-worker", generation: 2 }));
+        tracker.apply("cronjobs", "MODIFIED", cronJob({ name: "limpeza", release: "gateway-worker", generation: 2, tag: "2222222bbbb" }));
         const r = last("gateway/gateway-worker");
         assert.strictEqual(r.state, "done");
         assert.strictEqual(r.cronJobsUpdated, 1);
+    });
+
+    test("CronJob suspenso ou com horário trocado à mão (geração sobe, imagem não) não é deploy", () => {
+        tracker.replace("gateway", "cronjobs", [cronJob({ name: "c1" })], true);
+        tracker.apply("cronjobs", "MODIFIED", cronJob({ name: "c1", generation: 2 }));
+        assert.deepStrictEqual(published, []);
+        // Controle: a imagem nova, sim.
+        tracker.apply("cronjobs", "MODIFIED", cronJob({ name: "c1", generation: 3, tag: "2222222bbbb" }));
+        assert.strictEqual(last("gateway/gateway-cron").cronJobsUpdated, 1);
+    });
+
+    test("Deployment novo nasce sem revisão e recebe a 1 logo depois: uma virada só, nada substituído", () => {
+        tracker.replace("condominio", "deployments", [], true);
+        const created = deployment({ updated: 0, available: 0, total: 0 });
+        delete created.metadata.annotations["deployment.kubernetes.io/revision"];
+        tracker.apply("deployments", "ADDED", created);
+        tracker.apply("deployments", "MODIFIED", deployment({ revision: 1, updated: 1, available: 0, total: 1 }));
+        assert.strictEqual(new Set(published.map((r) => r.id)).size, 1);
+        assert.ok(published.every((r) => r.state !== "superseded"));
+        // Controle: a revisão 2 depois disso é virada nova.
+        tracker.apply("deployments", "MODIFIED", deployment({ revision: 2, updated: 1, total: 18 }));
+        assert.strictEqual(new Set(published.map((r) => r.id)).size, 2);
+    });
+
+    test("revisão nova sobre virada TRAVADA não a substitui: ela continua publicada como travada", () => {
+        tracker.replace("condominio", "deployments", [deployment({})], true);
+        const stuck = [{ type: "Progressing", status: "False", reason: "ProgressDeadlineExceeded" }];
+        tracker.apply("deployments", "MODIFIED", deployment({ revision: 8, updated: 3, total: 18, conditions: stuck }));
+        const first = last("condominio/winker-prod").id;
+        clock += 20 * 60 * 1000;
+        tracker.apply("deployments", "MODIFIED", deployment({ revision: 9, updated: 1, total: 18 }));
+        assert.deepStrictEqual(published.filter((r) => r.id === first).map((r) => r.state), ["stuck"]);
+        assert.strictEqual(last("condominio/winker-prod").state, "updating");
     });
 
     test("sem progresso por 2 min vira 'noProgress' no tick, e volta a 'updating' quando anda", () => {
@@ -168,5 +202,36 @@ describe("Viradas por release", () => {
 
     test("a janela que junta objetos numa virada é curta", () => {
         assert.ok(JOIN_MS <= 2 * 60 * 1000);
+    });
+});
+
+describe("Rastreador ligado ao estado do painel", () => {
+    test("connector-access travado e deploy posterior da MESMA release: o travado fica até o novo concluir, e os dois vão para 'Hoje'", () => {
+        let clock = 1_000_000;
+        const store = new DeployBoardStore({ now: () => clock });
+        store.setProjects([{ name: "connector-server", source: "bitbucket", releases: [{ namespace: "connector", release: "connector-access" }] }]);
+        const tracker = new ClusterTracker({ releases: ["connector/connector-access"], now: () => clock, onRollout: (r) => store.upsertRollout(r) });
+        const access = (o) => deployment({ namespace: "connector", name: "connector-access", release: "connector-access", replicas: 4, ...o });
+        const stuck = [{ type: "Progressing", status: "False", reason: "ProgressDeadlineExceeded" }];
+
+        tracker.replace("connector", "deployments", [access({})], true);
+        tracker.apply("deployments", "MODIFIED", access({ revision: 8, tag: "aaaaaaa1111", updated: 2, available: 4, total: 5, conditions: stuck }));
+        clock += 20 * 60 * 1000;
+        tracker.apply("deployments", "MODIFIED", access({ revision: 9, tag: "bbbbbbb2222", updated: 1, available: 4, total: 5 }));
+
+        let snap = store.snapshot();
+        assert.deepStrictEqual(snap.deploys.map((d) => `${d.version}:${d.state}`), ["aaaaaaa:stuck", "bbbbbbb:updating"]);
+        assert.deepStrictEqual(snap.history, []);
+
+        clock += 5 * 60 * 1000;
+        tracker.apply("deployments", "MODIFIED", access({ revision: 9, tag: "bbbbbbb2222" }));
+        snap = store.snapshot();
+        assert.deepStrictEqual(snap.deploys.map((d) => `${d.version}:${d.state}`), ["bbbbbbb:done"]);
+        assert.deepStrictEqual(snap.history.map((h) => `${h.version}:${h.outcome}`), ["aaaaaaa:stuck"]);
+
+        clock += DONE_VISIBLE_MS;
+        store.tick();
+        assert.deepStrictEqual(store.snapshot().history.map((h) => `${h.version}:${h.outcome}`), ["bbbbbbb:done", "aaaaaaa:stuck"]);
+        store.close();
     });
 });
