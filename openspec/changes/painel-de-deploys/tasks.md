@@ -60,7 +60,8 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
 ## 7. Infraestrutura da fase 2 (repositório `infrastructure`, chart `helm-packages/tools/uptimekuma`)
 
 - [x] 7.1 ServiceAccount `uptime-kuma` e `serviceAccountName` no Deployment (hoje usa a `default`).
-- [ ] 7.2 ClusterRole `uptime-kuma-deploy-board` com `get`, `list` e `watch` em `apps/deployments` e `batch/cronjobs`, ligada por RoleBinding em `condominio`, `gateway`, `connector`, `chat` e `monitor-infra`. Conferir com `kubectl auth can-i --as=system:serviceaccount:monitor-infra:uptime-kuma` que ela lê Deployments nesses namespaces e não lê Secrets em nenhum.
+- [x] 7.2 ClusterRole `uptime-kuma-deploy-board` com `get`, `list` e `watch` em `apps/deployments` e `batch/cronjobs`, ligada por RoleBinding em `condominio`, `gateway`, `connector`, `chat` e `monitor-infra`. Conferir com `kubectl auth can-i --as=system:serviceaccount:monitor-infra:uptime-kuma` que ela lê Deployments nesses namespaces e não lê Secrets em nenhum.
+  - 31/10/2026, depois do deploy do chart 0.2.0: nos cinco namespaces, `list`/`watch` de Deployments e CronJobs = yes; `get secrets`, `list pods`, `patch deployments`, `delete pods` e `create pods/exec` = no. Fora deles (`kube-system`, `ingress`, `-A`, nós, Secrets do cluster) = no. Log do pod: "Watching 5 namespaces for 12 releases", sem 403.
 - [x] 7.3 ConfigMap com `namespaces` e `projects` (sem segredos) e `DEPLOY_BOARD_CONFIG` no Deployment. Publicar a versão nova do chart.
   - Chart 0.2.0 (branch `feat/uptimekuma-painel-de-deploys` do `infrastructure`): `serviceaccount.yaml`, `rbac-deploy-board.yaml` (recusa ligar o RBAC na ServiceAccount `default`), `configmap-deploy-board.yaml` gerado de `deployBoard.namespaces`/`projects` do values (uma lista só para RoleBinding e configuração), checksum da configuração no pod. `CHART_VERSION` da pipeline do fork em 0.2.0. `helm lint`, `helm template`, `kubectl apply --dry-run=server` e o `config.json` renderizado passando no validador do Kuma.
 
@@ -70,6 +71,8 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
   - Rodada local de 31/10/2026: build ok, lint 0 erros (72 avisos, nenhum em arquivo do painel), langs ok, test-backend 347/348. O vermelho foi `monitors/test-rabbitmq.js` (o container não subiu em 60 s com a máquina carregada); isolado, 9/9.
   - Conferência no navegador com o estado gerado pelos módulos reais (rastreador + store) a partir de Deployments de exemplo: ordem dos cartões, rótulos sem "Sem pipeline", `9/17`, marcas "em deploy"/"virada travada" sem mudar a cor, linha do destaque ("Começou 45 min depois da virada de gateway-prod · 4c1d9e0" e "não tem deploy associado"), cluster sem leitura apagando marcas e linhas, 1920 × 1080 sem corte e 400 px sem rolagem horizontal.
 - [ ] 8.2 Deploy, marcar os monitores com a tag `deploy` e acompanhar o próximo merge de um projeto do Bitbucket no painel: a virada aparece por release, sem o rótulo "Sem pipeline", e conclui junto com o `kubectl rollout status`.
+  - 31/10/2026: deploy feito (chart 0.2.0, imagem `2.5.3-winker.18`). Tag `deploy` posta pela API do Kuma em 8 monitores da status page `winker`: Web → `condominio/winker-prod`, Web integração → `condominio/winker-integration`, Gateway (API Geral) → `gateway/gateway-prod`, Gateway Integration → `gateway/gateway-integration`, Chat → `chat/chatwoot`, Connector Access/Consumer/Queue → `connector/connector-*`. Convite e Portaria Web ficam para a fase 4 (Amplify); Connector Geral ficou sem tag até confirmar se aponta para o EB. Falta acompanhar o próximo merge.
+  - Botão "Deploys" no cabeçalho do Kuma (branch `feat/botao-painel-de-deploys`), abre `/deploys/winker`.
 
 # Fase 3 — Pipelines
 
