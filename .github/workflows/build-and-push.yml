@@ -145,7 +145,7 @@ jobs:
       # este numero. Precedente do que acontece sem isso: o pipeline do Chatwoot
       # fixa --version 1.1.18, alguem publicou 1.1.19 e reverteu com push --force,
       # e ate hoje o index.yaml anuncia uma versao que nao existe no bucket.
-      CHART_VERSION: "0.1.1"
+      CHART_VERSION: "0.2.0"
       # >= 3.17: e a primeira com --take-ownership. Sem ela, o primeiro upgrade
       # sobre objetos criados por `kubectl apply` falha com "invalid ownership
       # metadata" e o conserto vira anotar recurso de producao na mao.

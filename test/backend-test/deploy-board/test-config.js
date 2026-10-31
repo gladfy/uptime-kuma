@@ -138,6 +138,15 @@ describe("Configuração do painel de deploys", () => {
         board.store.close();
     });
 
+    test("configuração válida fora do Kubernetes: o cluster fica não configurado e o boot segue", () => {
+        const file = writeFile("ok-fora.json", JSON.stringify(VALID));
+        const board = new DeployBoard({ env: { DEPLOY_BOARD_CONFIG: file } });
+        assert.doesNotThrow(() => board.start(null));
+        assert.strictEqual(board.configStatus, "ok");
+        assert.strictEqual(board.getSnapshot().sources.cluster.state, "unconfigured");
+        board.stop();
+    });
+
     test("start() é idempotente: a difusão é registrada uma vez só", () => {
         const board = new DeployBoard({ env: {} });
         const io = { sockets: { sockets: new Map() } };

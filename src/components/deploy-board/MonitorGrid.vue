@@ -14,6 +14,9 @@
                 <span class="db-cell-name">{{ monitor.name }}</span>
                 <span class="db-cell-row">
                     <span class="db-cell-state">{{ monitor.label }}</span>
+                    <span v-if="monitor.mark" class="db-cell-mark" :class="'is-' + monitor.mark">
+                        {{ $t(monitor.mark === "stuck" ? "deployBoardMarkStuck" : "deployBoardMarkRolling") }}
+                    </span>
                     <span class="db-beats" aria-hidden="true">
                         <i v-for="(beat, i) in monitor.beats" :key="i" :class="'b-' + beat"></i>
                     </span>
@@ -309,6 +312,24 @@ export default {
     color: var(--db-ok);
 }
 
+/* A deploy mark sits beside the state and never recolours it: health is Kuma's alone. */
+.db-cell-mark {
+    flex-shrink: 0;
+    padding: 0.05em 0.45em;
+    border-radius: 0.6em;
+    font-size: 0.72em;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--db-brand);
+    border: 1px solid color-mix(in srgb, var(--db-brand) 45%, transparent);
+
+    &.is-stuck {
+        color: var(--db-bad);
+        border-color: color-mix(in srgb, var(--db-bad) 45%, transparent);
+    }
+}
+
+/* Right-aligned and clipped: when a mark takes room, the oldest bars give way, the newest stay. */
 .db-beats {
     display: flex;
     justify-content: flex-end;
@@ -316,6 +337,7 @@ export default {
     flex: 1;
     min-width: 0;
     height: 0.9em;
+    overflow: hidden;
 
     i {
         flex: 0 1 5px;

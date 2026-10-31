@@ -5,6 +5,7 @@
                 <span class="db-incident-name">{{ monitor.name }}</span>
                 <span class="db-incident-state">{{ monitor.stateText }}</span>
             </div>
+            <span v-if="monitor.deployLine" class="db-incident-deploy">{{ monitor.deployLine }}</span>
             <span v-if="!compact" class="db-beats" aria-hidden="true">
                 <i v-for="(beat, i) in monitor.beats" :key="i" :class="'b-' + beat"></i>
             </span>
@@ -21,7 +22,7 @@ const COMPACT_ABOVE = 6;
 
 export default {
     props: {
-        /** Monitors that are down or pending: { id, name, tone, stateText, beats } */
+        /** Monitors that are down or pending: { id, name, tone, stateText, deployLine, beats } */
         monitors: {
             type: Array,
             required: true,
@@ -94,6 +95,11 @@ export default {
 
 .is-pending .db-incident-state {
     color: var(--db-warn);
+}
+
+.db-incident-deploy {
+    font-size: 0.9em;
+    color: var(--db-ink-2);
 }
 
 .db-beats {

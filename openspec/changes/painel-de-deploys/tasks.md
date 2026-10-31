@@ -26,7 +26,8 @@ Entra em produção sem nenhuma infraestrutura nova. As fontes de deploy aparece
 - [x] 3.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes.
   - Rodada local de 31/10/2026: build ok, lint 0 erros (72 avisos, nenhum em arquivo desta mudança), langs ok, test-backend 302/303. O único vermelho é `monitors/test-mssql.js`, interrompido por esperar o download da imagem do MSSQL; o MSSQL não é usado na Winker e o teste não toca no painel.
 - [x] 3.2 Localmente: sem login, a página mostra só o login e o socket não recebe dado do painel; com login, numa janela de 1920 × 1080 com a status page `winker`, os 34 monitores cabem sem paginar; com 400 px, as colunas empilham sem rolagem horizontal.
-- [ ] 3.3 Merge no master do fork, deploy pela pipeline e conferência na TV: `/deploys/winker` logado, monitores ao vivo, queda subindo para o destaque.
+- [x] 3.3 Merge no master do fork, deploy pela pipeline e conferência na TV: `/deploys/winker` logado, monitores ao vivo, queda subindo para o destaque.
+  - 31/10/2026: PR #4, pipeline 41166193128 verde, pod `2.5.3-winker.16` pronto, log com "DEPLOY_BOARD_CONFIG is not set; every deploy source is off.", `/deploys/winker` e `/status/winker/tv` respondendo 200. A olhada na TV ficou com o Erik.
 
 # Fase 2 — Virada no cluster
 
@@ -34,33 +35,39 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
 
 ## 4. Estado da virada
 
-- [ ] 4.1 Criar `server/deploy-board/rollout-state.js` (puro): dado o retrato dos Deployments de uma release, devolve o estado (atualizando, sem progresso, travado, concluído) com o critério do `kubectl rollout status`, a soma de réplicas atualizadas sobre `spec.replicas`, réplicas 0 como concluído, e a extração dos campos permitidos do objeto (namespace, nome, release, revisão, tags de imagem, réplicas, condições).
-- [ ] 4.2 Escrever `test/backend-test/deploy-board/test-rollout-state.js`: virada do `winker-prod` com `maxSurge 1`, `ProgressDeadlineExceeded`, release de vários Deployments (`gateway-worker`), réplicas 0, mudança só de réplicas pelo HPA (não é virada), template novo com a mesma tag (é virada), e a asserção de que env e volumes de um Deployment com credencial plantada não sobrevivem à extração.
+- [x] 4.1 Criar `server/deploy-board/rollout-state.js` (puro): dado o retrato dos Deployments de uma release, devolve o estado (atualizando, sem progresso, travado, concluído) com o critério do `kubectl rollout status`, a soma de réplicas atualizadas sobre `spec.replicas`, réplicas 0 como concluído, e a extração dos campos permitidos do objeto (namespace, nome, release, revisão, tags de imagem, réplicas, condições).
+  - O rastreio com estado (linha de base, quem se junta a qual virada, substituição) ficou em `server/deploy-board/cluster-tracker.js`, separado do I/O. Objetos da mesma release alterados até 2 min depois do início são a mesma virada (o helm aplica um a um; o `gateway-cron` são 95 CronJobs). Revisão nova com a anterior ainda virando encerra a anterior como "substituída".
+- [x] 4.2 Escrever `test/backend-test/deploy-board/test-rollout-state.js`: virada do `winker-prod` com `maxSurge 1`, `ProgressDeadlineExceeded`, release de vários Deployments (`gateway-worker`), réplicas 0, mudança só de réplicas pelo HPA (não é virada), template novo com a mesma tag (é virada), e a asserção de que env e volumes de um Deployment com credencial plantada não sobrevivem à extração.
 
 ## 5. Coletor do cluster
 
-- [ ] 5.1 Criar `server/deploy-board/kubernetes-source.js`: token e CA da ServiceAccount, `https.Agent` com o CA, `list` + `watch` por namespace para `apps/v1 deployments` e `batch/v1 cronjobs`, leitura do stream linha a linha, `timeoutSeconds` de 5 min, reabertura com espera de 1 s a 60 s, relista no 410, 403 por namespace como erro nomeado. Sem token = fonte "não configurada".
-- [ ] 5.2 Linha de base no boot (release concluída não vira deploy; release no meio da virada aparece em andamento), relógio de "sem progresso" de 2 min e marca "sem leitura" quando o cluster passa de 2 min sem resposta.
-- [ ] 5.3 CronJobs: contar os da release cujo template mudou junto ("N CronJobs na imagem nova"), sem bloquear o "concluído".
-- [ ] 5.4 Escrever `test/backend-test/deploy-board/test-kubernetes-source.js` com servidor HTTP local no papel da API: eventos partidos no meio da linha, 410 seguido de relista sem virada falsa, 403 num namespace sem derrubar os outros, e ausência de token.
+- [x] 5.1 Criar `server/deploy-board/kubernetes-source.js`: token e CA da ServiceAccount, `https.Agent` com o CA, `list` + `watch` por namespace para `apps/v1 deployments` e `batch/v1 cronjobs`, leitura do stream linha a linha, `timeoutSeconds` de 5 min, reabertura com espera de 1 s a 60 s, relista no 410, 403 por namespace como erro nomeado. Sem token = fonte "não configurada".
+  - Desvios do design: módulo `http`/`https` do Node em vez do axios (o watch é um stream lido linha a linha, que o `https` entrega direto), e `timeoutSeconds` de **60 s**, não 5 min: com 5 min um namespace quieto passaria de 2 min sem resposta e o painel o marcaria "sem leitura" sem motivo. Um watch mudo por 90 s é derrubado e a lista refeita (conexão meio aberta).
+- [x] 5.2 Linha de base no boot (release concluída não vira deploy; release no meio da virada aparece em andamento), relógio de "sem progresso" de 2 min e marca "sem leitura" quando o cluster passa de 2 min sem resposta.
+- [x] 5.3 CronJobs: contar os da release cujo template mudou junto ("N CronJobs na imagem nova"), sem bloquear o "concluído".
+- [x] 5.4 Escrever `test/backend-test/deploy-board/test-kubernetes-source.js` com servidor HTTP local no papel da API: eventos partidos no meio da linha, 410 seguido de relista sem virada falsa, 403 num namespace sem derrubar os outros, e ausência de token.
 
 ## 6. Deploys do cluster no painel
 
-- [ ] 6.1 No store: deploy a partir da virada (identidade `namespace/release` + revisão, agrupado por projeto pela configuração), rótulo derivado da virada, sem seção de pipeline e sem "Sem pipeline" enquanto a fonte de pipeline do projeto estiver desligada; ciclo de vida (concluído some após 10 min; travado sai quando um deploy posterior do projeto conclui) e histórico de 24 h com teto de 500.
-- [ ] 6.2 Ampliar `test-store.js`: rótulos com a fonte de pipeline desligada, ciclo de vida, teto do histórico e campos do `snapshot()`.
-- [ ] 6.3 Criar `src/components/deploy-board/DeployCard.vue` (linhas de release com `<atualizados>/<réplicas>` e estado, linha de CronJobs, rótulos da spec), a ordem dos cartões (falha, travado, andamento, concluído) e a lista "Hoje".
-- [ ] 6.4 Marca "em deploy"/"virada travada" pela tag `deploy` dos monitores e a linha de correlação do destaque, só com a fonte da release ativa. Deploy nunca muda a cor do monitor.
-- [ ] 6.5 Chaves de i18n novas da fase, no meio dos dois json.
+- [x] 6.1 No store: deploy a partir da virada (identidade `namespace/release` + revisão, agrupado por projeto pela configuração), rótulo derivado da virada, sem seção de pipeline e sem "Sem pipeline" enquanto a fonte de pipeline do projeto estiver desligada; ciclo de vida (concluído some após 10 min; travado sai quando um deploy posterior do projeto conclui) e histórico de 24 h com teto de 500.
+  - Viradas de releases diferentes do mesmo projeto formam um deploy só quando a tag tem o mesmo SHA; sem SHA (chat `prod`), quando começam até 20 min depois do deploy aberto do projeto. Release que não está em nenhum projeto (render-chrome, metrics-server, xhprof...) não aparece, ainda que o namespace seja observado. A tag mostrada é a do primeiro container (o segundo costuma ser o nginx).
+- [x] 6.2 Ampliar `test-store.js`: rótulos com a fonte de pipeline desligada, ciclo de vida, teto do histórico e campos do `snapshot()`.
+- [x] 6.3 Criar `src/components/deploy-board/DeployCard.vue` (linhas de release com `<atualizados>/<réplicas>` e estado, linha de CronJobs, rótulos da spec), a ordem dos cartões (falha, travado, andamento, concluído) e a lista "Hoje".
+- [x] 6.4 Marca "em deploy"/"virada travada" pela tag `deploy` dos monitores e a linha de correlação do destaque, só com a fonte da release ativa. Deploy nunca muda a cor do monitor.
+- [x] 6.5 Chaves de i18n novas da fase, no meio dos dois json.
 
 ## 7. Infraestrutura da fase 2 (repositório `infrastructure`, chart `helm-packages/tools/uptimekuma`)
 
-- [ ] 7.1 ServiceAccount `uptime-kuma` e `serviceAccountName` no Deployment (hoje usa a `default`).
+- [x] 7.1 ServiceAccount `uptime-kuma` e `serviceAccountName` no Deployment (hoje usa a `default`).
 - [ ] 7.2 ClusterRole `uptime-kuma-deploy-board` com `get`, `list` e `watch` em `apps/deployments` e `batch/cronjobs`, ligada por RoleBinding em `condominio`, `gateway`, `connector`, `chat` e `monitor-infra`. Conferir com `kubectl auth can-i --as=system:serviceaccount:monitor-infra:uptime-kuma` que ela lê Deployments nesses namespaces e não lê Secrets em nenhum.
-- [ ] 7.3 ConfigMap com `namespaces` e `projects` (sem segredos) e `DEPLOY_BOARD_CONFIG` no Deployment. Publicar a versão nova do chart.
+- [x] 7.3 ConfigMap com `namespaces` e `projects` (sem segredos) e `DEPLOY_BOARD_CONFIG` no Deployment. Publicar a versão nova do chart.
+  - Chart 0.2.0 (branch `feat/uptimekuma-painel-de-deploys` do `infrastructure`): `serviceaccount.yaml`, `rbac-deploy-board.yaml` (recusa ligar o RBAC na ServiceAccount `default`), `configmap-deploy-board.yaml` gerado de `deployBoard.namespaces`/`projects` do values (uma lista só para RoleBinding e configuração), checksum da configuração no pod. `CHART_VERSION` da pipeline do fork em 0.2.0. `helm lint`, `helm template`, `kubectl apply --dry-run=server` e o `config.json` renderizado passando no validador do Kuma.
 
 ## 8. Entrega da fase 2
 
-- [ ] 8.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes.
+- [x] 8.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes.
+  - Rodada local de 31/10/2026: build ok, lint 0 erros (72 avisos, nenhum em arquivo do painel), langs ok, test-backend 347/348. O vermelho foi `monitors/test-rabbitmq.js` (o container não subiu em 60 s com a máquina carregada); isolado, 9/9.
+  - Conferência no navegador com o estado gerado pelos módulos reais (rastreador + store) a partir de Deployments de exemplo: ordem dos cartões, rótulos sem "Sem pipeline", `9/17`, marcas "em deploy"/"virada travada" sem mudar a cor, linha do destaque ("Começou 45 min depois da virada de gateway-prod · 4c1d9e0" e "não tem deploy associado"), cluster sem leitura apagando marcas e linhas, 1920 × 1080 sem corte e 400 px sem rolagem horizontal.
 - [ ] 8.2 Deploy, marcar os monitores com a tag `deploy` e acompanhar o próximo merge de um projeto do Bitbucket no painel: a virada aparece por release, sem o rótulo "Sem pipeline", e conclui junto com o `kubectl rollout status`.
 
 # Fase 3 — Pipelines

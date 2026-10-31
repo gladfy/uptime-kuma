@@ -102,7 +102,9 @@ configuração (exigiria deploy do Kuma para cada ajuste) e casar por nome (frá
 
 **Decisão:** `server/deploy-board/kubernetes-source.js` fala com a API do Kubernetes pelo endereço
 interno (`KUBERNETES_SERVICE_HOST`/`PORT`), com o token e o CA montados da ServiceAccount, usando o
-`axios` que já existe e um `https.Agent` com esse CA. Para cada namespace configurado e cada recurso
+módulo `https` do Node e um `https.Agent` com esse CA (o watch é um stream lido linha a linha, que o
+`https` entrega direto; o axios não acrescentava nada). O token é relido a cada pedido, porque o
+kubelet o renova. Para cada namespace configurado e cada recurso
 (`apps/v1 deployments`, `batch/v1 cronjobs`): `list` para a linha de base e `watch` com
 `resourceVersion`, lendo o stream linha a linha. Fechou ou 410: lista de novo e retoma, com espera
 crescente entre tentativas (1 s até 60 s). Só os campos da spec "Guardar só o necessário" saem do
@@ -237,9 +239,11 @@ painel com todas as fontes "sem leitura".
 
 ## Risks / Trade-offs
 
-- [O watch do Kubernetes cai em silêncio (conexão viva sem eventos)] → o servidor fecha e reabre o
-  watch com `timeoutSeconds` de 5 minutos, e o painel marca o cluster como sem leitura se passar de
-  2 minutos sem resposta nem do watch nem da reabertura.
+- [O watch do Kubernetes cai em silêncio (conexão viva sem eventos)] → o servidor pede o watch com
+  `timeoutSeconds` de 60 s (assim um namespace quieto responde ao menos uma vez por minuto), derruba
+  o que ficar 90 s mudo e lista de novo, e o painel marca o namespace como sem leitura se passar de
+  2 minutos sem resposta. Com 5 min de `timeoutSeconds`, um namespace sem mudança passaria dos 2 min
+  e seria marcado sem leitura sem estar.
 - [Correlação por janela erra quando dois deploys do mesmo projeto se sobrepõem] → só acontece em
   projetos de tag sem SHA (chat e o próprio Kuma), que têm deploy raro; o cartão mostra o SHA para
   conferência. Corrigir de vez é publicar o SHA na tag desses dois projetos.
