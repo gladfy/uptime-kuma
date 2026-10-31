@@ -54,6 +54,7 @@ import {
     faCertificate,
     faFolder,
     faFolderOpen,
+    faRocket,
 } from "@fortawesome/free-solid-svg-icons";
 
 library.add(
@@ -105,6 +106,7 @@ library.add(
     faCertificate,
     faFolder,
     faFolderOpen,
+    faRocket,
 );
 
 export { FontAwesomeIcon };
