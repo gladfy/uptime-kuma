@@ -31,6 +31,7 @@ const DEPLOY_PUBLIC_FIELDS = [
     "releases",
     "rollback",
     "pipeline",
+    "steps",
 ];
 const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "missed", "releases"];
 
@@ -482,6 +483,7 @@ class DeployBoardStore {
         const cluster = this.sources.cluster.state;
         const rollouts = liveRollouts(deploy);
         const missed = isMissed(rollouts);
+        const noRollout = this.noRollout(deploy);
         return {
             id: deploy.id,
             project: deploy.project,
@@ -491,7 +493,7 @@ class DeployBoardStore {
                 pipelineConfigured,
                 hasPipeline: deploy.pipeline !== null,
                 missed,
-                noRollout: this.noRollout(deploy),
+                noRollout,
             }),
             missed,
             startedAt: deploy.startedAt,
@@ -513,6 +515,7 @@ class DeployBoardStore {
             rollback:
                 ROLLBACK_STATES.includes(deploy.state) && rollouts.length > 0 ? this.rollbackOf(deploy, rollouts) : null,
             pipeline: deploy.pipeline ? publicPipeline(deploy.pipeline) : null,
+            steps: deploySteps(deploy, { pipelineConfigured, clusterConfigured: this.clusterConfigured(), noRollout }),
         };
     }
 
@@ -809,6 +812,60 @@ function deployLabel(state, { pipelineConfigured, hasPipeline, missed = false, n
         return "noPipeline";
     }
     return STATE_LABELS[state];
+}
+
+/** Where each deploy state stands among the steps, and how that step is going. */
+const STATE_STEPS = {
+    built: ["built", "current"],
+    updating: ["rollout", "current"],
+    noProgress: ["rollout", "warn"],
+    stuck: ["rollout", "failed"],
+    superseded: ["rollout", "warn"],
+    done: ["live", "done"],
+    failed: ["pipeline", "failed"],
+    cancelled: ["pipeline", "warn"],
+};
+
+/**
+ * The steps of a deploy, from the merge to "No ar", for the card to say "step N of M". A project
+ * has only the steps its sources can see: without a pipeline source it starts at the rollout,
+ * without the cluster a green pipeline is the end.
+ *
+ * The steps before the current one are "done", or "skipped" when the project has a pipeline and
+ * this deploy came without one (by hand, or while the board was down).
+ * @param {object} deploy Internal deploy.
+ * @param {object} options Options.
+ * @param {boolean} options.pipelineConfigured Whether the project's pipeline source is configured.
+ * @param {boolean} options.clusterConfigured Whether there is a cluster source.
+ * @param {boolean} options.noRollout Whether it is a green pipeline that no rollout followed.
+ * @returns {{key: string, status: string}[]|null} Steps, each "done", "skipped", "current", "warn",
+ * "failed" or "pending"; null when the state has no place among them.
+ */
+function deploySteps(deploy, { pipelineConfigured, clusterConfigured, noRollout }) {
+    const withPipeline = pipelineConfigured || deploy.pipeline !== null;
+    const keys = [
+        ...(withPipeline ? ["merge", "pipeline"] : []),
+        ...(clusterConfigured ? [...(withPipeline ? ["built"] : []), "rollout"] : []),
+        "live",
+    ];
+    let [current, status] = STATE_STEPS[deploy.state] || [
+        deploy.pipeline && pipelineState(deploy.pipeline) !== "merged" ? "pipeline" : "merge",
+        "current",
+    ];
+    if (noRollout) {
+        [current, status] = ["rollout", "warn"];
+    }
+    const at = keys.indexOf(current);
+    if (at === -1) {
+        return null;
+    }
+    const before = deploy.pipeline === null ? ["merge", "pipeline", "built"] : [];
+    return keys.map((key, i) => {
+        if (i < at) {
+            return { key, status: before.includes(key) ? "skipped" : "done" };
+        }
+        return { key, status: i === at ? status : "pending" };
+    });
 }
 
 /**
@@ -1177,5 +1234,6 @@ module.exports = {
     MERGE_WAIT_MS,
     RUN_SILENT_MS,
     deployLabel,
+    deploySteps,
     DeployBoardStore,
 };

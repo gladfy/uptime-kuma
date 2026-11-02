@@ -553,6 +553,71 @@ describe("Pipeline e virada viram um deploy só", () => {
         ]);
     });
 
+    /**
+     * @param {string} project Project of the card.
+     * @returns {string} Its steps, as "key:status" separated by spaces.
+     */
+    function steps(project = "condominio") {
+        return cards()
+            .find((c) => c.project === project)
+            .steps.map((s) => `${s.key}:${s.status}`)
+            .join(" ");
+    }
+
+    test("etapas do condominio: merge, pipeline, build, virada e No ar, uma de cada vez", () => {
+        merge("condominio", SHA);
+        assert.strictEqual(steps(), "merge:current pipeline:pending built:pending rollout:pending live:pending");
+        run("condominio", SHA, "queued");
+        assert.strictEqual(steps(), "merge:done pipeline:current built:pending rollout:pending live:pending");
+        run("condominio", SHA, "running");
+        assert.strictEqual(steps(), "merge:done pipeline:current built:pending rollout:pending live:pending");
+        run("condominio", SHA, "success");
+        assert.strictEqual(steps(), "merge:done pipeline:done built:current rollout:pending live:pending");
+        rollout("condominio", "winker-integration", SHA);
+        assert.strictEqual(steps(), "merge:done pipeline:done built:done rollout:current live:pending");
+        rollout("condominio", "winker-integration", SHA, { state: "done" });
+        assert.strictEqual(steps(), "merge:done pipeline:done built:done rollout:done live:done");
+    });
+
+    test("etapa que deu errado fica marcada onde parou", () => {
+        run("condominio", SHA, "failed");
+        assert.strictEqual(steps(), "merge:done pipeline:failed built:pending rollout:pending live:pending");
+        run("chat", SHA, "stopped");
+        assert.strictEqual(steps("chat"), "merge:done pipeline:warn built:pending rollout:pending live:pending");
+        run("uptime-kuma", SHA2, "success");
+        tick(NO_ROLLOUT_MS);
+        store.tick();
+        assert.strictEqual(steps("uptime-kuma"), "merge:done pipeline:done built:done rollout:warn live:pending");
+    });
+
+    test("virada sem progresso e travada: a etapa da virada avisa e falha", () => {
+        run("condominio", SHA, "success");
+        rollout("condominio", "winker-prod", SHA, { state: "noProgress" });
+        assert.strictEqual(steps(), "merge:done pipeline:done built:done rollout:warn live:pending");
+        rollout("condominio", "winker-prod", SHA, { state: "stuck" });
+        assert.strictEqual(steps(), "merge:done pipeline:done built:done rollout:failed live:pending");
+    });
+
+    test("virada sem pipeline: quem tem pipeline pula as três primeiras; projeto sem origem começa na virada", () => {
+        rollout("condominio", "winker-prod", SHA);
+        assert.strictEqual(cards()[0].label, "noPipeline");
+        assert.strictEqual(steps(), "merge:skipped pipeline:skipped built:skipped rollout:current live:pending");
+        rollout("microservices-prod", "agua-gas", "1.2.3");
+        assert.strictEqual(steps("agua-gas"), "rollout:current live:pending");
+    });
+
+    test("fonte desligada encolhe as etapas: sem pipeline começa na virada, sem cluster termina na pipeline verde", () => {
+        store.setSource("bitbucket", "unconfigured");
+        rollout("condominio", "winker-prod", SHA);
+        assert.strictEqual(steps(), "rollout:current live:pending");
+        store.setSource("github", "active");
+        store.setSource("cluster", "unconfigured");
+        run("chat", SHA2, "running");
+        assert.strictEqual(steps("chat"), "merge:done pipeline:current live:pending");
+        run("chat", SHA2, "success");
+        assert.strictEqual(steps("chat"), "merge:done pipeline:done live:done");
+    });
+
     test("depois de um reinício, o histórico carregado do banco traz a pipeline junto", () => {
         merge("condominio", SHA);
         run("condominio", SHA, "success");

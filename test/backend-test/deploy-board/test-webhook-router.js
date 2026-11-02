@@ -26,6 +26,7 @@ describe("Roteador dos webhooks", () => {
     let received;
     let lines;
     let ip;
+    let ipCount = 0;
     const original = {};
 
     before(async () => {
@@ -58,7 +59,9 @@ describe("Roteador dos webhooks", () => {
     beforeEach(() => {
         received = [];
         lines = [];
-        ip = `10.0.0.${Math.floor(Math.random() * 250) + 1}`;
+        // One address per test: a drawn one could fall on the address the limit test used up.
+        ipCount += 1;
+        ip = `10.2.${Math.floor(ipCount / 250)}.${(ipCount % 250) + 1}`;
     });
 
     /**
