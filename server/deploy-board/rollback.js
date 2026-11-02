@@ -55,7 +55,8 @@ function beforeAsDeployments(before) {
  * The previous version is the latest finished deploy of the same release whose images differ from
  * this one (a deploy of the same images again is not a version to go back to). Without one in the
  * history (7 days), it is what was running when this rollout began, when the board saw it begin.
- * A rollout that changed no image (a restart) has nothing to go back.
+ * A rollout whose tags are the ones running before it ("unchanged": a restart, or a reused tag like
+ * the chat's "prod") has nothing a tag can go back to.
  * @param {object} rollout Rollout of the release, with `deployments`, `before` and `cronJobsUpdated`.
  * @param {object[]} candidates Earlier finished rollouts of the same release, newest first.
  * @returns {object} { namespace, release, status, previous, setImage, rolloutStatus, cronJobs },

@@ -25,6 +25,7 @@ export class SoundPlayer {
         this.queue = [];
         this.playing = false;
         this.played = new Set();
+        this.current = null;
     }
 
     /**
@@ -84,8 +85,12 @@ export class SoundPlayer {
      */
     stop() {
         this.queue = [];
-        for (const a of Object.values(this.audio || {})) {
-            a.pause();
+        if (this.current) {
+            // Without this, the stopped sound's handler would fire on the next play of the same
+            // recording and start a second sound on top of it.
+            this.current.audio.removeEventListener("ended", this.current.finish);
+            this.current.audio.pause();
+            this.current = null;
         }
         this.playing = false;
     }
@@ -101,19 +106,26 @@ export class SoundPlayer {
         this.playing = true;
         const finish = () => {
             a.removeEventListener("ended", finish);
+            this.current = null;
             this.playing = false;
             this.next();
         };
         a.addEventListener("ended", finish);
+        this.current = { audio: a, finish };
         a.currentTime = 0;
         a.play().then(
             () => this.onBlocked(false),
-            () => {
-                // Autoplay refused: nothing will play until someone clicks the page.
+            (e) => {
+                if (this.current?.finish !== finish) {
+                    // Stopped while starting (stop() paused it): an AbortError, not a refusal.
+                    return;
+                }
                 a.removeEventListener("ended", finish);
+                this.current = null;
                 this.queue = [];
                 this.playing = false;
-                this.onBlocked(true);
+                // Autoplay refused: nothing will play until someone clicks the page.
+                this.onBlocked(e?.name === "NotAllowedError");
             }
         );
     }

@@ -27,9 +27,13 @@ deployment/<nome>` de cada um. O painel SHALL NOT executar o comando nem ter per
 - **WHEN** o último deploy da release foi há mais de 7 dias e o painel viu a virada atual começar
 - **THEN** o comando volta para as imagens que estavam no ar antes dela
 
-#### Scenario: Restart
-- **WHEN** a virada não trocou nenhuma imagem (um `rollout restart`)
-- **THEN** o cartão diz que não há o que voltar e não mostra comando
+#### Scenario: Mesma tag de antes
+- **WHEN** as tags da virada são as mesmas da versão anterior (um `rollout restart`, ou a tag `prod` que o chat reaproveita em todo deploy)
+- **THEN** o cartão diz que a tag é a mesma e que não há como voltar por tag, e não mostra comando
+
+#### Scenario: Deploy travado e outro por cima
+- **WHEN** um deploy trava, outro é feito por cima e não há deploy concluído da release no histórico
+- **THEN** o comando volta para as imagens que estavam no ar antes do deploy travado, nunca para as dele
 
 ### Requirement: O cartão diz o que o comando não cobre
 

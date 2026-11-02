@@ -289,3 +289,84 @@ describe("Como voltar: rastreador e painel", () => {
         store.close();
     });
 });
+
+describe("Como voltar: virada que não terminou não é versão anterior", () => {
+    /**
+     * @returns {{tracker: ClusterTracker, published: object[], tick: Function}} A tracker of winker-prod.
+     */
+    function setup() {
+        let clock = 1_000_000;
+        const published = [];
+        const tracker = new ClusterTracker({
+            releases: ["condominio/winker-prod"],
+            now: () => clock,
+            onRollout: (r) => published.push(r),
+        });
+        return { tracker, published, tick: (ms) => (clock += ms) };
+    }
+    const stuck = [{ type: "Progressing", status: "False", reason: "ProgressDeadlineExceeded" }];
+
+    test("deploy travado e outro por cima: sem histórico, volta para o que estava no ar antes do travado", () => {
+        const { tracker, published, tick } = setup();
+        tracker.replace("condominio", "deployments", [deployment({ tag: OLD, revision: 7 })], true);
+        tracker.apply(
+            "deployments",
+            "MODIFIED",
+            deployment({ tag: "7777777cccc", revision: 8, generation: 11, updated: 1, total: 18, conditions: stuck })
+        );
+        tick(20 * 60 * 1000);
+        tracker.apply("deployments", "MODIFIED", deployment({ tag: NEW, revision: 9, generation: 12 }));
+        const last = published.at(-1);
+        assert.strictEqual(last.state, "done");
+        assert.deepStrictEqual(releaseRollback(last, []).setImage, [
+            `kubectl -n condominio set image deployment/winker-prod php-fpm=tiwinker/portal:${OLD}`,
+        ]);
+    });
+
+    test("revisão nova antes de a anterior terminar (substituída): também volta para antes da substituída", () => {
+        const { tracker, published } = setup();
+        tracker.replace("condominio", "deployments", [deployment({ tag: OLD, revision: 7 })], true);
+        tracker.apply(
+            "deployments",
+            "MODIFIED",
+            deployment({ tag: "7777777cccc", revision: 8, generation: 11, updated: 1, total: 18 })
+        );
+        tracker.apply("deployments", "MODIFIED", deployment({ tag: NEW, revision: 9, generation: 12 }));
+        assert.strictEqual(published.at(-1).before["winker-prod"][0].tag, OLD);
+    });
+
+    test("travado achado no boot (sem saber o que havia antes) e outro por cima: versão anterior desconhecida, não a travada", () => {
+        const { tracker, published, tick } = setup();
+        tracker.replace(
+            "condominio",
+            "deployments",
+            [deployment({ tag: "7777777cccc", revision: 8, generation: 11, updated: 1, total: 18, conditions: stuck })],
+            true
+        );
+        tick(20 * 60 * 1000);
+        tracker.apply("deployments", "MODIFIED", deployment({ tag: NEW, revision: 9, generation: 12 }));
+        assert.strictEqual(releaseRollback(published.at(-1), []).status, "unknown");
+    });
+
+    test("depois de um deploy concluído, o próximo volta para ele", () => {
+        const { tracker, published, tick } = setup();
+        tracker.replace("condominio", "deployments", [deployment({ tag: OLD, revision: 7 })], true);
+        tracker.apply("deployments", "MODIFIED", deployment({ tag: "7777777cccc", revision: 8, generation: 11 }));
+        tick(20 * 60 * 1000);
+        tracker.apply("deployments", "MODIFIED", deployment({ tag: NEW, revision: 9, generation: 12 }));
+        assert.strictEqual(published.at(-1).before["winker-prod"][0].tag, "7777777cccc");
+    });
+
+    test("chat: a tag prod se repete a cada deploy, e o cartão diz que não há tag para voltar", () => {
+        const plan = releaseRollback(
+            rollout({
+                namespace: "chat",
+                release: "chatwoot",
+                deployments: [dep("chatwoot-web", "prod")],
+                before: { "chatwoot-web": dep("chatwoot-web", "prod").containers },
+            }),
+            []
+        );
+        assert.strictEqual(plan.status, "unchanged");
+    });
+});

@@ -353,13 +353,17 @@ releases do deploy, só com os containers cuja tag mudou, mais o `rollout status
 de destino é a do último deploy concluído da mesma release com imagem diferente, tirado do
 histórico da fase 3.1 (um deploy das mesmas imagens de novo não é versão para voltar). Sem ele, vale
 o que estava no ar quando o painel viu a virada começar; sem nenhum dos dois, o cartão diz que não
-sabe e não inventa comando. Virada que não trocou imagem (um `rollout restart`) diz que não há o que
-voltar. A extração do Deployment passa a guardar o nome do container e o repositório da imagem —
+sabe e não inventa comando. Virada com as mesmas tags de antes diz que não há tag para voltar: é um
+`rollout restart` ou uma tag reaproveitada (o chat usa `tiwinker/chatwoot:prod` e o jambonz `:latest`
+em todo deploy, conferido no cluster em 02/11/2026), e nos dois casos o comando por tag não volta
+nada. A extração do Deployment passa a guardar o nome do container e o repositório da imagem —
 nada mais do template.
 
 *Por que também o que estava no ar (implementação, 02/11):* o histórico guarda 7 dias, e um projeto
-que faz deploy uma vez por mês nunca teria comando. O histórico vence porque o que estava no ar pode
-ser um deploy travado. Armadilha medida no código: o Helm troca a imagem do template **antes** de o
+que faz deploy uma vez por mês nunca teria comando. Uma virada que não terminou (travada, substituída
+ou ainda em andamento) não é versão para voltar: a virada que vem por cima herda dela o que estava no
+ar antes, e um Deployment que ela tocou sem saber o anterior (achada no boot) fica sem versão
+anterior, em vez de apontar para a imagem travada. Armadilha medida no código: o Helm troca a imagem do template **antes** de o
 controlador subir a revisão, então "o objeto do evento anterior" já tem a imagem nova; o rastreador
 guarda as imagens de cada revisão como eram quando ela foi vista pela primeira vez. E como o comando
 vai parar num terminal, valor lido do cluster com caractere fora do que nome e imagem admitem deixa
