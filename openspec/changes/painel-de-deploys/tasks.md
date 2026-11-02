@@ -172,16 +172,18 @@ Achado de 02/11/2026: o Kuma roda com `strategy: Recreate` (volume EBS e SQLite 
 
 ## 15. Assinatura por objeto e virada perdida
 
-- [ ] 15.1 Migration `db/knex_migrations/2026-11-02-1700-create-deploy-board-object.js`: `deploy_board_object` com `id`, `object_key` único (`<kind>/<namespace>/<nome>`), `signature` (texto) e `seen_at` (ms).
-- [ ] 15.2 Repositório: `loadObjects()` e `saveObject(chave, assinatura, quando)` (upsert na mesma fila das gravações de deploy; erro vira log sem derrubar).
-- [ ] 15.3 Rastreador: recebe as assinaturas gravadas e avisa as novas (revisão do Deployment; tags do CronJob), sem repetir aviso da mesma assinatura. Na linha de base, objeto com assinatura diferente da gravada abre virada `missed`, que fecha na hora; revisão anterior vazia não conta.
-- [ ] 15.4 Store e tela: `missed` no deploy e no histórico (campo público); o cartão e a lista "Hoje" trocam a duração por "virou com o painel fora do ar".
-- [ ] 15.5 `DeployBoard`: carrega as assinaturas junto do histórico, antes do cluster, e grava as novas pelo repositório.
-- [ ] 15.6 Testes: Kuma de revisão 40 para 41 com o painel fora vira deploy concluído `missed`; mesma revisão não vira nada; primeiro boot sem gravação não vira nada; CronJob com tag nova; revisão anterior vazia; aviso sem repetição; virada `missed` com o SHA de um deploy do histórico junta a ele; repositório com SQLite de verdade.
+- [x] 15.1 Migration `db/knex_migrations/2026-11-02-1700-create-deploy-board-object.js`: `deploy_board_object` com `id`, `object_key` único (`<kind>/<namespace>/<nome>`), `signature` (texto) e `seen_at` (ms).
+- [x] 15.2 Repositório: `loadObjects()` e `saveObject(chave, assinatura, quando)` (upsert na mesma fila das gravações de deploy; erro vira log sem derrubar).
+- [x] 15.3 Rastreador: recebe as assinaturas gravadas e avisa as novas (revisão do Deployment; tags do CronJob), sem repetir aviso da mesma assinatura. Na linha de base, objeto com assinatura diferente da gravada abre virada `missed`, que fecha na hora; revisão anterior vazia não conta.
+- [x] 15.4 Store e tela: `missed` no deploy e no histórico (campo público); o cartão e a lista "Hoje" trocam a duração por "virou com o painel fora do ar".
+- [x] 15.5 `DeployBoard`: carrega as assinaturas junto do histórico, antes do cluster, e grava as novas pelo repositório.
+- [x] 15.6 Testes: Kuma de revisão 40 para 41 com o painel fora vira deploy concluído `missed`; mesma revisão não vira nada; primeiro boot sem gravação não vira nada; CronJob com tag nova; revisão anterior vazia; aviso sem repetição; virada `missed` com o SHA de um deploy do histórico junta a ele; repositório com SQLite de verdade.
+  - 99/99 no painel. Achado no teste: na linha de base, uma virada já encerrada não republicava quando outro objeto da release se juntava (o segundo CronJob perdido não contava; a marca `missed` não saía quando outro Deployment estava virando ao vivo) — a linha de base agora recalcula como mudança o que ela tocou. Mutações que reprovam: recalcular sem mudança (2), revisão anterior vazia contando (1), `missed` não sair ao juntar ao vivo (1), sem detectar a perdida (3), aviso repetido (2).
 
 ## 16. Entrega da fase 3.3
 
-- [ ] 16.1 `npm run build`, `npm run test-backend` (com as migrations em SQLite e MariaDB), `npm run lint`, `node extra/check-lang-json.js` e `node extra/check-knex-filenames.mjs` verdes.
+- [x] 16.1 `npm run build`, `npm run test-backend` (com as migrations em SQLite e MariaDB), `npm run lint`, `node extra/check-lang-json.js` e `node extra/check-knex-filenames.mjs` verdes.
+  - 02/11/2026, local: test-backend 381/381 (migrations ok em SQLite e MariaDB 12), lint 0 erros, langs e nomes de migration ok, build ok.
 - [ ] 16.2 Merge e deploy. O deploy da própria 3.3 não aparece (a tabela nasce vazia); conferir no log que as assinaturas foram gravadas e, no deploy seguinte do Kuma, que ele aparece concluído com "virou com o painel fora do ar".
 
 # Fase 4 — Pipelines
