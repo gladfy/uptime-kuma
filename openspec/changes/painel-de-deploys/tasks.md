@@ -264,15 +264,15 @@ Exige a role IAM por IRSA e a dependência nova. Apps com branch de produção e
 
 ## 25. Coletor do Amplify
 
-- [ ] 25.1 Acrescentar `@aws-sdk/client-amplify` ao `package.json` e atualizar o `package-lock.json`. Anotar o tamanho da imagem `docker/winker.dockerfile` antes e depois.
-- [ ] 25.2 Criar `server/deploy-board/amplify-source.js`: descoberta de apps e branch `PRODUCTION` a cada 30 min, `ListJobs` (`maxResults: 3`) a cada 60 s ou 15 s com job em andamento, `GetJob` para os passos do job em andamento, "sem leitura" após 3 ciclos com erro, "não configurada" sem credencial ou sem `amplify.region`.
-- [ ] 25.3 Escrever `test/backend-test/deploy-board/test-amplify-source.js` com o cliente do SDK substituído por dublê: branch de estágio `NONE` ignorada, troca de ritmo 60 s ↔ 15 s, passos do `GetJob`, três erros seguidos levando a "sem leitura".
-- [ ] 25.4 Deploys do Amplify no store e no cartão (passos `BUILD`, `DEPLOY`, `VERIFY`), ligação de monitor pela tag `amplify/<app>` e as chaves de i18n da fase.
+- [x] 25.1 Acrescentar `@aws-sdk/client-amplify` ao `package.json` e atualizar o `package-lock.json`. Anotar o tamanho da imagem `docker/winker.dockerfile` antes e depois. Versão 3.1106.0, a que usa os mesmos pacotes base que o lock já tinha (a 3.1152 subia 22 deles); nenhuma versão do lock mudou, só 21 pacotes base da AWS deixaram de ser opcionais. Somam 4,9 MB antes da poda do Dockerfile; falta comparar a imagem `winker.28` com a que o CI gerar.
+- [x] 25.2 Criar `server/deploy-board/amplify-source.js`: descoberta de apps e branch `PRODUCTION` a cada 30 min, `ListJobs` (`maxResults: 3`) a cada 60 s ou 15 s com job em andamento, `GetJob` para os passos do job em andamento, "sem leitura" após 3 ciclos com erro, "não configurada" sem credencial ou sem `amplify.region`.
+- [x] 25.3 Escrever `test/backend-test/deploy-board/test-amplify-source.js` com o cliente do SDK substituído por dublê: branch de estágio `NONE` ignorada, troca de ritmo 60 s ↔ 15 s, passos do `GetJob`, três erros seguidos levando a "sem leitura". São 10 testes; cada guarda conferida desfazendo-a (10 mutações, todas reprovadas, com controle sem mutação e controle com defeito grosseiro).
+- [x] 25.4 Deploys do Amplify no store e no cartão (passos `BUILD`, `DEPLOY`, `VERIFY`), ligação de monitor pela tag `amplify/<app>` e as chaves de i18n da fase. Conferido no navegador com o Amplify simulado: "etapa 2 de 3" com o build rodando, os passos andando e "No ar" com o tempo de cada passo.
 
 ## 26. Infraestrutura e entrega da fase 7
 
-- [ ] 26.1 Role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com `amplify:ListApps`, `amplify:ListBranches`, `amplify:ListJobs` e `amplify:GetJob`, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`.
-- [ ] 26.2 Anotação `eks.amazonaws.com/role-arn` na ServiceAccount e `amplify.region` no ConfigMap. Publicar a versão nova do chart.
+- [ ] 26.1 Role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com `amplify:ListApps`, `amplify:ListBranches`, `amplify:ListJobs` e `amplify:GetJob`, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`. Escrita em `terraform/iam-uptime-kuma/main.tf` (role `uptime-kuma-irsa-role`; `ListApps` em `*`, que não aceita recurso, e as outras três só em `apps/*` de us-east-1), na branch `feat/uptimekuma-painel-de-deploys-fase-7` do infrastructure; `fmt` e `validate` verdes. Falta o `plan` e o `apply`, por quem tem o profile `winker`.
+- [ ] 26.2 Anotação `eks.amazonaws.com/role-arn` na ServiceAccount e `amplify.region` no ConfigMap. Publicar a versão nova do chart. Chart 0.5.0 na mesma branch (`helm lint`, render comparado com o 0.4.0 e o `config.json` aceito pelo validador do Kuma) e `CHART_VERSION: "0.5.0"` no workflow do Kuma. Falta publicar no S3, depois do `apply` da role.
 - [ ] 26.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; conferir um build da branch de produção do `pro` no painel em até 60 s e ligar os monitores dos apps do Amplify (confirmar guest-link → "Convite" e gatekeeper-dashboard → "Portaria Web"; "Flow" → `amplify/pro`, confirmado: `flow.winker.com.br` é domínio do app `pro`).
 
 # Fase 8 — Conferência de cobertura

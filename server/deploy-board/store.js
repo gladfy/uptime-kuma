@@ -32,8 +32,9 @@ const DEPLOY_PUBLIC_FIELDS = [
     "rollback",
     "pipeline",
     "steps",
+    "links",
 ];
-const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "missed", "releases"];
+const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "missed", "releases", "links"];
 
 /**
  * Fields of a rollout kept in a history record, which is also what goes to the database. Built field
@@ -156,6 +157,8 @@ class DeployBoardStore {
         this.history = [];
         this.projectOfRelease = new Map();
         this.projects = new Map();
+        this.configProjects = [];
+        this.amplifyApps = [];
         this.staleNamespaces = new Set();
         this.lastDoneStartedAt = new Map();
         this.sequence = 0;
@@ -208,13 +211,38 @@ class DeployBoardStore {
      * @returns {void}
      */
     setProjects(projects) {
+        this.configProjects = projects;
+        this.rebuildProjects();
+    }
+
+    /**
+     * The Amplify apps with a production branch, as discovered: each is a project of its own, with
+     * no release in the cluster. An app named like a project of the configuration is left out, so a
+     * card never mixes the two.
+     * @param {string[]} names App names.
+     * @returns {string[]} The names left out.
+     */
+    setAmplifyApps(names) {
+        const taken = new Set(this.configProjects.map((p) => p.name));
+        this.amplifyApps = names.filter((name) => !taken.has(name));
+        this.rebuildProjects();
+        return names.filter((name) => taken.has(name));
+    }
+
+    /**
+     * @returns {void}
+     */
+    rebuildProjects() {
         this.projectOfRelease.clear();
         this.projects.clear();
-        for (const project of projects) {
+        for (const project of this.configProjects) {
             this.projects.set(project.name, { name: project.name, source: project.source });
             for (const r of project.releases) {
                 this.projectOfRelease.set(`${r.namespace}/${r.release}`, { name: project.name, source: project.source });
             }
+        }
+        for (const name of this.amplifyApps) {
+            this.projects.set(name, { name, source: "amplify" });
         }
     }
 
@@ -250,7 +278,7 @@ class DeployBoardStore {
         }
         const wasEnded = deploy.endedAt !== null;
         deploy.rollouts.set(rollout.id, { ...rollout });
-        refresh(deploy, this.clusterConfigured());
+        refresh(deploy, this.waitsRollout(deploy));
         if (deploy.state === "done") {
             const last = this.lastDoneStartedAt.get(project.name) ?? -Infinity;
             this.lastDoneStartedAt.set(project.name, Math.max(last, deploy.startedAt));
@@ -313,7 +341,7 @@ class DeployBoardStore {
             return;
         }
         const wasEnded = deploy.endedAt !== null;
-        refresh(deploy, this.clusterConfigured());
+        refresh(deploy, this.waitsRollout(deploy));
         // Saved when it ends, and again when a pipeline of an ended deploy reports (the chat's
         // workflow finishes after the rollout it waits for).
         if (deploy.endedAt !== null) {
@@ -340,6 +368,15 @@ class DeployBoardStore {
      */
     clusterConfigured() {
         return this.sources.cluster.state !== "unconfigured";
+    }
+
+    /**
+     * @param {object} deploy Internal deploy.
+     * @returns {boolean} Whether a green pipeline of it still waits for a rollout. An Amplify app has
+     * none: its job publishes the site itself.
+     */
+    waitsRollout(deploy) {
+        return deploy.pipelineSource !== "amplify" && this.clusterConfigured();
     }
 
     /**
@@ -437,7 +474,12 @@ class DeployBoardStore {
             generatedAt: this.now(),
             sources,
             deploys,
-            history: this.history.map((h) => pickPublic(h, HISTORY_PUBLIC_FIELDS)),
+            history: this.history.map((h) =>
+                pickPublic(
+                    { ...h, links: linksOf(h.releases || [], h.pipeline?.source === "amplify" ? h.project : null) },
+                    HISTORY_PUBLIC_FIELDS
+                )
+            ),
             stats: this.stats(),
         };
     }
@@ -499,10 +541,12 @@ class DeployBoardStore {
             startedAt: deploy.startedAt,
             endedAt: deploy.endedAt,
             confirmed:
-                cluster === "active" ||
-                (cluster === "stale" &&
-                    this.staleNamespaces.size > 0 &&
-                    rollouts.every((r) => !this.staleNamespaces.has(r.namespace))),
+                deploy.pipelineSource === "amplify"
+                    ? this.sources.amplify.state === "active"
+                    : cluster === "active" ||
+                      (cluster === "stale" &&
+                          this.staleNamespaces.size > 0 &&
+                          rollouts.every((r) => !this.staleNamespaces.has(r.namespace))),
             releases: rollouts.map((r) => ({
                 namespace: r.namespace,
                 release: r.release,
@@ -515,7 +559,8 @@ class DeployBoardStore {
             rollback:
                 ROLLBACK_STATES.includes(deploy.state) && rollouts.length > 0 ? this.rollbackOf(deploy, rollouts) : null,
             pipeline: deploy.pipeline ? publicPipeline(deploy.pipeline) : null,
-            steps: deploySteps(deploy, { pipelineConfigured, clusterConfigured: this.clusterConfigured(), noRollout }),
+            steps: deploySteps(deploy, { pipelineConfigured, clusterConfigured: this.waitsRollout(deploy), noRollout }),
+            links: linksOf(rollouts, deploy.pipelineSource === "amplify" ? deploy.project : null),
         };
     }
 
@@ -793,6 +838,18 @@ class DeployBoardStore {
 }
 
 /**
+ * The values of the Kuma tag "deploy" a deploy answers to: "<namespace>/<release>" of each release,
+ * and "amplify/<app>" for an Amplify app. The page links monitors to deploys by them.
+ * @param {{namespace: string, release: string}[]} releases Releases of the deploy.
+ * @param {string|null} amplifyApp App, when the deploy is of an Amplify app.
+ * @returns {string[]} Tag values.
+ */
+function linksOf(releases, amplifyApp) {
+    const links = releases.map((r) => `${r.namespace}/${r.release}`);
+    return amplifyApp ? [...links, `amplify/${amplifyApp}`] : links;
+}
+
+/**
  * Label of a deploy card. "No pipeline" is only said when the pipeline source of the project is
  * being read: with the source off, a missing pipeline is a missing source, not a manual deploy.
  * @param {string} state Deploy state.
@@ -1004,6 +1061,8 @@ function applyPipelineEvent(pipeline, event, now) {
             name: event.name,
             state: event.state,
             url: event.url ?? before?.url ?? null,
+            // The commit message, for a source with no merge event (Amplify).
+            message: event.message ?? before?.message ?? null,
             // A late "completed" may come without the start the "in_progress" had.
             startedAt: event.startedAt ?? before?.startedAt ?? null,
             endedAt: event.endedAt,
@@ -1143,7 +1202,7 @@ function publicPipeline(pipeline) {
         name: latest?.name || null,
         url: latest?.url || null,
         mergedAt: pipeline.merge?.at ?? null,
-        message: pipeline.merge?.message ?? null,
+        message: pipeline.merge?.message ?? latest?.message ?? null,
         startedAt: latest?.startedAt ?? null,
         endedAt: pipelineEnd(pipeline),
         jobs,

@@ -57,7 +57,9 @@
             </li>
         </ul>
 
-        <p v-if="!deploy.confirmed && deploy.releases.length" class="db-card-warning">{{ $t("deployBoardUnconfirmed") }}</p>
+        <p v-if="!deploy.confirmed && (deploy.links || deploy.releases).length" class="db-card-warning">
+            {{ $t(pipeline?.source === "amplify" ? "deployBoardUnconfirmedAmplify" : "deployBoardUnconfirmed") }}
+        </p>
 
         <div v-if="deploy.rollback" class="db-rollback">
             <button type="button" class="db-rollback-toggle" :aria-expanded="String(rollbackOpen)" @click="rollbackOpen = !rollbackOpen">
