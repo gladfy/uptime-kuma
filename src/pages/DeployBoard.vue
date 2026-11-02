@@ -89,7 +89,7 @@
                     <p v-else-if="curationFailed" class="db-warning">{{ $t("deployBoardCurationFailed") }}</p>
 
                     <div class="db-services-body">
-                        <IncidentBlock v-if="promoted.length" :monitors="promoted" />
+                        <AlertBand v-if="downMonitors.length" :monitors="downMonitors" :now="now" />
                         <MonitorGrid :monitors="gridMonitors" :fill="wall" />
                     </div>
                 </section>
@@ -110,7 +110,7 @@ import axios from "axios";
 import dayjs from "dayjs";
 import Login from "../components/Login.vue";
 import MonitorGrid from "../components/deploy-board/MonitorGrid.vue";
-import IncidentBlock from "../components/deploy-board/IncidentBlock.vue";
+import AlertBand from "../components/deploy-board/AlertBand.vue";
 import DeployColumn from "../components/deploy-board/DeployColumn.vue";
 import SourcesFooter from "../components/deploy-board/SourcesFooter.vue";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
@@ -159,7 +159,7 @@ export default {
     components: {
         Login,
         MonitorGrid,
-        IncidentBlock,
+        AlertBand,
         DeployColumn,
         SourcesFooter,
     },
@@ -191,18 +191,16 @@ export default {
             return this.curated.map((entry) => this.liveMonitor(entry));
         },
 
-        /** @returns {object[]} Down and pending monitors, promoted above the grid */
-        promoted() {
+        /**
+         * Monitors that are down, the longest down first, for the band above the grid. Pending ones
+         * only get their pill: the band is for what is out.
+         * @returns {object[]} Monitors with their deploy line
+         */
+        downMonitors() {
             return this.monitors
-                .filter((m) => m.tone === "down" || m.tone === "pending")
-                .sort((a, b) => (a.tone === b.tone ? (a.since || 0) - (b.since || 0) : a.tone === "down" ? -1 : 1))
-                .map((m) => ({
-                    ...m,
-                    stateText: m.since
-                        ? this.$t("deployBoardStateFor", [m.label, this.formatDuration(this.now - m.since)])
-                        : m.label,
-                    deployLine: this.incidentDeployLine(m),
-                }));
+                .filter((m) => m.tone === "down")
+                .sort((a, b) => (a.since ?? Infinity) - (b.since ?? Infinity))
+                .map((m) => ({ ...m, deployLine: this.incidentDeployLine(m) }));
         },
 
         /** @returns {object[]} Every monitor in its place, with its deploy mark: none leaves the grid */
@@ -574,6 +572,7 @@ export default {
                 tone,
                 label: this.$t(LABEL_KEYS[tone]),
                 since: last ? sinceOf(list) : null,
+                downChecks: tone === "down" ? runLength(list) : 0,
                 beats: beatsOf(list),
             };
         },
@@ -758,6 +757,18 @@ function sinceOf(list) {
     }
     const time = dayjs.utc(list[i].time);
     return time.isValid() ? time.valueOf() : null;
+}
+
+/**
+ * @param {object[]} list Heartbeats, oldest first.
+ * @returns {number} How many of the latest ones in a row have the status of the last one.
+ */
+function runLength(list) {
+    let n = 0;
+    for (let i = list.length - 1; i >= 0 && list[i].status === list[list.length - 1].status; i--) {
+        n++;
+    }
+    return n;
 }
 
 /**
