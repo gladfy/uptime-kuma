@@ -379,6 +379,7 @@
     "deployBoardStepLive": "Live",
     "deployBoardStartedAgo": "started {0} ago",
     "deployBoardMissed": "rolled while the board was down",
+    "deployBoardMissedNote": "No duration: the rollout happened while the board was down.",
     "deployBoardTookTime": "took {0}",
     "deployBoardAgo": "{0} ago",
     "deployBoardVerdictStuck": "{0} with rollout stuck",

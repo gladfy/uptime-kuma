@@ -32,7 +32,7 @@
                 <span class="db-section-count">{{ $t("deployBoardStatsTotal", historyRows.length) }}</span>
             </h2>
             <p v-if="historyRows.length === 0" class="db-muted">{{ $t("deployBoardHistoryEmpty") }}</p>
-            <ol v-else class="db-history-list">
+            <ol v-else ref="list" class="db-history-list" :class="{ 'is-clipped': clipped }">
                 <li
                     v-for="item in historyRows"
                     :key="item.id"
@@ -46,14 +46,14 @@
                         <span class="db-history-project">{{ item.project }}</span>
                         <code v-if="item.version" class="db-history-version">{{ item.version }}</code>
                     </span>
-                    <span class="db-history-when">
-                        <template v-if="item.missed">{{ $t("deployBoardMissed") }} ·</template>
-                        <template v-else>{{ $t("deployBoardTookTime", [formatDuration(item.endedAt - item.startedAt)]) }} ·</template>
-                        {{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}
+                    <span class="db-history-took" :class="{ 'is-unknown': item.missed }">
+                        {{ item.missed ? "—" : formatDuration(item.endedAt - item.startedAt) }}
                     </span>
+                    <span class="db-history-when">{{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}</span>
                     <RollbackPanel v-if="item.rollback" :rollback="item.rollback" class="db-history-rollback" />
                 </li>
             </ol>
+            <p v-if="historyRows.some((item) => item.missed)" class="db-history-note">{{ $t("deployBoardMissedNote") }}</p>
         </div>
     </section>
 </template>
@@ -140,7 +140,7 @@ export default {
     },
 
     data() {
-        return { OUTCOME_KEYS, OUTCOME_MARKS, dismissed: dismissedSaved() };
+        return { OUTCOME_KEYS, OUTCOME_MARKS, dismissed: dismissedSaved(), clipped: false };
     },
 
     computed: {
@@ -203,7 +203,32 @@ export default {
         },
     },
 
+    watch: {
+        "historyRows.length"() {
+            this.$nextTick(this.measure);
+        },
+    },
+
+    mounted() {
+        this.observer = new ResizeObserver(() => this.measure());
+        this.observer.observe(this.$el);
+        this.measure();
+    },
+
+    beforeUnmount() {
+        this.observer?.disconnect();
+    },
+
     methods: {
+        /**
+         * Fade the bottom of the history only when it does not fit: a list that fits ends clean.
+         * @returns {void}
+         */
+        measure() {
+            const list = this.$refs.list;
+            this.clipped = !!list && list.scrollHeight > list.clientHeight + 1;
+        },
+
         /**
          * @param {object} item Line of the history.
          * @returns {boolean} Whether it went live in the last FRESH_MS
@@ -279,50 +304,82 @@ export default {
     gap: 0.6em;
 }
 
-/* On a wall screen the history gives way first: cards are never cut, the oldest entries are. */
+/* On a wall screen the history gives way first: cards are never cut, the oldest lines are. */
 .db-history {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    gap: 0.4em;
-    margin-top: auto;
+    gap: 8px;
     min-height: 0;
     overflow: hidden;
 }
 
 .db-history-list {
     display: grid;
-    gap: 0.3em;
+    align-content: start;
+    gap: 4px;
+    min-height: 0;
     margin: 0;
     padding: 0;
+    overflow: hidden;
     list-style: none;
     font-size: 0.85em;
+
+    // Cut softly, without a scrollbar, when it does not fit.
+    &.is-clipped {
+        mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+    }
 }
 
-/* Mark, name and times: the times line up in one column on the right. */
+/* Mark, name, duration and time since, the two numbers each in a column of its own. Fixed widths:
+   every line is its own grid, and only fixed columns line up from one line to the next. */
 .db-history-item {
     display: grid;
-    grid-template-columns: 1.1em minmax(0, 1fr) auto;
+    grid-template-columns: 16px minmax(0, 1fr) 6em 8em;
     align-items: baseline;
-    gap: 0.5em;
-    padding-bottom: 0.3em;
+    gap: 8px;
+    padding-block: 4px;
     border-bottom: 1px solid var(--db-line);
 }
 
 .db-history-name {
     display: flex;
-    flex-wrap: wrap;
     align-items: baseline;
-    gap: 0 0.5em;
+    gap: 8px;
     min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .db-history-project {
-    font-weight: 700;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
 }
 
 .db-history-version {
-    color: var(--db-ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.85em;
+    color: var(--db-ink-3);
+}
+
+.db-history-took,
+.db-history-when {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--db-ink-3);
+}
+
+.db-history-took.is-unknown {
+    color: var(--db-line-2);
+}
+
+.db-history-note {
+    margin: 0;
+    font-size: 0.78em;
+    color: var(--db-ink-3);
 }
 
 .db-history-outcome {
@@ -361,13 +418,6 @@ export default {
 
 .db-history-rollback {
     grid-column: 1 / -1;
-}
-
-.db-history-when {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    color: var(--db-ink-3);
 }
 
 .db-muted {

@@ -561,6 +561,7 @@
     "deployBoardStepLive": "No ar",
     "deployBoardStartedAgo": "começou há {0}",
     "deployBoardMissed": "virou com o painel fora do ar",
+    "deployBoardMissedNote": "Sem duração: a virada aconteceu com o painel fora do ar.",
     "deployBoardTookTime": "levou {0}",
     "deployBoardAgo": "há {0}",
     "deployBoardVerdictStuck": "{0} com virada travada",
