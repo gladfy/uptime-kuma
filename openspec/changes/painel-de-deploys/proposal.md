@@ -37,7 +37,7 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
   sucesso, e um botão pequeno alterna o tema claro e escuro.
 - **Sons.** Cinco sons do tema "contêiner no navio" marcam o início, o build, a virada, a conclusão e
   a falha do deploy: gravações reais de buzina de navio, apito de trem e sino de bordo, ligadas por
-  um botão.
+  padrão, com um botão para silenciar.
 - **Como voltar à versão anterior.** No cartão, um botão mostra o comando `kubectl set image` que
   volta a imagem do deploy anterior, pronto para copiar. O painel não executa nada.
 - **Conferência de cobertura.** Um relatório só de leitura compara o que roda no EKS e no Amplify com

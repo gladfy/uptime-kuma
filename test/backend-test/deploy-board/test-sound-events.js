@@ -126,10 +126,51 @@ describe("Sons: o que cada mudança toca", () => {
         );
     });
 
-    test("com a pipeline (fase 4), o iniciado não vem da virada", () => {
+    test("pipeline: começa (iniciado), fica verde (build concluído), vira (em andamento) e chega ao No ar (sino)", () => {
+        const p = (state) => ({ pipeline: { state } });
+        const running = deploy("c:1", "pipeline", [], p("running"));
+        assert.deepStrictEqual(events(snap([]), snap([running])), ["started"]);
+        const built = deploy("c:1", "built", [], p("success"));
+        assert.deepStrictEqual(events(snap([running]), snap([built])), ["built"]);
+        const rolling = deploy("c:1", "updating", ["winker-integration"], p("success"));
+        assert.deepStrictEqual(events(snap([built]), snap([rolling])), ["rolling"]);
+        const done = deploy("c:1", "done", ["winker-integration"], p("success"));
+        assert.deepStrictEqual(events(snap([rolling]), snap([done])), ["done"]);
+    });
+
+    test("pipeline que falha: a buzina de falha, uma vez só", () => {
+        const p = (state) => ({ pipeline: { state } });
+        const played = new Set();
+        const a = snap([deploy("c:1", "pipeline", [], p("running"))]);
+        const b = snap([deploy("c:1", "failed", [], p("failed"))]);
         assert.deepStrictEqual(
-            events(snap([]), snap([deploy("c:1", "updating", undefined, { pipeline: { state: "success" } })])),
-            ["rolling"]
+            freshEvents(soundEvents(a, b), played).map((e) => e.event),
+            ["failed"]
         );
+        // A virada que travou e a pipeline que falhou por causa dela (helm --wait) são uma falha só.
+        const c = snap([deploy("g:1", "updating", ["chatwoot"], p("running"))]);
+        const d = snap([deploy("g:1", "stuck", ["chatwoot"], p("running"))]);
+        const e = snap([deploy("g:1", "stuck", ["chatwoot"], p("failed"))]);
+        assert.deepStrictEqual(
+            freshEvents(soundEvents(c, d), played).map((x) => x.event),
+            ["failed"]
+        );
+        assert.deepStrictEqual(
+            freshEvents(soundEvents(d, e), played).map((x) => x.event),
+            []
+        );
+    });
+
+    test("deploy novo já com pipeline e virada (a pipeline e a virada no mesmo segundo): iniciado e em andamento", () => {
+        assert.deepStrictEqual(
+            events(snap([]), snap([deploy("c:1", "updating", undefined, { pipeline: { state: "running" } })])),
+            ["started", "rolling"]
+        );
+    });
+
+    test("Kuma: a pipeline que se junta depois à virada perdida não toca nada", () => {
+        const missed = deploy("k:1", "done", ["uptime-kuma"]);
+        const joined = deploy("k:1", "done", ["uptime-kuma"], { pipeline: { state: "success" } });
+        assert.deepStrictEqual(events(snap([missed]), snap([joined])), []);
     });
 });

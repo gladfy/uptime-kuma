@@ -150,6 +150,22 @@ Limite de taxa com uma instância própria de `KumaRateLimiter` (`server/rate-li
 alterar as existentes. Log só com fonte, evento, repositório e desfecho; nunca corpo, cabeçalho ou
 segredo.
 
+**Ingress (implementação, 02/11/2026):** o Ingress do Kuma só aceita os IPs do connector e da
+sede (`whitelist-source-range`), e os webhooks levariam 403 antes de chegar ao Kuma. Decisão do
+Erik: um segundo Ingress no mesmo host, só com os dois caminhos exatos, com a lista de faixas de
+saída publicadas do Bitbucket (`ip-ranges.atlassian.com`, produto `bitbucket`, direção `egress`) e do
+GitHub (`api.github.com/meta`, chave `hooks`), só IPv4 (o host não tem AAAA). No nginx o caminho exato
+é um `location` próprio com a lista dele; o resto do Kuma continua na lista de hoje. A assinatura
+continua sendo a autenticação: a lista de IPs é defesa a mais, e as faixas mudam — webhook parado
+aparece no rodapé como "último evento há muito tempo". Lista vazia falha o render do chart, para o
+caminho não sair aberto. *Descartado:* pôr as faixas na lista do Ingress principal (expõe o Kuma
+inteiro a elas) e um host separado (DNS e certificado novos).
+
+O segredo vem de um Secret criado à mão (`uptime-kuma-deploy-board-webhooks`, chaves `bitbucket` e
+`github`), referenciado pelo Deployment com `optional: true`; o chart não o cria, e o valor nunca
+passa pelo git. Como o `KumaRateLimiter` não é exportado, o limite por IP usa o `RateLimiter` do
+pacote `limiter`, que é o que está por trás dele, sem mexer no arquivo do Kuma.
+
 *Alternativas descartadas:* trocar a linha 213 por `express.json({ verify })` guardando o corpo cru
 (edita uma linha existente de arquivo quente, e passa a guardar o corpo cru de todo pedido do
 Kuma); consultar a API do Bitbucket por polling (exige token, e o limite de 1.000 pedidos por hora
@@ -181,6 +197,22 @@ rotular "sem pipeline" ali acusaria deploy manual em toda virada. Pelo mesmo mot
 situação de cada fonte, que ele já mantém para o rodapé. O projeto de uma release vem da configuração. A identidade
 do deploy é `projeto + SHA` quando há SHA, e `projeto + id da execução` ou
 `namespace/release + revisão` quando não há.
+
+**Ajustes da implementação (02/11/2026):**
+- *As duas direções.* Além da pipeline que já rodava quando a virada sem SHA começou, a pipeline que
+  chega depois entra numa virada sem SHA que começou enquanto ela rodava. É o caso do chat
+  (`helm --wait`: o workflow termina depois da virada) e do Kuma, cujo deploy derruba o painel: os
+  eventos do início se perdem, a virada é vista no boot e o workflow termina um minuto depois.
+  Virada perdida nunca recebe "Sem pipeline".
+- *Só o workflow de deploy.* O Kuma e o chat rodam testes e CodeQL na mesma master; um teste falho
+  não pode pintar o deploy de vermelho. Projeto do GitHub declara `workflow` (o arquivo).
+- *Reexecução.* O estado da pipeline é o da execução mais recente, para a reexecução que passou
+  valer sobre a que falhou.
+- *Fim do cartão.* Pipeline que falha vai para o histórico como "com falha" depois de 10 min;
+  pipeline verde sem virada mostra o aviso aos 10 min e vai para o histórico como "sem virada" com
+  1 h, fora da taxa de sucesso (pode ser a reexecução de um commit já no ar). Merge com `[skip ci]`
+  não abre deploy, e merge sem pipeline em 15 min some sem ir ao histórico.
+- *O cartão conta do merge.* O deploy começa no merge, então "levou N" vai do merge ao "No ar".
 
 O estado do deploy é derivado, nunca gravado: a cada evento o store recalcula o rótulo
 (`Na pipeline`, `Virando no cluster`, `Sem progresso`, `Virada travada`, `Falhou`, `No ar`,
@@ -339,10 +371,16 @@ crédito da CC BY também aparece no texto de ajuda do botão.
 Os eventos saem de uma função pura que compara o snapshot anterior com o atual; carga da página,
 reconexão e histórico carregado do banco não tocam nada. Um som por vez, numa fila de no máximo
 quatro, e o mesmo evento do mesmo deploy na mesma etapa não repete (a produção depois da integração
-é outra etapa, e toca de novo). Começa desligado, e a escolha fica no navegador. Depois de recarregar
+é outra etapa, e toca de novo). A escolha de silenciar fica no navegador. Depois de recarregar
 a página, o navegador não toca nada até alguém clicar nela, e o painel diz isso ao lado do botão.
 *Descartado:* síntese com osciladores (a primeira decisão: sem licença nem peso, mas soa eletrônica);
 e tocar no servidor — o som é de quem está olhando a tela.
+
+**Revisto em 02/11/2026, a pedido do Erik:** o som vem ligado por padrão; só fica desligado no
+navegador em que alguém silenciou. Enquanto ninguém clicar na página, o navegador não deixa tocar, e
+o painel avisa ao lado do botão. Os sons da pipeline entraram com a fase 4: "iniciado" quando ela
+começa, "build concluído" quando fica verde e "falhou" quando falha; pipeline que se junta depois a
+uma virada (a do Kuma) não toca nada.
 
 ### 17. Voltar à versão anterior: o painel mostra o comando, não executa
 

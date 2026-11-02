@@ -376,7 +376,7 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(saved[0].id, saved[1].id, "o mesmo registro, para o upsert");
             assert.strictEqual(saved[1].outcome, "done");
 
-            assert.deepStrictEqual(Object.keys(saved[1]).sort(), ["endedAt", "id", "missed", "outcome", "project", "releases", "rollouts", "sha", "startedAt", "version"]);
+            assert.deepStrictEqual(Object.keys(saved[1]).sort(), ["endedAt", "id", "missed", "outcome", "pipeline", "project", "releases", "rollouts", "sha", "startedAt", "version"]);
             for (const r of saved[1].rollouts) {
                 assert.ok(Object.keys(r).every((k) => ROLLOUT_RECORD_FIELDS.includes(k)), Object.keys(r).join(","));
             }
@@ -457,7 +457,7 @@ describe("Estado do painel de deploys", () => {
             records.push(ended("s", "stuck", 30 * 60 * 1000), ended("r1", "replaced", 40 * 60 * 1000), ended("r2", "replaced", 50 * 60 * 1000));
             store.restore(records);
             store.upsertRollout(rollout());
-            assert.deepStrictEqual(store.snapshot().stats, { total: 15, done: 11, stuck: 1, failed: 0, replaced: 2, inProgress: 1, successRate: 92 });
+            assert.deepStrictEqual(store.snapshot().stats, { total: 15, done: 11, stuck: 1, failed: 0, replaced: 2, noRollout: 0, inProgress: 1, successRate: 92 });
             assert.deepStrictEqual(Object.keys(store.snapshot().stats).sort(), [...STATS_FIELDS].sort());
         });
 
@@ -492,7 +492,7 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(store.snapshot().stats.total, 1);
             advance(HISTORY_MS);
             store.tick();
-            assert.deepStrictEqual(store.snapshot().stats, { total: 0, done: 0, stuck: 0, failed: 0, replaced: 0, inProgress: 0, successRate: null });
+            assert.deepStrictEqual(store.snapshot().stats, { total: 0, done: 0, stuck: 0, failed: 0, replaced: 0, noRollout: 0, inProgress: 0, successRate: null });
         });
     });
 });

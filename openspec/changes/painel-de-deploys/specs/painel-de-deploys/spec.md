@@ -230,9 +230,10 @@ termina verde; dois toques curtos da buzina quando a virada começa no cluster; 
 dois toques quando o deploy fica "No ar"; a buzina mais grave seguida de cinco toques curtos (o sinal
 de perigo do RIPEAM) quando a pipeline falha ou a virada trava. Os sons SHALL ser gravações reais,
 nada eletrônico nem de jogo, com a licença e o autor registrados junto dos arquivos e o crédito que a
-licença exigir na própria tela. Os arquivos SHALL ser baixados só depois que o som for ativado. O
-som SHALL começar desligado e ser ativado por um botão, com a escolha gravada no navegador; ativar
-toca o sino uma vez. Só transição vista ao vivo SHALL tocar: abrir a página, reconectar o socket ou
+licença exigir na própria tela. Os arquivos SHALL ser baixados só quando o som estiver ligado. O
+som SHALL começar ligado; um botão SHALL silenciar e religar, com a escolha gravada no navegador, e
+religar toca o sino uma vez. Enquanto o navegador não deixar tocar (nenhum clique na página ainda),
+o painel SHALL dizer isso ao lado do botão. Só transição vista ao vivo SHALL tocar: abrir a página, reconectar o socket ou
 carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez.
 
 #### Scenario: Virada concluída
@@ -251,9 +252,13 @@ carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez.
 - **WHEN** a página é recarregada e ninguém clicou nela ainda
 - **THEN** o navegador não deixa tocar, e o painel avisa ao lado do botão que é preciso um clique
 
-#### Scenario: Som desligado
-- **WHEN** o som não foi ativado naquele navegador e uma virada começa
-- **THEN** nada toca
+#### Scenario: Som silenciado
+- **WHEN** alguém silenciou o som naquele navegador e uma virada começa
+- **THEN** nada toca, e continua silenciado ao recarregar
+
+#### Scenario: Navegador novo
+- **WHEN** o painel é aberto num navegador em que ninguém mexeu no som
+- **THEN** o som está ligado e toca a partir do primeiro clique na página
 
 ### Requirement: Textos traduzidos e sem controles de demonstração
 

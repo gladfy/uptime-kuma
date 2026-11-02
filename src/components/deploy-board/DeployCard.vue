@@ -8,6 +8,23 @@
 
         <p class="db-card-time">{{ timeText }}</p>
 
+        <section v-if="pipeline" class="db-pipeline" :class="'is-' + pipeline.state">
+            <div class="db-pipeline-head">
+                <span class="db-pipeline-state">{{ $t(PIPELINE_KEYS[pipeline.state] || PIPELINE_KEYS.running) }}</span>
+                <a v-if="pipeline.url" class="db-pipeline-link" :href="pipeline.url" target="_blank" rel="noopener noreferrer">
+                    {{ $t("deployBoardPipelineOpen") }}
+                </a>
+            </div>
+            <p v-if="pipeline.message" class="db-pipeline-commit">{{ pipeline.message }}</p>
+            <p v-for="line in pipelineLines" :key="line" class="db-pipeline-note">{{ line }}</p>
+            <ul v-if="pipeline.jobs.length" class="db-jobs">
+                <li v-for="job in pipeline.jobs" :key="job.name" class="db-job" :class="'is-' + job.state">
+                    <span class="db-job-name">{{ job.name }}</span>
+                    <span class="db-job-state">{{ jobText(job) }}</span>
+                </li>
+            </ul>
+        </section>
+
         <ul class="db-card-releases">
             <li v-for="r in deploy.releases" :key="r.namespace + '/' + r.release" class="db-release" :class="'is-' + stateClass(r.state)">
                 <span class="db-release-name">{{ r.release }}</span>
@@ -24,7 +41,7 @@
             </li>
         </ul>
 
-        <p v-if="!deploy.confirmed" class="db-card-warning">{{ $t("deployBoardUnconfirmed") }}</p>
+        <p v-if="!deploy.confirmed && deploy.releases.length" class="db-card-warning">{{ $t("deployBoardUnconfirmed") }}</p>
 
         <div v-if="deploy.rollback" class="db-rollback">
             <button type="button" class="db-rollback-toggle" :aria-expanded="String(rollbackOpen)" @click="rollbackOpen = !rollbackOpen">
@@ -61,6 +78,29 @@ const LABEL_KEYS = {
     stuck: "deployBoardLabelStuck",
     live: "deployBoardLabelLive",
     noPipeline: "deployBoardLabelNoPipeline",
+    inPipeline: "deployBoardLabelInPipeline",
+    built: "deployBoardLabelBuilt",
+    failed: "deployBoardLabelFailed",
+    noRollout: "deployBoardLabelNoRollout",
+};
+
+/** Pipeline state → i18n key. */
+const PIPELINE_KEYS = {
+    merged: "deployBoardPipelineMerged",
+    queued: "deployBoardPipelineQueued",
+    running: "deployBoardPipelineRunning",
+    success: "deployBoardPipelineSuccess",
+    failed: "deployBoardPipelineFailed",
+    stopped: "deployBoardPipelineStopped",
+};
+
+/** Job state → i18n key. */
+const JOB_KEYS = {
+    queued: "deployBoardJobQueued",
+    running: "deployBoardJobRunning",
+    success: "deployBoardJobSuccess",
+    failed: "deployBoardJobFailed",
+    stopped: "deployBoardJobStopped",
 };
 
 /** Why a release has no command → i18n key. */
@@ -82,6 +122,9 @@ const TONES = {
     noProgress: "warn",
     stuck: "bad",
     done: "ok",
+    pipeline: "rolling",
+    built: "rolling",
+    failed: "bad",
 };
 
 export default {
@@ -106,6 +149,7 @@ export default {
     data() {
         return {
             GAP_KEYS,
+            PIPELINE_KEYS,
             rollbackOpen: false,
             copied: false,
         };
@@ -149,7 +193,37 @@ export default {
 
         /** @returns {string} Tone of the card */
         tone() {
+            if (this.deploy.label === "noRollout") {
+                return "warn";
+            }
             return TONES[this.deploy.state] || "rolling";
+        },
+
+        /** @returns {object|null} Pipeline of the deploy (older servers do not send it) */
+        pipeline() {
+            return this.deploy.pipeline || null;
+        },
+
+        /**
+         * Lines under the commit: time since the merge, and what the green pipeline means.
+         * @returns {string[]} Lines.
+         */
+        pipelineLines() {
+            const p = this.pipeline;
+            const lines = [];
+            if (p.mergedAt) {
+                lines.push(this.$t("deployBoardPipelineMergedAgo", [this.formatDuration(this.now - p.mergedAt)]));
+            }
+            if (p.state === "success" && p.endedAt) {
+                const ago = this.formatDuration(this.now - p.endedAt);
+                if (this.deploy.label === "noRollout") {
+                    lines.push(this.$t("deployBoardPipelineNoRollout", [ago]));
+                } else if (this.deploy.state !== "done") {
+                    // Bitbucket goes green once helm has applied the release; the pods come after.
+                    lines.push(this.$t("deployBoardPipelineGreenRolling", [ago]));
+                }
+            }
+            return lines;
         },
 
         /** @returns {string} How long it has been running, or how long it took */
@@ -170,6 +244,19 @@ export default {
     },
 
     methods: {
+        /**
+         * @param {object} job Job of the pipeline.
+         * @returns {string} Its state, with how long it took or has been running.
+         */
+        jobText(job) {
+            const state = this.$t(JOB_KEYS[job.state] || JOB_KEYS.running);
+            if (!job.startedAt) {
+                return state;
+            }
+            const until = job.endedAt || this.now;
+            return `${state} · ${this.formatDuration(until - job.startedAt)}`;
+        },
+
         /**
          * Copy the command. Where the browser refuses the clipboard, the text is selected for Ctrl+C.
          * @returns {void}
@@ -351,6 +438,89 @@ export default {
     font-size: 0.85em;
     font-weight: 600;
     color: var(--db-warn);
+}
+
+.db-pipeline {
+    display: grid;
+    gap: 0.25em;
+    padding: 0.5em 0.7em;
+    border-radius: 6px;
+    background: var(--db-panel-2);
+    font-size: 0.88em;
+    min-width: 0;
+}
+
+.db-pipeline-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.2em 0.8em;
+}
+
+.db-pipeline-state {
+    font-weight: 700;
+    color: var(--db-brand);
+
+    .is-success & {
+        color: var(--db-ok);
+    }
+
+    .is-failed &,
+    .is-stopped & {
+        color: var(--db-bad);
+    }
+}
+
+.db-pipeline-link {
+    color: var(--db-ink-2);
+    font-size: 0.92em;
+
+    &:hover {
+        color: var(--db-brand);
+    }
+}
+
+.db-pipeline-commit {
+    margin: 0;
+    color: var(--db-ink);
+    overflow-wrap: anywhere;
+}
+
+.db-pipeline-note {
+    margin: 0;
+    color: var(--db-ink-3);
+}
+
+.db-jobs {
+    display: grid;
+    gap: 0.15em;
+    margin: 0.2em 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.db-job {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.6em;
+    color: var(--db-ink-2);
+
+    &.is-failed .db-job-state {
+        color: var(--db-bad);
+    }
+
+    &.is-success .db-job-state {
+        color: var(--db-ok);
+    }
+}
+
+.db-job-name {
+    overflow-wrap: anywhere;
+}
+
+.db-job-state {
+    font-variant-numeric: tabular-nums;
 }
 
 .db-rollback {

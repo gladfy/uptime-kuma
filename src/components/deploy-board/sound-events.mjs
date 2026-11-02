@@ -19,17 +19,20 @@ function stageOf(deploy) {
         .join(",");
 }
 
+/** Pipeline states that are a failure. */
+const PIPELINE_FAILED = ["failed", "stopped"];
+
 /**
  * Sounds for what changed from one snapshot to the next.
  *
- * A deploy that shows up rolling plays "started" and then "rolling"; one that comes back from the
- * history (the production of a commit whose integration already ended) plays only "rolling". Reaching
- * "No ar" plays "done", getting stuck plays "failed". "No progress" and "replaced" play nothing.
- * Without a previous snapshot (page load, reconnection, server restart with the history loaded from
- * the database) nothing plays: those are things found, not seen happening.
- *
- * "started" and "built" belong to the pipeline once its source exists (phase 4); until then, the
- * rollout starting is the start of the deploy.
+ * A deploy that shows up plays "started" (its pipeline began, or its rollout, in a project with no
+ * pipeline) and "rolling" when it already has a rollout; one that comes back from the history (the
+ * production of a commit whose integration already ended) plays only "rolling". The pipeline going
+ * green plays "built" and failing plays "failed"; the first rollout of a deploy that had only the
+ * pipeline plays "rolling". Reaching "No ar" plays "done", getting stuck plays "failed". "No
+ * progress" and "replaced" play nothing. Without a previous snapshot (page load, reconnection, server
+ * restart with the history loaded from the database) nothing plays: those are things found, not seen
+ * happening.
  * @param {object|null} previous Snapshot before.
  * @param {object|null} current Snapshot now.
  * @returns {{deployId: string, event: string, key: string}[]} Sounds, in order; `key` names the
@@ -48,20 +51,40 @@ export function soundEvents(previous, current) {
         const play = (event) => out.push({ deployId: deploy.id, event, key: `${deploy.id}:${event}:${stage}` });
         const old = before.get(deploy.id);
 
+        const pipeline = deploy.pipeline?.state;
         if (!old) {
             // Found already rolling or rolled while the board was down: its start was not seen.
-            if (deploy.missed || deploy.releases.every((r) => r.atBoot)) {
+            if (deploy.missed || (deploy.releases.length > 0 && deploy.releases.every((r) => r.atBoot))) {
                 continue;
             }
-            if (!inHistory.has(deploy.id) && !deploy.pipeline) {
+            if (!inHistory.has(deploy.id)) {
                 play("started");
             }
-            play("rolling");
+            if (pipeline === "success") {
+                play("built");
+            }
+            if (deploy.releases.length > 0) {
+                play("rolling");
+            }
             if (deploy.state === "done") {
                 play("done");
-            } else if (deploy.state === "stuck") {
+            } else if (deploy.state === "stuck" || deploy.state === "failed") {
                 play("failed");
             }
+            continue;
+        }
+
+        // The pipeline, when it was already there (one that joins late, as the Kuma's, plays nothing).
+        const pipelineBefore = old.pipeline?.state;
+        if (pipelineBefore !== undefined && pipeline !== pipelineBefore) {
+            if (pipeline === "success") {
+                play("built");
+            } else if (PIPELINE_FAILED.includes(pipeline) && !PIPELINE_FAILED.includes(pipelineBefore)) {
+                play("failed");
+            }
+        }
+        if (old.releases.length === 0 && deploy.releases.length > 0 && deploy.state !== "done") {
+            play("rolling");
             continue;
         }
 

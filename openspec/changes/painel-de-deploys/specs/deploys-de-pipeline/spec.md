@@ -11,6 +11,8 @@ O servidor SHALL receber webhooks em `POST /api/deploy-board/webhook/bitbucket` 
 - Assinatura ausente ou errada: SHALL responder 401 e não registrar nada.
 - Corpo acima de 1 MiB: SHALL responder 413.
 - As rotas SHALL ter limite de taxa por IP.
+- Só os dois caminhos exatos SHALL ser alcançáveis pelas faixas de saída publicadas do Bitbucket e
+  do GitHub; o resto do Kuma SHALL continuar restrito à lista de IPs de hoje.
 
 Segredo, cabeçalho de assinatura e corpo do pedido SHALL NOT aparecer em log.
 
@@ -26,6 +28,10 @@ Segredo, cabeçalho de assinatura e corpo do pedido SHALL NOT aparecer em log.
 - **WHEN** a assinatura é calculada sobre o JSON reserializado em vez do corpo recebido
 - **THEN** o pedido é recusado, porque a verificação usa os bytes recebidos
 
+#### Scenario: Faixas de quem envia
+- **WHEN** um IP do GitHub (faixa `hooks` de `api.github.com/meta`) pede `/dashboard` do Kuma
+- **THEN** o ingress recusa, porque só os caminhos do webhook aceitam essas faixas
+
 #### Scenario: Fonte desligada
 - **WHEN** não há segredo do GitHub configurado
 - **THEN** `POST /api/deploy-board/webhook/github` responde 404
@@ -33,8 +39,13 @@ Segredo, cabeçalho de assinatura e corpo do pedido SHALL NOT aparecer em log.
 ### Requirement: Só os repositórios e branches configurados
 
 O servidor SHALL considerar apenas eventos de repositórios listados na configuração e da branch de
-produção de cada projeto. Os demais SHALL ser aceitos com 2xx e descartados sem registro, para o
+produção de cada projeto e, no GitHub, quando o projeto declara o `workflow` de deploy, só as
+execuções desse workflow. Os demais SHALL ser aceitos com 2xx e descartados sem registro, para o
 remetente não reenviar.
+
+#### Scenario: Testes na mesma master
+- **WHEN** o workflow `auto-test` do `gladfy/uptime-kuma` falha na master, e o projeto declara `workflow: .github/workflows/build-and-push.yml`
+- **THEN** o deploy não é marcado como falho
 
 #### Scenario: Push numa branch de feature
 - **WHEN** chega um push assinado do `winker/condominio` na branch `GPW-123`
@@ -102,6 +113,14 @@ As regras de correlação com a pipeline:
 4. Pipeline concluída com sucesso de projeto no cluster sem nenhuma virada em 10 minutos SHALL
    aparecer com o aviso "pipeline verde, nenhuma virada vista" **somente quando a fonte do cluster
    estiver ativa**. Sem ela, o painel não tem como saber se houve virada e SHALL NOT dar o aviso.
+   Uma hora depois, ela SHALL ir para o histórico como "sem virada", fora da taxa de sucesso.
+5. Pipeline que termina depois de uma virada sem SHA ter começado, e que já rodava quando ela
+   começou, SHALL juntar-se a essa virada (o `helm --wait` do chat; o deploy do próprio Kuma, que
+   derruba o painel e só é visto depois). Virada que aconteceu com o painel fora do ar SHALL NOT
+   receber "Sem pipeline": os eventos da pipeline podem ter chegado sem ninguém ouvindo.
+6. Pipeline que falha SHALL marcar o deploy como "Falhou" e ir para o histórico "com falha". Merge
+   com `[skip ci]` SHALL NOT abrir deploy, e merge cuja pipeline não informa nada em 15 minutos SHALL
+   sair da tela sem ir ao histórico.
 
 O projeto de uma release SHALL vir da configuração (lista de releases por projeto).
 
@@ -117,6 +136,10 @@ O projeto de uma release SHALL vir da configuração (lista de releases por proj
 - **WHEN** a pipeline do api_gateway termina com sucesso, o cluster está sendo lido e nenhuma release do projeto muda de revisão em 10 minutos
 - **THEN** o cartão mostra "pipeline verde, nenhuma virada vista"
 
+#### Scenario: O deploy do Kuma
+- **WHEN** o workflow do `gladfy/uptime-kuma` faz o deploy, o Kuma reinicia e vê a própria virada no boot, e o workflow termina um minuto depois
+- **THEN** o cartão do Kuma tem a virada e o workflow, e nunca mostra "Sem pipeline"
+
 #### Scenario: Fonte de pipeline ainda não ligada
 - **WHEN** o segredo do Bitbucket não está configurado e a release `winker-prod` muda de revisão
 - **THEN** o cartão do condominio mostra só a virada, sem seção de pipeline e sem o rótulo "Sem pipeline"
@@ -130,7 +153,7 @@ O projeto de uma release SHALL vir da configuração (lista de releases por proj
 A configuração do painel SHALL vir de um arquivo JSON indicado por variável de ambiente, com:
 namespaces observados, projetos (nome, releases `<namespace>/<release>` e, quando o projeto tem
 pipeline no Bitbucket ou no GitHub, origem `bitbucket` ou `github`, repositório e branch de
-produção) e a região do Amplify. Origem, repositório e branch SHALL vir juntos ou faltar juntos;
+produção, e no GitHub, opcional, o `workflow` de deploy) e a região do Amplify. Origem, repositório e branch SHALL vir juntos ou faltar juntos;
 projeto com só parte deles SHALL ser recusado, com a mensagem nomeando o campo que falta. Os segredos dos webhooks SHALL
 vir de variáveis de ambiente próprias e SHALL NOT estar no arquivo. Arquivo ausente ou inválido
 SHALL desligar todas as fontes de deploy (cluster, pipelines e Amplify, porque os namespaces e a

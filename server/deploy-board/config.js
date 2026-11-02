@@ -13,6 +13,12 @@ const RELEASE_RE = /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/;
  */
 const PIPELINE_FIELDS = ["source", "repo", "branch"];
 
+/**
+ * A GitHub workflow file. Other workflows run on the same push (tests, CodeQL), and a failing test
+ * must not paint the deploy as failed: when set, only this one counts.
+ */
+const WORKFLOW_RE = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
+
 /** owner/name, as Bitbucket and GitHub write it. */
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
@@ -82,6 +88,14 @@ function validateDeployBoardConfig(raw) {
                 return fail(`${at}.branch: expected a non-empty text`);
             }
         }
+        if (p.workflow !== undefined) {
+            if (p.source !== "github") {
+                return fail(`${at}.workflow: only for source github`);
+            }
+            if (typeof p.workflow !== "string" || !WORKFLOW_RE.test(p.workflow)) {
+                return fail(`${at}.workflow: expected ".github/workflows/<file>.yml"`);
+            }
+        }
         if (!Array.isArray(p.releases)) {
             return fail(`${at}.releases: expected a list`);
         }
@@ -105,6 +119,7 @@ function validateDeployBoardConfig(raw) {
             source: p.source ?? null,
             repo: p.repo ?? null,
             branch: p.branch ?? null,
+            workflow: p.workflow ?? null,
             releases,
         });
     }

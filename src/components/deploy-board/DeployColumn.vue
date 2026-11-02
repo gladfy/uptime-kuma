@@ -20,7 +20,7 @@
             <h3 class="db-subtitle">{{ $t("deployBoardHistory") }}</h3>
             <p v-if="!board || board.history.length === 0" class="db-muted">{{ $t("deployBoardHistoryEmpty") }}</p>
             <ol v-else class="db-history-list">
-                <li v-for="item in board.history" :key="item.id" class="db-history-item" :class="'is-' + item.outcome">
+                <li v-for="item in board.history" :key="item.id" class="db-history-item" :class="'is-' + outcomeClass(item.outcome)">
                     <span class="db-history-project">{{ item.project }}</span>
                     <code v-if="item.version" class="db-history-version">{{ item.version }}</code>
                     <span class="db-history-outcome">{{ $t(OUTCOME_KEYS[item.outcome]) }}</span>
@@ -43,6 +43,8 @@ const OUTCOME_KEYS = {
     done: "deployBoardOutcomeDone",
     stuck: "deployBoardOutcomeStuck",
     replaced: "deployBoardOutcomeReplaced",
+    failed: "deployBoardOutcomeFailed",
+    noRollout: "deployBoardOutcomeNoRollout",
 };
 
 export default {
@@ -76,6 +78,16 @@ export default {
         /** @returns {boolean} True when no deploy source is configured at all */
         noSourceOn() {
             return Object.values(this.board.sources).every((s) => s.state === "unconfigured");
+        },
+    },
+
+    methods: {
+        /**
+         * @param {string} outcome Outcome of a history entry.
+         * @returns {string} Kebab-case class suffix.
+         */
+        outcomeClass(outcome) {
+            return outcome === "noRollout" ? "no-rollout" : outcome;
         },
     },
 };
@@ -164,8 +176,13 @@ export default {
     font-weight: 700;
     color: var(--db-ok);
 
-    .is-stuck & {
+    .is-stuck &,
+    .is-failed & {
         color: var(--db-bad);
+    }
+
+    .is-no-rollout & {
+        color: var(--db-warn);
     }
 
     .is-replaced & {

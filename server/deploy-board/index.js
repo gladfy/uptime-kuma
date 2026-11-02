@@ -5,6 +5,20 @@ const { broadcastToLoggedIn } = require("./broadcast");
 const { ClusterTracker } = require("./cluster-tracker");
 const { KubernetesSource } = require("./kubernetes-source");
 const { DeployHistoryRepository } = require("./history-repository");
+const { parseBitbucket } = require("./bitbucket-events");
+const { parseGithub } = require("./github-events");
+
+/** Where the secret of each webhook comes from. Never in the configuration file. */
+const WEBHOOK_SECRET_ENVS = {
+    bitbucket: "DEPLOY_BOARD_BITBUCKET_SECRET",
+    github: "DEPLOY_BOARD_GITHUB_SECRET",
+};
+
+/** Webhook body → events, per source. */
+const PARSERS = {
+    bitbucket: parseBitbucket,
+    github: parseGithub,
+};
 
 /** The database keeps a week of deploys; the screen shows the last HISTORY_MS of them. */
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -66,6 +80,9 @@ class DeployBoard {
                 log.info("deploy-board", "DEPLOY_BOARD_CONFIG is not set; every deploy source is off.");
             } else {
                 log.info("deploy-board", `Configuration loaded from ${loaded.path}`);
+                // Before the history and the cluster: a webhook may arrive in the meantime.
+                this.store.setProjects(loaded.config.projects);
+                this.startWebhooks();
                 if (this.history.available()) {
                     // The history goes in first, so the first rollout can join a deploy loaded from it.
                     this.ready = this.loadHistory()
@@ -84,6 +101,50 @@ class DeployBoard {
         if (io) {
             this.store.onChange((snapshot) => broadcastToLoggedIn(io, snapshot));
         }
+    }
+
+    /**
+     * @param {string} source "bitbucket" or "github".
+     * @returns {string|null} Its webhook secret, or null while it is not configured.
+     */
+    webhookSecret(source) {
+        const name = WEBHOOK_SECRET_ENVS[source];
+        const value = name ? this.env[name] : undefined;
+        return typeof value === "string" && value !== "" ? value : null;
+    }
+
+    /**
+     * Switch on the pipeline sources that have a secret. They are push: "active" means the route
+     * accepts their webhooks, and the footer shows when the last one came.
+     * @returns {void}
+     */
+    startWebhooks() {
+        const on = Object.keys(WEBHOOK_SECRET_ENVS).filter((source) => this.webhookSecret(source));
+        for (const source of on) {
+            this.store.setSource(source, "active");
+        }
+        if (on.length) {
+            // "Pipeline verde, nenhuma virada vista" and the cards leaving the screen are a matter of time.
+            this.store.startTicking();
+            log.info("deploy-board", `Webhooks on for ${on.join(", ")}`);
+        }
+    }
+
+    /**
+     * A webhook whose signature was already checked.
+     * @param {string} source "bitbucket" or "github".
+     * @param {string} eventName Event header.
+     * @param {object} payload Parsed body.
+     * @returns {{repo: string, kept: number}} The repository and how many events the board kept.
+     */
+    receiveWebhook(source, eventName, payload) {
+        this.store.markData(source);
+        const projects = this.config ? this.config.projects : [];
+        const { repo, events } = PARSERS[source](eventName, payload, projects);
+        for (const event of events) {
+            this.store.pipelineEvent(event);
+        }
+        return { repo, kept: events.length };
     }
 
     /**
@@ -163,6 +224,7 @@ class DeployBoard {
 const deployBoard = new DeployBoard();
 
 module.exports = {
+    WEBHOOK_SECRET_ENVS,
     HISTORY_RETENTION_MS,
     DeployBoard,
     deployBoard,

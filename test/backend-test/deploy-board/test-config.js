@@ -103,10 +103,28 @@ describe("Configuração do painel de deploys", () => {
             source: null,
             repo: null,
             branch: null,
+            workflow: null,
             releases: [{ namespace: "microservices-prod", release: "agua-gas" }],
         });
         // O projeto com origem continua como estava.
         assert.strictEqual(config.projects[0].source, "bitbucket");
+    });
+
+    test("workflow do GitHub: aceito no projeto do GitHub, recusado no resto e fora do formato", () => {
+        const chat = { ...VALID.projects[1], workflow: ".github/workflows/build-and-deploy-prod.yaml" };
+        const ok = validateDeployBoardConfig(variant({ projects: [chat] }));
+        assert.strictEqual(ok.error, null);
+        assert.strictEqual(ok.config.projects[0].workflow, ".github/workflows/build-and-deploy-prod.yaml");
+        const cases = [
+            [{ ...VALID.projects[0], workflow: ".github/workflows/x.yml" }, "projects[0].workflow: only for source github"],
+            [{ ...chat, workflow: "build-and-deploy-prod.yaml" }, "projects[0].workflow: expected"],
+            [{ ...chat, workflow: ".github/workflows/../../x.yml" }, "projects[0].workflow: expected"],
+        ];
+        for (const [project, message] of cases) {
+            const { config, error } = validateDeployBoardConfig(variant({ projects: [project] }));
+            assert.strictEqual(config, null);
+            assert.ok(error.startsWith(message), error);
+        }
     });
 
     test("origem incompleta: source, repo e branch vêm juntos, e a mensagem nomeia o que falta", () => {

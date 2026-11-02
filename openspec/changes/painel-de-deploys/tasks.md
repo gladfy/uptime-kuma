@@ -163,7 +163,7 @@ Pedido do Erik em 02/11/2026. Usa o histórico que a fase 3.1 já grava; nenhuma
 
 - [x] 14.1 Botão pequeno no canto do cabeçalho que alterna claro e escuro, gravando na mesma preferência do Kuma (`$root.userTheme`, a de Configurações → Aparência), então a escolha vale para aquele navegador. Rótulo acessível que diz o tema de destino; ícone de sol/lua; funciona no modo de parede.
 - [x] 14.2 Chaves de i18n novas no meio dos dois json.
-- [ ] 14.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador nos dois temas em 1920 × 1080 e em 400 px; merge e deploy.
+- [x] 14.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador nos dois temas em 1920 × 1080 e em 400 px; merge e deploy.
   - 02/11/2026, local: test-backend 371/371, lint 0 erros, langs ok, build ok. Navegador (Kuma descartável com 14 deploys plantados no banco e carregados no boot): "Últimas 24 h · 14 deploys · Sucesso: 92% (11 de 12)", detalhe por desfecho no `title`, o botão alterna escuro → claro, a escolha fica em `localStorage.theme` e sobrevive ao recarregar, 400 px sem rolagem horizontal. Falta merge e deploy.
 
 # Fase 3.3 — Deploy com o painel fora do ar
@@ -184,7 +184,7 @@ Achado de 02/11/2026: o Kuma roda com `strategy: Recreate` (volume EBS e SQLite 
 
 - [x] 16.1 `npm run build`, `npm run test-backend` (com as migrations em SQLite e MariaDB), `npm run lint`, `node extra/check-lang-json.js` e `node extra/check-knex-filenames.mjs` verdes.
   - 02/11/2026, local: test-backend 381/381 (migrations ok em SQLite e MariaDB 12), lint 0 erros, langs e nomes de migration ok, build ok.
-- [ ] 16.2 Merge e deploy. O deploy da própria 3.3 não aparece (a tabela nasce vazia); conferir no log que as assinaturas foram gravadas e, no deploy seguinte do Kuma, que ele aparece concluído com "virou com o painel fora do ar".
+- [x] 16.2 Merge e deploy. O deploy da própria 3.3 não aparece (a tabela nasce vazia); conferir no log que as assinaturas foram gravadas e, no deploy seguinte do Kuma, que ele aparece concluído com "virou com o painel fora do ar". Conferido em 02/11/2026: o boot da `2.5.3-winker.24` carregou "last version of 170 objects" (as releases acompanhadas; 0 no boot anterior) e o cartão `uptime-kuma` apareceu com "virou com o painel fora do ar" (Erik).
 
 # Fase 4 — Pipelines
 
@@ -192,25 +192,25 @@ Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 
 
 ## 17. Assinatura e leitura dos eventos
 
-- [ ] 17.1 Criar `server/deploy-board/signature.js`: HMAC-SHA256 sobre o `Buffer` recebido, formato `sha256=<hex>`, `crypto.timingSafeEqual` com guarda de tamanho.
-- [ ] 17.2 Criar `server/deploy-board/bitbucket-events.js` e `github-events.js` (puros): `repo:push`/`push` → merge (hora, SHA, primeira linha da mensagem truncada em 120); `repo:commit_status_*` → estado da pipeline; `workflow_run` → execução; `workflow_job` → job. Filtro por repositório e branch configurados (projeto sem origem nunca casa). Só os campos da spec saem da função.
-- [ ] 17.3 Escrever `test/backend-test/deploy-board/test-signature.js` e `test-webhook-events.js`: assinatura correta, errada, ausente, de tamanho diferente e calculada sobre o JSON reserializado (tem de falhar); payloads de exemplo reais de cada evento, branch de feature e repositório fora da configuração descartados.
+- [x] 17.1 Criar `server/deploy-board/signature.js`: HMAC-SHA256 sobre o `Buffer` recebido, formato `sha256=<hex>`, `crypto.timingSafeEqual` com guarda de tamanho.
+- [x] 17.2 Criar `server/deploy-board/bitbucket-events.js` e `github-events.js` (puros): `repo:push`/`push` → merge (hora, SHA, primeira linha da mensagem truncada em 120); `repo:commit_status_*` → estado da pipeline; `workflow_run` → execução; `workflow_job` → job. Filtro por repositório e branch configurados (projeto sem origem nunca casa). Só os campos da spec saem da função. Também: o SHA do Bitbucket sai de `commit.hash` ou do fim de `links.commit.href`; status sem `refname` só entra em commit já visto na branch; no GitHub, com `workflow` configurado, só esse workflow conta (o Kuma e o chat rodam testes e CodeQL na mesma master); link que não é do remetente não sai.
+- [x] 17.3 Escrever `test/backend-test/deploy-board/test-signature.js` e `test-webhook-events.js`: assinatura correta, errada, ausente, de tamanho diferente e calculada sobre o JSON reserializado (tem de falhar); payloads de exemplo reais de cada evento, branch de feature e repositório fora da configuração descartados.
 
 ## 18. Roteador de webhook
 
-- [ ] 18.1 Criar `server/routers/deploy-board-webhook-router.js`: `express.raw({ type: "application/json", limit: "1mb" })` no próprio roteador, só em `/api/deploy-board/webhook/:source`; 404 sem segredo, 401 sem assinatura válida, 413 acima do teto, 2xx para evento descartado; instância própria de `KumaRateLimiter`; log só com fonte, evento, repositório e desfecho.
-- [ ] 18.2 `server/server.js`: montar o roteador **antes** do `app.use(express.json())` da linha 213 (uma linha aditiva).
-- [ ] 18.3 Escrever `test/backend-test/deploy-board/test-webhook-router.js` com o app Express e o roteador montado antes de `express.json()`: os desfechos 404/401/413/2xx, um pedido JSON comum a outra rota continua chegando parseado, e o log capturado não contém trecho do corpo nem do segredo.
+- [x] 18.1 Criar `server/routers/deploy-board-webhook-router.js`: `express.raw({ type: "application/json", limit: "1mb" })` no próprio roteador, só em `/api/deploy-board/webhook/:source`; 404 sem segredo, 401 sem assinatura válida, 413 acima do teto, 2xx para evento descartado; limite por IP (o `RateLimiter` do pacote `limiter`, que está por trás do `KumaRateLimiter`, que o Kuma não exporta) antes de calcular a assinatura; 415 para conteúdo que não é JSON (o padrão de formulário do GitHub); log só com fonte, evento, repositório e desfecho.
+- [x] 18.2 `server/server.js`: montar o roteador **antes** do `app.use(express.json())` da linha 213 (uma linha aditiva).
+- [x] 18.3 Escrever `test/backend-test/deploy-board/test-webhook-router.js` com o app Express e o roteador montado antes de `express.json()`: os desfechos 404/401/413/2xx, um pedido JSON comum a outra rota continua chegando parseado, e o log capturado não contém trecho do corpo nem do segredo.
 
 ## 19. Correlação e cartão completo
 
-- [ ] 19.1 No store, a correlação da spec "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7), janela de 20 min para tag sem SHA, "sem pipeline" só com a fonte do projeto configurada, "pipeline verde, nenhuma virada vista" só com o cluster ativo.
-- [ ] 19.2 Ampliar `test-store.js`: o chat com tag `prod`, o condominio com SHA completo, dois deploys do mesmo projeto sobrepostos, fonte de pipeline desligada, projeto sem origem e cluster desligado.
-- [ ] 19.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase. Em `sound-events.mjs`, os sons da pipeline: "iniciado" quando ela começa (hoje sai da virada), "build concluído" quando termina verde e "falhou" quando falha, com os testes em `test-sound-events.js`.
+- [x] 19.1 No store, a correlação da spec "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7), janela de 20 min para tag sem SHA, "sem pipeline" só com a fonte do projeto configurada, "pipeline verde, nenhuma virada vista" só com o cluster ativo. Também nas duas direções: a pipeline que termina depois da virada sem SHA entra nela (a do Kuma, que é sempre vista depois do fato, e o `helm --wait` do chat); virada perdida não recebe "sem pipeline"; merge com `[skip ci]` não abre deploy, e merge cuja pipeline nunca chega some em 15 min; pipeline verde sem virada vai para o histórico depois de 1 h, como "sem virada", fora da taxa de sucesso; pipeline que falha vai como "com falha".
+- [x] 19.2 Ampliar `test-store.js`: o chat com tag `prod`, o condominio com SHA completo, dois deploys do mesmo projeto sobrepostos, fonte de pipeline desligada, projeto sem origem e cluster desligado. Em `test-pipeline.js`, mais o Kuma, falha, reexecução, `[skip ci]`, status sem branch, jobs e a pipeline voltando do banco depois de um reinício.
+- [x] 19.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase. Em `sound-events.mjs`, os sons da pipeline: "iniciado" quando ela começa (hoje sai da virada), "build concluído" quando termina verde e "falhou" quando falha, com os testes em `test-sound-events.js`.
 
 ## 20. Infraestrutura e entrega da fase 4
 
-- [ ] 20.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart.
+- [ ] 20.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart. Chart 0.4.0 na branch `feat/uptimekuma-painel-de-deploys-fase-4` do infrastructure: o Secret `uptime-kuma-deploy-board-webhooks` é referenciado com `optional: true` e criado à mão pelo Erik (o chart não o cria); um Ingress próprio para os dois caminhos exatos do webhook, com a lista de faixas de saída do Bitbucket e do GitHub (o Ingress principal só aceita o connector e a sede); `workflow` do chat, do Kuma e do jambonz; origem do land, ai-agents, winker-mcp e audit-consumer. Falta: merge, publicação no S3 e o Secret.
 - [ ] 20.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
 - [ ] 20.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket.
 - [ ] 20.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
@@ -236,7 +236,8 @@ Pedido do Erik em 02/11/2026: o contêiner no navio, com sons realistas, nada el
 
 ## 22. Entrega da fase 5
 
-- [ ] 22.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado.
+- [ ] 22.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado. Merge e deploy feitos em 02/11/2026 (`2.5.3-winker.24`); falta ouvir um deploy real.
+- [x] 22.2 Som ligado por padrão (pedido do Erik em 02/11/2026): só fica desligado no navegador em que alguém silenciou. Até o primeiro clique na página, o navegador não deixa tocar, e o painel avisa ao lado do botão.
 
 # Fase 6 — Como voltar à versão anterior
 
@@ -252,7 +253,7 @@ Pedido do Erik em 02/11/2026. Decisão final (02/11): o painel **não** volta a 
 
 ## 24. Entrega da fase 6
 
-- [ ] 24.1 Chaves de i18n; `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador (copiar funciona; 400 px sem rolagem horizontal no bloco do comando); merge e deploy.
+- [x] 24.1 Chaves de i18n; `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador (copiar funciona; 400 px sem rolagem horizontal no bloco do comando); merge e deploy.
 - [ ] 24.2 Conferir, com o Erik, o comando gerado para o próximo deploy do condominio contra o que ele rodaria à mão.
 
 # Fase 7 — Amplify

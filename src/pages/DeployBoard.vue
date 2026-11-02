@@ -141,13 +141,13 @@ const WALL_QUERY = "(min-width: 1180px)";
 const SOUND_KEY = "deployBoardSound";
 
 /**
- * @returns {boolean} Whether sound was turned on in this browser.
+ * @returns {boolean} Whether sound is on in this browser: on unless someone muted it here.
  */
 function soundSaved() {
     try {
-        return localStorage.getItem(SOUND_KEY) === "on";
+        return localStorage.getItem(SOUND_KEY) !== "off";
     } catch (e) {
-        return false;
+        return true;
     }
 }
 
@@ -267,7 +267,7 @@ export default {
         /** @returns {string} Every counter, for the tooltip */
         statsDetail() {
             const s = this.stats;
-            return this.$t("deployBoardStatsDetail", [s.done, s.stuck, s.failed, s.replaced, s.inProgress]);
+            return this.$t("deployBoardStatsDetail", [s.done, s.stuck, s.failed, s.replaced, s.noRollout ?? 0, s.inProgress]);
         },
 
         /** @returns {string} What the sound button does */
@@ -294,14 +294,15 @@ export default {
             if (!anyOn) {
                 return { tone: "muted", title: this.$t("deployBoardNoSourcesShort"), sub: "" };
             }
-            const byState = (state) => this.board.deploys.filter((d) => d.state === state);
             const verdicts = [
-                ["stuck", "bad", "deployBoardVerdictStuck"],
-                ["noProgress", "warn", "deployBoardVerdictNoProgress"],
-                ["updating", "rolling", "deployBoardVerdictRolling"],
+                [(d) => d.state === "failed", "bad", "deployBoardVerdictFailed"],
+                [(d) => d.state === "stuck", "bad", "deployBoardVerdictStuck"],
+                [(d) => d.state === "noProgress", "warn", "deployBoardVerdictNoProgress"],
+                [(d) => d.label === "noRollout", "warn", "deployBoardVerdictNoRollout"],
+                [(d) => ["updating", "pipeline", "built"].includes(d.state), "rolling", "deployBoardVerdictRolling"],
             ];
-            for (const [state, tone, key] of verdicts) {
-                const deploys = byState(state);
+            for (const [matches, tone, key] of verdicts) {
+                const deploys = this.board.deploys.filter(matches);
                 if (deploys.length) {
                     return { tone, title: this.$t(key, [deploys.length]), sub: projectNames(deploys) };
                 }
