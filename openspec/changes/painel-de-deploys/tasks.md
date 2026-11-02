@@ -107,7 +107,7 @@ Fora desta fase, para a conferência da fase 6 decidir: as variantes de estágio
 
 ## 10. Infraestrutura e entrega da fase 3
 
-- [ ] 10.1 Confirmar com o Erik as origens marcadas "a confirmar" na tabela acima. Origem desconhecida entra sem origem; ela pode ser acrescentada depois sem mudar código.
+- [ ] 10.1 (não bloqueia a fase 3; precisa estar resolvida antes do cadastro de webhooks da fase 4) Confirmar com o Erik as origens marcadas "a confirmar" na tabela acima. Origem desconhecida entra sem origem; ela pode ser acrescentada depois sem mudar código.
   - No chart 0.3.0 entraram com origem só as confirmadas por clone local: `observer` (Bitbucket `winker/observer`, `master`) e `jambonz-worker` (GitHub `gladfy/jambonz-worker`, branch **`main`**). O `jambonz-vad` virou projeto próprio, sem origem, para a fase 4 não esperar pipeline do repositório do worker na virada dele. Os demais entraram sem origem.
 - [x] 10.2 Chart `uptimekuma` 0.3.0: os namespaces `microservices-prod`, `observer`, `site-prod`, `jambonz-prod`, `facial`, `land`, `chat-api`, `ai-agents-prod`, `mcp-prod`, `audit-platform`, `temporal` e `big-data` em `deployBoard.namespaces` (RoleBinding e configuração da mesma lista) e os projetos da tabela em `deployBoard.projects`. `helm lint`, `helm template` e o `config.json` renderizado passando no validador da 9.1. Publicar no S3 só com o pedido do Erik.
   - Branch `feat/uptimekuma-painel-de-deploys-fase-3` do `infrastructure` (19a1140f). `helm lint` ok; `helm template` com 17 RoleBindings; `config.json` renderizado com 17 namespaces, 21 projetos e 30 releases, aceito pelo validador novo e **recusado** pelo do master (`projects[7].source`), o que confirma a ordem; as 30 releases existem no cluster. Pacote `uptimekuma-0.3.0.tgz` (sha256 `04058c8b…733fec26`) pronto, ainda não publicado. `CHART_VERSION` da pipeline do fork em 0.3.0, no mesmo PR do código.
@@ -118,8 +118,8 @@ Fora desta fase, para a conferência da fase 6 decidir: as variantes de estágio
   - 31/10/2026: nos 12 namespaces novos e no `condominio`, `list`/`watch` de Deployments e CronJobs = yes; `get secrets`, `list pods`, `patch deployments` e `create pods/exec` = no. Fora deles (`kube-system`, `ingress`, `chat-dev`, `-A`, Secrets do cluster) = no. Nenhum 403 no log.
 - [x] 10.5 Tag `deploy` pela API do Kuma nos monitores da tabela: Água/Gás → `microservices-prod/agua-gas`, Superlógica → `microservices-prod/ms`, Status → `microservices-prod/status`, Observer → `observer/observer-prod`, Site → `site-prod/site-prod`, Jambonz Worker → `jambonz-prod/jambonz-worker`, Temporal → `temporal/temporal`, Prefect → `big-data/prefect-server`. Confirmar com o Erik o endereço do monitor "Flow": se for em `api.winker.com.br`, ganha `gateway/gateway-prod`.
   - 02/11/2026: simulação do script pela API do Kuma (usuário `infra@winker.com.br`) com as 16 ligações das fases 2 e 3: 16 de 16 já com a tag `deploy` (id 61), nada a gravar. O "Flow" segue sem tag até a confirmação.
-- [ ] 10.6 Acompanhar a próxima virada de uma release nova no painel.
-  - 02/11/2026 07:33 UTC: virada do `site-prod` (`site-winker` revisão 648, 2/2, e `site-winker-ondemand` revisão 79, 1/1, imagem `b588b70-b629`), concluída; o Kuma ficou de pé o tempo todo, sem erro do painel no log. Falta conferir na tela que ela aparece em "Hoje" como projeto `site`, versão `b588b70`, sem "Sem pipeline".
+- [x] 10.6 Acompanhar a próxima virada de uma release nova no painel.
+  - 02/11/2026 07:33 UTC: virada do `site-prod` (`site-winker` revisão 648, 2/2, e `site-winker-ondemand` revisão 79, 1/1, imagem `b588b70-b629`), concluída; o Kuma ficou de pé o tempo todo, sem erro do painel no log. Conferido na tela pelo Erik: "Últimas 24 horas" com `site` e a tag `b588b70-b629`, sem "Sem pipeline". O site vira todo dia nesse horário (também em 30/10 07:33 UTC), então aparece quase sempre na lista.
 
 # Fase 4 — Pipelines
 
