@@ -15,25 +15,19 @@
                     <h1 class="db-title">{{ $t("deployBoardTitle") }}</h1>
                 </div>
 
-                <div class="db-verdict" :data-tone="servicesVerdict.tone">
-                    <span class="db-verdict-dot"></span>
-                    <span class="db-verdict-key">{{ $t("deployBoardServices") }}</span>
-                    <span class="db-verdict-title">{{ servicesVerdict.title }}</span>
-                    <span class="db-verdict-sub">{{ servicesVerdict.sub }}</span>
-                </div>
-
-                <div class="db-verdict" :data-tone="deploysVerdict.tone">
-                    <span class="db-verdict-dot"></span>
-                    <span class="db-verdict-key">{{ $t("deployBoardDeploys") }}</span>
-                    <span class="db-verdict-title">{{ deploysVerdict.title }}</span>
-                    <span class="db-verdict-sub">{{ deploysVerdict.sub }}</span>
-                </div>
-
-                <div v-if="stats" class="db-verdict db-stats" data-tone="muted" :title="statsDetail">
-                    <span class="db-verdict-dot"></span>
-                    <span class="db-verdict-key">{{ $t("deployBoardStatsKey") }}</span>
-                    <span class="db-verdict-title">{{ $t("deployBoardStatsTotal", stats.total) }}</span>
-                    <span class="db-verdict-sub">{{ statsSuccess }}</span>
+                <!-- One bar, three readings. A dot only where it says something: never for "no deploy". -->
+                <div class="db-summary">
+                    <div v-for="seg in summary" :key="seg.id" class="db-seg" :data-tone="seg.tone" :title="seg.hint || null">
+                        <span class="db-seg-key">{{ seg.key }}</span>
+                        <span class="db-seg-value">
+                            <span v-if="seg.dot" class="db-dot" :class="'is-' + seg.tone" aria-hidden="true"></span>
+                            {{ seg.title }}
+                        </span>
+                        <span class="db-seg-sub">
+                            <b v-if="seg.rate !== undefined" class="db-seg-rate" :class="{ 'is-ok': seg.rate === 100 }">{{ seg.rate }}%</b>
+                            {{ seg.sub }}
+                        </span>
+                    </div>
                 </div>
 
                 <div class="db-clock">
@@ -214,7 +208,7 @@ export default {
                 return {
                     tone: "muted",
                     title: this.$t("deployBoardKumaNoRead"),
-                    sub: this.$t("deployBoardKumaNoReadDetail"),
+                    sub: this.$t("deployBoardKumaNoReadShort"),
                 };
             }
             if (!this.curationLoaded) {
@@ -240,18 +234,38 @@ export default {
             return { tone: "ok", title: this.$t("deployBoardServicesAllUp"), sub };
         },
 
+        /**
+         * The three segments of the top bar. The services and deploys ones carry a dot only for a
+         * state (normal, running, failing); "no deploy now" and the counters have none.
+         * @returns {object[]} Segments: key, title, sub, tone, dot, rate, hint.
+         */
+        summary() {
+            const segments = [
+                { id: "services", key: this.$t("deployBoardServices"), ...this.servicesVerdict },
+                { id: "deploys", key: this.$t("deployBoardDeploys"), ...this.deploysVerdict },
+            ];
+            for (const seg of segments) {
+                seg.dot = seg.tone !== "idle" && seg.tone !== "muted";
+            }
+            if (this.stats) {
+                const rate = this.stats.successRate;
+                segments.push({
+                    id: "stats",
+                    key: this.$t("deployBoardStatsKey"),
+                    title: this.$t("deployBoardStatsTotal", this.stats.total),
+                    sub: rate === null ? this.$t("deployBoardStatsSuccessNone") : this.$t("deployBoardStatsSuccessWord"),
+                    rate: rate === null ? undefined : rate,
+                    tone: "idle",
+                    dot: false,
+                    hint: this.statsDetail,
+                });
+            }
+            return segments;
+        },
+
         /** @returns {object|null} Counters of the last 24 hours, from the server */
         stats() {
             return this.board ? this.board.stats : null;
-        },
-
-        /** @returns {string} "Success: 92% (11 of 12)", or a dash with nothing ended */
-        statsSuccess() {
-            const s = this.stats;
-            if (s.successRate === null) {
-                return this.$t("deployBoardStatsSuccessNone");
-            }
-            return this.$t("deployBoardStatsSuccess", [s.successRate, s.done, s.done + s.stuck + s.failed]);
         },
 
         /** @returns {string} Every counter, for the tooltip */
@@ -303,13 +317,22 @@ export default {
             for (const [matches, tone, key] of verdicts) {
                 const deploys = this.board.deploys.filter(matches);
                 if (deploys.length) {
-                    return { tone, title: this.$t(key, [deploys.length]), sub: projectNames(deploys) };
+                    const sub =
+                        tone === "rolling"
+                            ? deploys.map((d) => [d.project, this.stepName(d)].filter(Boolean).join(" · ")).join(", ")
+                            : projectNames(deploys);
+                    return { tone, title: this.$t(key, [deploys.length]), sub };
                 }
             }
             if (this.board.sources.cluster.state === "stale") {
                 return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
             }
-            return { tone: "ok", title: this.$t("deployBoardNoDeploys"), sub: "" };
+            // Nothing running is not news: grey, with no dot.
+            const last = [...this.board.deploys, ...this.board.history]
+                .filter((d) => d.endedAt)
+                .sort((a, b) => b.endedAt - a.endedAt)[0];
+            const sub = last ? this.$t("deployBoardLastDeploy", [last.project, this.formatDuration(this.now - last.endedAt)]) : "";
+            return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), sub };
         },
 
         /**
@@ -630,6 +653,16 @@ export default {
         },
 
         /**
+         * @param {object} deploy Deploy of the board.
+         * @returns {string} Name of the step it is on ("Virada"), or "" when it has none.
+         */
+        stepName(deploy) {
+            const steps = deploy.steps || [];
+            const at = steps.findLastIndex((s) => s.status !== "pending");
+            return at === -1 ? "" : this.$t(STEP_KEYS[steps[at].key]);
+        },
+
+        /**
          * Short duration: "12 s", "3 min", "1 h 05 min".
          * @param {number} ms Milliseconds.
          * @returns {string} Formatted duration.
@@ -646,6 +679,15 @@ export default {
             return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
         },
     },
+};
+
+/** Step of a deploy → i18n key (the same names as the card's steps). */
+const STEP_KEYS = {
+    merge: "deployBoardStepMerge",
+    pipeline: "deployBoardStepPipeline",
+    built: "deployBoardStepBuilt",
+    rollout: "deployBoardStepRollout",
+    live: "deployBoardStepLive",
 };
 
 /** A rollout that ended this long before an outage is named in its highlight. */
@@ -928,96 +970,107 @@ body.deploy-board-body .Vue-Toastification__container {
     line-height: 1.05;
 }
 
-.db-verdict {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    column-gap: 0.8em;
-    align-content: center;
-    flex: 1 1 18em;
-    max-width: 30em;
+/* The three readings in one bar, split by hairlines. */
+.db-summary {
+    display: flex;
+    flex: 1 1 36em;
+    flex-wrap: wrap;
+    max-width: 56em;
     min-width: 0;
-    padding: 0.6em 1.1em;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
-    border-radius: 10px;
+    border-radius: 14px;
 }
 
-.db-verdict-dot {
-    grid-row: 1 / 4;
-    align-self: center;
-    width: 0.9em;
-    height: 0.9em;
-    border-radius: 50%;
-    background: var(--db-ok);
-    box-shadow: 0 0 0 0.3em var(--db-ok-soft);
+.db-seg {
+    display: grid;
+    flex: 1 1 12em;
+    align-content: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 12px 20px;
+
+    & + & {
+        border-left: 1px solid var(--db-line);
+    }
 }
 
-.db-verdict-key {
-    font-size: 0.72em;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+.db-seg-key {
+    font-size: 0.8em;
     color: var(--db-ink-3);
 }
 
-.db-verdict-title {
-    font-size: 1.35em;
-    font-weight: 800;
-    line-height: 1.15;
+.db-seg-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.25em;
+    font-weight: 600;
+    line-height: 1.2;
+
+    [data-tone="bad"] > & {
+        color: var(--db-bad);
+    }
+
+    [data-tone="warn"] > & {
+        color: var(--db-warn);
+    }
+
+    [data-tone="rolling"] > & {
+        color: var(--db-deploy);
+    }
+
+    [data-tone="idle"] > &,
+    [data-tone="muted"] > & {
+        color: var(--db-ink-2);
+    }
 }
 
-.db-verdict-sub {
-    font-size: 0.88em;
-    color: var(--db-ink-2);
+.db-seg-sub {
+    font-size: 0.8em;
+    color: var(--db-ink-3);
     overflow-wrap: anywhere;
 }
 
-.db-verdict[data-tone="warn"] {
-    .db-verdict-dot {
-        background: var(--db-warn);
-        box-shadow: 0 0 0 0.3em var(--db-warn-soft);
-    }
+.db-seg-rate {
+    font-weight: 600;
+    color: var(--db-ink-2);
 
-    .db-verdict-title {
-        color: var(--db-warn);
+    &.is-ok {
+        color: var(--db-ok);
     }
 }
 
-.db-verdict[data-tone="bad"] {
-    // A triangle, not a dot: the critical state is told apart by shape too, not only by colour.
-    .db-verdict-dot {
-        width: 1.1em;
-        height: 1em;
+.db-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--db-ok);
+
+    &.is-warn {
+        background: var(--db-warn);
+    }
+
+    &.is-rolling {
+        background: var(--db-deploy);
+        animation: db-dot-pulse 1.8s ease-in-out infinite;
+    }
+
+    // Red, pulsing, and a triangle: the critical state is told apart by shape too.
+    &.is-bad {
+        width: 10px;
+        height: 9px;
         border-radius: 0;
         background: var(--db-bad);
-        box-shadow: none;
         clip-path: polygon(50% 0, 100% 100%, 0 100%);
-    }
-
-    .db-verdict-title {
-        color: var(--db-bad);
+        animation: db-dot-pulse 1.8s ease-in-out infinite;
     }
 }
 
-.db-verdict[data-tone="rolling"] {
-    .db-verdict-dot {
-        background: var(--db-deploy);
-        box-shadow: 0 0 0 0.3em var(--db-deploy-soft);
-    }
-
-    .db-verdict-title {
-        color: var(--db-deploy);
-    }
-}
-
-.db-verdict[data-tone="muted"] {
-    .db-verdict-dot {
-        background: var(--db-ink-3);
-        box-shadow: 0 0 0 0.3em var(--db-panel-2);
-    }
-
-    .db-verdict-title {
-        color: var(--db-ink-2);
+@keyframes db-dot-pulse {
+    50% {
+        opacity: 0.35;
     }
 }
 
@@ -1214,9 +1267,19 @@ body.deploy-board-body .Vue-Toastification__container {
 }
 
 @media (max-width: 680px) {
-    .db-verdict {
+    .db-summary {
         flex-basis: 100%;
         max-width: none;
+    }
+
+    // Stacked, the hairlines go between the rows.
+    .db-seg {
+        flex-basis: 100%;
+
+        & + & {
+            border-left: 0;
+            border-top: 1px solid var(--db-line);
+        }
     }
 
     .db-clock {
