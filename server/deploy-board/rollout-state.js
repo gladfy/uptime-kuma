@@ -38,6 +38,31 @@ function imageTag(image) {
 }
 
 /**
+ * Repository of an image reference: "repo/app:abc123@sha256:..." → "repo/app".
+ * @param {string} image Image reference.
+ * @returns {string} Repository.
+ */
+function imageRepository(image) {
+    const ref = String(image || "").split("@")[0];
+    const slash = ref.lastIndexOf("/");
+    const colon = ref.lastIndexOf(":");
+    return colon > slash ? ref.slice(0, colon) : ref;
+}
+
+/**
+ * What the command to go back needs of each container, and nothing else of it.
+ * @param {object} podSpec Pod spec of a template.
+ * @returns {{name: string, repository: string, tag: string}[]} Containers, in order.
+ */
+function containersOf(podSpec) {
+    return (podSpec?.containers || []).map((c) => ({
+        name: String(c.name || ""),
+        repository: imageRepository(c.image),
+        tag: imageTag(c.image),
+    }));
+}
+
+/**
  * @param {object} podSpec Pod spec of a template.
  * @returns {string[]} Image tags of its containers, without repetition.
  */
@@ -71,6 +96,7 @@ function extractDeployment(obj) {
         release: releaseOf(metadata),
         revision: String(metadata.annotations?.[REVISION_ANNOTATION] || ""),
         images: tagsOf(spec.template?.spec),
+        containers: containersOf(spec.template?.spec),
         replicas: count(spec.replicas, 1),
         updated: count(status.updatedReplicas),
         available: count(status.availableReplicas),
@@ -185,6 +211,7 @@ module.exports = {
     NO_PROGRESS_MS,
     releaseOf,
     imageTag,
+    imageRepository,
     extractDeployment,
     extractCronJob,
     deploymentState,

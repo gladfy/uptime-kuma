@@ -125,6 +125,12 @@ class ClusterTracker {
         const map = this.mapOf(kind);
         const key = objectKey(kept);
         const previous = map.get(key);
+        if (kind === "deployments") {
+            // Helm changes the template first and the controller bumps the revision moments later:
+            // the images of a revision are the ones it had when it was first seen.
+            kept.revisionContainers =
+                previous && previous.revision === kept.revision ? previous.revisionContainers : kept.containers;
+        }
         map.set(key, kept);
         const release = releaseKey(kept);
 
@@ -150,6 +156,11 @@ class ClusterTracker {
         const changed = !previous || (kind === "deployments" ? revisionChanged(previous, kept) : imagesChanged(previous, kept));
         if (changed) {
             this.touch(release, kind, kept.name, false);
+            const rollout = this.rollouts.get(release);
+            if (kind === "deployments" && previous && !rollout.beforeUnknown.has(kept.name)) {
+                // What was running when this rollout began: the version to go back to.
+                rollout.before[kept.name] ??= previous.revisionContainers;
+            }
         }
         this.recompute(release, changed);
     }
@@ -198,6 +209,17 @@ class ClusterTracker {
                 rollout.endedAt = now;
                 this.publish(rollout);
             }
+            // A rollout that never finished (replaced, stuck, still rolling) is no version to go
+            // back to: the new one keeps what was running before it, and does not take the
+            // half-rolled images of the Deployments it touched as "before".
+            const unfinished = rollout && rollout.state !== "done" ? rollout : null;
+            const before = unfinished ? { ...unfinished.before } : {};
+            const beforeUnknown = new Set(unfinished ? unfinished.beforeUnknown : []);
+            for (const d of unfinished ? unfinished.changed.deployments : []) {
+                if (!(d in before)) {
+                    beforeUnknown.add(d);
+                }
+            }
             const [namespace, releaseName] = release.split("/");
             rollout = {
                 id: `${release}:${++this.sequence}`,
@@ -213,6 +235,8 @@ class ClusterTracker {
                 desired: 0,
                 lastProgressAt: now,
                 changed: { deployments: new Set(), cronjobs: new Set() },
+                before,
+                beforeUnknown,
             };
             this.rollouts.set(release, rollout);
         } else {
@@ -281,7 +305,7 @@ class ClusterTracker {
 }
 
 /**
- * What leaves the tracker: counts and tags, never the objects.
+ * What leaves the tracker: counts, tags and container images, never the objects.
  * @param {object} rollout Internal rollout.
  * @param {object} objects Kept objects by kind.
  * @returns {object} Rollout for the store.
@@ -296,6 +320,10 @@ function publicRollout(rollout, objects) {
             }
         }
     }
+    const deployments = [...objects.deployments.values()]
+        .filter((d) => d.namespace === rollout.namespace && d.release === rollout.release)
+        .map((d) => ({ name: d.name, containers: d.containers }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     return {
         id: rollout.id,
         namespace: rollout.namespace,
@@ -308,8 +336,13 @@ function publicRollout(rollout, objects) {
         updated: rollout.updated,
         desired: rollout.desired,
         cronJobsUpdated: rollout.changed.cronjobs.size,
-        // Container order kept: the first is the application, the rest are sidecars (nginx).
+        // Container order kept, as in the template; it is not always the application first (nginx
+        // comes first in the condominio and gateway pods).
         images: [...images],
+        // The version of each Deployment, and the one before it when the start was seen: what the
+        // command to go back is built from. Name, repository and tag only.
+        deployments,
+        before: { ...rollout.before },
     };
 }
 

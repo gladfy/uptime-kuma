@@ -223,14 +223,17 @@ preferência de tema do próprio Kuma, para que valha nas próximas aberturas na
 
 ### Requirement: Sons dos eventos do deploy
 
-Com o som ativado, o painel SHALL tocar, uma vez por deploy e por evento: buzina marítima curta e
-grave quando o deploy começa (a pipeline começou, ou a virada, em projeto sem origem de pipeline);
-som metálico de encaixe de contêiner quando a pipeline termina verde; dois bipes de radar quando a
-virada começa no cluster; sino marítimo com duas notas quando o deploy fica "No ar"; buzina grave
-seguida de alerta eletrônico quando a pipeline falha ou a virada trava. Os sons SHALL ser gerados no
-navegador, sem arquivo de áudio. O som SHALL começar desligado e ser ativado por um botão, com a
-escolha gravada no navegador. Só transição vista ao vivo SHALL tocar: abrir a página, reconectar o
-socket ou carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez.
+Com o som ativado, o painel SHALL tocar, uma vez por deploy, por evento e por etapa (a produção
+depois da integração é outra etapa): um toque longo de buzina de navio quando o deploy começa (a
+pipeline começou, ou a virada, em projeto sem origem de pipeline); o apito de trem quando a pipeline
+termina verde; dois toques curtos da buzina quando a virada começa no cluster; o sino de bordo com
+dois toques quando o deploy fica "No ar"; a buzina mais grave seguida de cinco toques curtos (o sinal
+de perigo do RIPEAM) quando a pipeline falha ou a virada trava. Os sons SHALL ser gravações reais,
+nada eletrônico nem de jogo, com a licença e o autor registrados junto dos arquivos e o crédito que a
+licença exigir na própria tela. Os arquivos SHALL ser baixados só depois que o som for ativado. O
+som SHALL começar desligado e ser ativado por um botão, com a escolha gravada no navegador; ativar
+toca o sino uma vez. Só transição vista ao vivo SHALL tocar: abrir a página, reconectar o socket ou
+carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez.
 
 #### Scenario: Virada concluída
 - **WHEN** o som está ativado e o deploy do condominio passa de "Virando no cluster" para "No ar"
@@ -239,6 +242,14 @@ socket ou carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez
 #### Scenario: Página aberta com deploy travado
 - **WHEN** a pessoa abre o painel e já há um deploy travado
 - **THEN** nenhum som toca
+
+#### Scenario: Integração e produção do mesmo commit
+- **WHEN** a integração do condominio fica "No ar" e, 30 minutos depois, a produção do mesmo commit vira e fica "No ar"
+- **THEN** o sino toca nas duas vezes, e os dois toques curtos antes da segunda
+
+#### Scenario: Página recarregada na TV com o som ligado
+- **WHEN** a página é recarregada e ninguém clicou nela ainda
+- **THEN** o navegador não deixa tocar, e o painel avisa ao lado do botão que é preciso um clique
 
 #### Scenario: Som desligado
 - **WHEN** o som não foi ativado naquele navegador e uma virada começa

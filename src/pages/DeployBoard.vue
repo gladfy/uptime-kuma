@@ -42,15 +42,29 @@
                     <span class="db-clock-date">{{ clockDate }}</span>
                 </div>
 
-                <button
-                    type="button"
-                    class="db-theme"
-                    :title="themeToggleLabel"
-                    :aria-label="themeToggleLabel"
-                    @click="toggleTheme"
-                >
-                    <font-awesome-icon :icon="$root.isDark ? 'sun' : 'moon'" />
-                </button>
+                <div class="db-controls">
+                    <span v-if="soundOn && soundBlocked" class="db-sound-blocked">{{ $t("deployBoardSoundBlocked") }}</span>
+                    <button
+                        type="button"
+                        class="db-theme db-sound"
+                        :class="{ 'is-on': soundOn, 'is-blocked': soundOn && soundBlocked }"
+                        :title="soundToggleTitle"
+                        :aria-label="soundToggleLabel"
+                        :aria-pressed="String(soundOn)"
+                        @click="toggleSound"
+                    >
+                        <font-awesome-icon :icon="soundOn ? 'volume-up' : 'volume-mute'" />
+                    </button>
+                    <button
+                        type="button"
+                        class="db-theme"
+                        :title="themeToggleLabel"
+                        :aria-label="themeToggleLabel"
+                        @click="toggleTheme"
+                    >
+                        <font-awesome-icon :icon="$root.isDark ? 'sun' : 'moon'" />
+                    </button>
+                </div>
             </header>
 
             <main class="db-main">
@@ -104,6 +118,8 @@ import IncidentBlock from "../components/deploy-board/IncidentBlock.vue";
 import DeployColumn from "../components/deploy-board/DeployColumn.vue";
 import SourcesFooter from "../components/deploy-board/SourcesFooter.vue";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
+import { soundEvents } from "../components/deploy-board/sound-events.mjs";
+import { SoundPlayer } from "../components/deploy-board/sound-player.js";
 
 /**
  * How often the list of monitors is read again from the status page. Matches the 5-minute cache of
@@ -120,6 +136,20 @@ const BOARD_RETRY_MS = 2000;
 
 /** Width from which the board is a one-screen wall layout. Mirrors the media query below. */
 const WALL_QUERY = "(min-width: 1180px)";
+
+/** Where this browser remembers that sound is on. */
+const SOUND_KEY = "deployBoardSound";
+
+/**
+ * @returns {boolean} Whether sound was turned on in this browser.
+ */
+function soundSaved() {
+    try {
+        return localStorage.getItem(SOUND_KEY) === "on";
+    } catch (e) {
+        return false;
+    }
+}
 
 /** Kuma heartbeat status → tone used by the board. */
 const TONES = {
@@ -150,6 +180,9 @@ export default {
             now: Date.now(),
             wall: window.matchMedia(WALL_QUERY).matches,
             paging: { page: 1, pages: 1 },
+            soundOn: soundSaved(),
+            // After a reload the browser plays nothing until someone clicks the page.
+            soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
         };
     },
 
@@ -237,6 +270,16 @@ export default {
             return this.$t("deployBoardStatsDetail", [s.done, s.stuck, s.failed, s.replaced, s.inProgress]);
         },
 
+        /** @returns {string} What the sound button does */
+        soundToggleLabel() {
+            return this.$t(this.soundOn ? "deployBoardSoundOff" : "deployBoardSoundOn");
+        },
+
+        /** @returns {string} The same, with where the recordings come from */
+        soundToggleTitle() {
+            return `${this.soundToggleLabel}. ${this.$t("deployBoardSoundCredits")}`;
+        },
+
         /** @returns {string} What the theme button does */
         themeToggleLabel() {
             return this.$t(this.$root.isDark ? "deployBoardThemeToLight" : "deployBoardThemeToDark");
@@ -309,6 +352,7 @@ export default {
                 }
                 if (this.reading) {
                     // Logged in again on the same page: what was on screen is from the old session.
+                    this.soundBaseline = true;
                     this.requestBoard();
                     this.fetchCuration();
                 } else {
@@ -320,14 +364,33 @@ export default {
 
         // After a reconnect the server does not push the board by itself: ask again.
         kumaConnected(connected) {
-            if (connected && this.$root.loggedIn) {
+            if (!connected) {
+                // What changed while the socket was down was not seen happening: no sound for it.
+                this.soundBaseline = true;
+            } else if (this.$root.loggedIn) {
                 this.requestBoard();
             }
         },
     },
 
+    created() {
+        this.soundBaseline = true;
+        this.player = new SoundPlayer((blocked) => {
+            this.soundBlocked = blocked;
+        });
+        if (this.soundOn) {
+            this.player.load();
+        }
+    },
+
     mounted() {
         document.body.classList.add("deploy-board-body");
+        // A click anywhere is what the browser waits for to let the page play sound.
+        this.onFirstGesture = () => {
+            this.soundBlocked = false;
+        };
+        document.addEventListener("pointerdown", this.onFirstGesture);
+        document.addEventListener("keydown", this.onFirstGesture);
         this.slug = String(this.$route.params.slug || "").toLowerCase();
         this.clockTimer = setInterval(() => {
             this.now = Date.now();
@@ -345,6 +408,9 @@ export default {
         clearInterval(this.curationTimer);
         clearTimeout(this.boardRetryTimer);
         this.wallQuery?.removeEventListener("change", this.onWallChange);
+        document.removeEventListener("pointerdown", this.onFirstGesture);
+        document.removeEventListener("keydown", this.onFirstGesture);
+        this.player.stop();
         if (this.onBoardUpdate) {
             this.$root.getSocket()?.off("deployBoardUpdate", this.onBoardUpdate);
         }
@@ -361,6 +427,44 @@ export default {
         },
 
         /**
+         * Turn sound on or off, remembered in this browser. Turning it on rings the bell once: the
+         * click is what lets the browser play, and it tells the person it works.
+         * @returns {void}
+         */
+        toggleSound() {
+            this.soundOn = !this.soundOn;
+            try {
+                localStorage.setItem(SOUND_KEY, this.soundOn ? "on" : "off");
+            } catch (e) {
+                // Not remembered in this browser; it still works until the page is closed.
+            }
+            if (this.soundOn) {
+                this.soundBlocked = false;
+                this.player.preview("done");
+            } else {
+                this.player.stop();
+            }
+        },
+
+        /**
+         * Take a snapshot from the server and play what was seen happening since the last one.
+         * @param {object} snapshot Board snapshot.
+         * @returns {void}
+         */
+        applyBoard(snapshot) {
+            const previous = this.soundBaseline ? null : this.board;
+            this.soundBaseline = false;
+            const events = soundEvents(previous, snapshot);
+            if (this.soundOn) {
+                this.player.enqueue(events);
+            } else {
+                // Turning sound on later must not play what already happened.
+                this.player.skip(events);
+            }
+            this.board = snapshot;
+        },
+
+        /**
          * Start reading once logged in. Nothing about deploys or monitors is fetched before.
          * @returns {void}
          */
@@ -372,7 +476,7 @@ export default {
             this.slug = String(this.$route.params.slug || "").toLowerCase();
 
             this.onBoardUpdate = (snapshot) => {
-                this.board = snapshot;
+                this.applyBoard(snapshot);
             };
             this.$root.getSocket().on("deployBoardUpdate", this.onBoardUpdate);
             this.requestBoard();
@@ -394,7 +498,7 @@ export default {
             clearTimeout(this.boardRetryTimer);
             this.$root.getSocket().emit("getDeployBoard", (res) => {
                 if (res && res.ok) {
-                    this.board = res.board;
+                    this.applyBoard(res.board);
                 } else if (attempt < BOARD_RETRIES && this.$root.loggedIn) {
                     this.boardRetryTimer = setTimeout(() => this.requestBoard(attempt + 1), BOARD_RETRY_MS);
                 }
@@ -874,6 +978,43 @@ body.deploy-board-body .Vue-Toastification__container {
 .db-clock-date {
     font-size: 0.85em;
     color: var(--db-ink-3);
+}
+
+.db-controls {
+    position: relative;
+    align-self: center;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5em;
+}
+
+.db-sound {
+    &.is-on {
+        color: var(--db-brand);
+    }
+
+    &.is-blocked {
+        border-color: var(--db-warn);
+        color: var(--db-warn);
+    }
+}
+
+// Floats under the buttons: showing up must not push the header into a second line.
+.db-sound-blocked {
+    position: absolute;
+    top: calc(100% + 0.4em);
+    right: 0;
+    z-index: 2;
+    padding: 0.3em 0.6em;
+    border: 1px solid var(--db-warn);
+    border-radius: 6px;
+    background: var(--db-warn-soft);
+    font-size: 0.8em;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--db-warn);
 }
 
 .db-theme {

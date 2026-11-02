@@ -323,14 +323,26 @@ substituído fica fora da taxa (ninguém o terminou, outro tomou o lugar). Sem e
 que o Kuma já guarda no navegador. *Descartado:* um tema só do painel — duas preferências para a
 mesma coisa, e a página voltaria a divergir do resto do Kuma.
 
-### 16. Sons sintetizados, só para o que se viu acontecer
+### 16. Sons gravados, só para o que se viu acontecer
 
-**Decisão:** Web Audio API, com osciladores e envelopes, sem arquivo de áudio. Os eventos saem de uma
-função pura que compara o snapshot anterior com o atual; carga da página, reconexão e histórico
-carregado do banco não tocam nada. Um som por vez, numa fila, e o mesmo evento do mesmo deploy não
-repete. Começa desligado, porque o navegador só toca depois de um clique, e a escolha fica no
-navegador. *Descartado:* arquivos de áudio — licença, peso no bundle e mais uma coisa para baixar
-na TV; e tocar no servidor — o som é de quem está olhando a tela.
+**Decisão (revista em 02/11/2026):** gravações reais, por pedido do Erik ("nada de sons
+eletrônicos/gameficados"), escolhidas de ouvido por ele numa página de audição. Três gravações do
+Freesound fazem os cinco sons: a mesma buzina de navio (CC0) dá o toque longo de "iniciado", os dois
+toques curtos de "em andamento" e, mais grave e com cinco toques curtos, o "falhou" (o sinal de
+perigo do RIPEAM, no lugar dos bipes de radar e do alerta eletrônico do pedido original, que são
+eletrônicos por natureza); um apito de trem a vapor (CC BY 4.0, escolha do Erik) é o "build
+concluído"; o sino de bordo de dois toques (CC0) é o "concluído". Cortados e com o volume igualado
+por `ffmpeg`, somam 140 KB, entram pelo Vite (nome com hash) e só são baixados quando o som é
+ativado. Origem, licença e corte de cada um estão em `src/assets/deploy-board-sounds/CREDITS.md`; o
+crédito da CC BY também aparece no texto de ajuda do botão.
+
+Os eventos saem de uma função pura que compara o snapshot anterior com o atual; carga da página,
+reconexão e histórico carregado do banco não tocam nada. Um som por vez, numa fila de no máximo
+quatro, e o mesmo evento do mesmo deploy na mesma etapa não repete (a produção depois da integração
+é outra etapa, e toca de novo). Começa desligado, e a escolha fica no navegador. Depois de recarregar
+a página, o navegador não toca nada até alguém clicar nela, e o painel diz isso ao lado do botão.
+*Descartado:* síntese com osciladores (a primeira decisão: sem licença nem peso, mas soa eletrônica);
+e tocar no servidor — o som é de quem está olhando a tela.
 
 ### 17. Voltar à versão anterior: o painel mostra o comando, não executa
 
@@ -338,9 +350,24 @@ na TV; e tocar no servidor — o som é de quem está olhando a tela.
 roda com a própria credencial. O comando volta **só a imagem**: uma linha
 `kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag>` por Deployment das
 releases do deploy, só com os containers cuja tag mudou, mais o `rollout status` de cada um. A tag
-de destino é a do deploy anterior concluído da mesma release, tirada do histórico da fase 3.1; sem
-ele, o cartão diz que não sabe e não inventa comando. A extração do Deployment passa a guardar o
-nome do container e o repositório da imagem — nada mais do template.
+de destino é a do último deploy concluído da mesma release com imagem diferente, tirado do
+histórico da fase 3.1 (um deploy das mesmas imagens de novo não é versão para voltar). Sem ele, vale
+o que estava no ar quando o painel viu a virada começar; sem nenhum dos dois, o cartão diz que não
+sabe e não inventa comando. Virada com as mesmas tags de antes diz que não há tag para voltar: é um
+`rollout restart` ou uma tag reaproveitada (o chat usa `tiwinker/chatwoot:prod` e o jambonz `:latest`
+em todo deploy, conferido no cluster em 02/11/2026), e nos dois casos o comando por tag não volta
+nada. A extração do Deployment passa a guardar o nome do container e o repositório da imagem —
+nada mais do template.
+
+*Por que também o que estava no ar (implementação, 02/11):* o histórico guarda 7 dias, e um projeto
+que faz deploy uma vez por mês nunca teria comando. Uma virada que não terminou (travada, substituída
+ou ainda em andamento) não é versão para voltar: a virada que vem por cima herda dela o que estava no
+ar antes, e um Deployment que ela tocou sem saber o anterior (achada no boot) fica sem versão
+anterior, em vez de apontar para a imagem travada. Armadilha medida no código: o Helm troca a imagem do template **antes** de o
+controlador subir a revisão, então "o objeto do evento anterior" já tem a imagem nova; o rastreador
+guarda as imagens de cada revisão como eram quando ela foi vista pela primeira vez. E como o comando
+vai parar num terminal, valor lido do cluster com caractere fora do que nome e imagem admitem deixa
+a release sem comando.
 
 O cartão avisa o que o comando não cobre: os CronJobs da release (o `gateway-cron` são 95) ficam na
 imagem nova, e o próximo deploy pela pipeline sobrescreve a volta (o Helm continua achando que a

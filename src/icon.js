@@ -57,6 +57,8 @@ import {
     faRocket,
     faSun,
     faMoon,
+    faVolumeUp,
+    faVolumeMute,
 } from "@fortawesome/free-solid-svg-icons";
 
 library.add(
@@ -111,6 +113,8 @@ library.add(
     faRocket,
     faSun,
     faMoon,
+    faVolumeUp,
+    faVolumeMute,
 );
 
 export { FontAwesomeIcon };

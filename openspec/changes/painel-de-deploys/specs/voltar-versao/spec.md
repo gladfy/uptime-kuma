@@ -2,8 +2,10 @@
 
 ### Requirement: O cartão mostra o comando que volta a imagem anterior
 
-O cartão de um deploy do cluster, concluído ou travado, SHALL ter um botão "Como voltar" quando
-houver, no histórico do painel, um deploy anterior concluído da mesma release. O botão SHALL abrir,
+O cartão de um deploy do cluster, concluído ou travado, SHALL ter um botão "Como voltar". A versão
+anterior de cada release SHALL ser a do último deploy concluído dela, no histórico do painel, com
+imagem diferente da atual; sem ele, a que estava no ar quando o painel viu a virada começar. O botão
+SHALL abrir,
 pronto para copiar, uma linha `kubectl -n <namespace> set image deployment/<nome>
 <container>=<repositório>:<tag anterior>` por Deployment das releases do deploy, só com os containers
 cuja tag mudou entre as duas versões, seguida de `kubectl -n <namespace> rollout status
@@ -18,8 +20,20 @@ deployment/<nome>` de cada um. O painel SHALL NOT executar o comando nem ter per
 - **THEN** o comando tem uma linha `set image` por Deployment dela, e copiar leva todas
 
 #### Scenario: Sem versão anterior conhecida
-- **WHEN** não há deploy anterior concluído da release no histórico do painel
+- **WHEN** não há deploy anterior concluído da release no histórico do painel e a virada aconteceu com o painel fora do ar
 - **THEN** o cartão diz "versão anterior desconhecida" e não mostra comando
+
+#### Scenario: Projeto com deploy raro
+- **WHEN** o último deploy da release foi há mais de 7 dias e o painel viu a virada atual começar
+- **THEN** o comando volta para as imagens que estavam no ar antes dela
+
+#### Scenario: Mesma tag de antes
+- **WHEN** as tags da virada são as mesmas da versão anterior (um `rollout restart`, ou a tag `prod` que o chat reaproveita em todo deploy)
+- **THEN** o cartão diz que a tag é a mesma e que não há como voltar por tag, e não mostra comando
+
+#### Scenario: Deploy travado e outro por cima
+- **WHEN** um deploy trava, outro é feito por cima e não há deploy concluído da release no histórico
+- **THEN** o comando volta para as imagens que estavam no ar antes do deploy travado, nunca para as dele
 
 ### Requirement: O cartão diz o que o comando não cobre
 
@@ -36,6 +50,10 @@ O comando SHALL conter só namespace, nome do Deployment, nome do container, rep
 tag. Nenhum outro campo do Deployment (variáveis de ambiente, volumes, anotações) SHALL ser guardado
 para montá-lo nem aparecer na tela. O comando SHALL sair só para socket logado, como o resto do
 estado do painel.
+
+#### Scenario: Valor do cluster com caractere de shell
+- **WHEN** um nome ou uma imagem lida do cluster tem caractere fora do que nome de objeto e referência de imagem admitem
+- **THEN** a release fica sem comando, como se a versão anterior fosse desconhecida
 
 #### Scenario: Deployment com credencial no template
 - **WHEN** um Deployment observado tem variáveis de ambiente com credenciais

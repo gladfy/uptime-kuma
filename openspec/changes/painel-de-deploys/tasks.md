@@ -206,7 +206,7 @@ Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 
 
 - [ ] 19.1 No store, a correlação da spec "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7), janela de 20 min para tag sem SHA, "sem pipeline" só com a fonte do projeto configurada, "pipeline verde, nenhuma virada vista" só com o cluster ativo.
 - [ ] 19.2 Ampliar `test-store.js`: o chat com tag `prod`, o condominio com SHA completo, dois deploys do mesmo projeto sobrepostos, fonte de pipeline desligada, projeto sem origem e cluster desligado.
-- [ ] 19.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase.
+- [ ] 19.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase. Em `sound-events.mjs`, os sons da pipeline: "iniciado" quando ela começa (hoje sai da virada), "build concluído" quando termina verde e "falhou" quando falha, com os testes em `test-sound-events.js`.
 
 ## 20. Infraestrutura e entrega da fase 4
 
@@ -217,22 +217,22 @@ Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 
 
 # Fase 5 — Sons
 
-Pedido do Erik em 02/11/2026: o contêiner no navio. Vem depois da fase 4, porque "deploy iniciado" e "build concluído" são eventos da pipeline.
+Pedido do Erik em 02/11/2026: o contêiner no navio, com sons realistas, nada eletrônico nem de jogo. Feita antes da fase 4, também a pedido dele: "deploy iniciado" sai da virada enquanto não há pipeline, e "build concluído" fica pronto para quando a fase 4 trouxer a pipeline.
 
 | Evento | Quando toca | Som |
 |---|---|---|
-| Deploy iniciado | a pipeline do projeto começou (fase 4); projeto sem origem de pipeline: a virada começou | buzina marítima curta e grave |
-| Build concluído | a pipeline terminou verde | som metálico de encaixe de contêiner |
-| Deploy em andamento | a virada começou no cluster | dois bipes de radar |
-| Deploy concluído | o deploy chegou a "No ar" | sino marítimo com duas notas agradáveis |
-| Deploy falhou | a pipeline falhou ou a virada travou | buzina grave seguida de alerta eletrônico |
+| Deploy iniciado | a pipeline do projeto começou (fase 4); projeto sem origem de pipeline: a virada começou | toque longo de buzina de navio |
+| Build concluído | a pipeline terminou verde | apito de trem a vapor (escolha do Erik) |
+| Deploy em andamento | a virada começou no cluster | dois toques curtos da buzina |
+| Deploy concluído | o deploy chegou a "No ar" | sino de bordo, dois toques |
+| Deploy falhou | a pipeline falhou ou a virada travou | buzina mais grave e cinco toques curtos (sinal de perigo do RIPEAM) |
 
 ## 21. Eventos e síntese
 
-- [ ] 21.1 Função pura `soundEvents(anterior, atual)` (arquivo próprio em `src/components/deploy-board/`): compara dois snapshots e devolve os eventos da tabela, um por deploy e por transição. Snapshot da carga da página, da reconexão do socket ou do histórico carregado do banco **não** toca nada: só transição vista ao vivo. "Sem progresso" não toca. Projeto sem origem de pipeline: a virada que começa dispara "iniciado" e "em andamento", nessa ordem.
-- [ ] 21.2 Os cinco sons sintetizados no navegador com Web Audio API (osciladores e envelopes), sem arquivo de áudio: nada de licença, nada a mais no bundle, nada para baixar na TV. Cada som com até ~2 s; uma fila toca um de cada vez, e o mesmo evento do mesmo deploy não repete.
-- [ ] 21.3 Botão "Ativar som" / "Silenciar" ao lado do de tema. O navegador só toca áudio depois de um clique na página, então o som começa desligado e a escolha fica gravada naquele navegador; na TV, ativar uma vez basta enquanto a aba estiver aberta.
-- [ ] 21.4 Testes da função pura (cada linha da tabela, carga e reconexão sem som, projeto sem origem, nada repetido) e conferência de ouvido de cada som com o Erik antes do merge.
+- [x] 21.1 Função pura `soundEvents(anterior, atual)` (arquivo próprio em `src/components/deploy-board/`): compara dois snapshots e devolve os eventos da tabela, um por deploy e por transição. Snapshot da carga da página, da reconexão do socket ou do histórico carregado do banco **não** toca nada: só transição vista ao vivo. "Sem progresso" não toca. Projeto sem origem de pipeline: a virada que começa dispara "iniciado" e "em andamento", nessa ordem.
+- [x] 21.2 Os cinco sons a partir de três gravações reais do Freesound (buzina de navio e sino CC0, apito de trem CC BY 4.0), cortadas e com volume igualado, em `src/assets/deploy-board-sounds/` com os créditos em `CREDITS.md` e o da CC BY no botão. Até ~2,6 s cada; o de falha tem 3,4 s, por causa dos cinco toques. Uma fila toca um de cada vez, e o mesmo evento do mesmo deploy na mesma etapa não repete. Os arquivos só são baixados quando o som é ativado.
+- [x] 21.3 Botão "Ativar som" / "Silenciar" ao lado do de tema. O navegador só toca áudio depois de um clique na página, então o som começa desligado e a escolha fica gravada naquele navegador; na TV, ativar uma vez basta enquanto a aba estiver aberta.
+- [x] 21.4 Testes da função pura (cada linha da tabela, carga e reconexão sem som, projeto sem origem, nada repetido) e conferência de ouvido de cada som com o Erik antes do merge (página de audição, 02/11: buzina h2, sino b1 e o apito de trem 170848). Os eventos da pipeline ("build concluído" e "falhou" pela pipeline) entram com a fase 4, que traz a pipeline ao snapshot: a 19.3 liga os dois e os testa.
 
 ## 22. Entrega da fase 5
 
@@ -244,11 +244,11 @@ Pedido do Erik em 02/11/2026. Decisão final (02/11): o painel **não** volta a 
 
 ## 23. Comando para copiar
 
-- [ ] 23.1 Extração do Deployment: guardar também o nome de cada container e o repositório da imagem (sem env, volume nem nada mais do template), para montar o comando. Ampliar a asserção de `test-rollout-state.js` de que env e volumes não sobrevivem.
-- [ ] 23.2 Versão anterior: do histórico do painel (banco, 7 dias), o deploy anterior concluído da mesma release. Sem ele, o cartão diz "versão anterior desconhecida" e não mostra comando.
-- [ ] 23.3 Montagem (função pura no servidor, exposta no snapshot só para quem está logado): uma linha `kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag anterior>` por Deployment das releases do deploy, só com os containers cuja tag mudou (o `nginx` não entra), seguida de `kubectl -n <ns> rollout status deployment/<nome>` de cada um.
-- [ ] 23.4 Cartão: botão "Como voltar" em deploy concluído ou travado do cluster, abrindo o comando com botão de copiar e os avisos: os CronJobs da release (o `gateway-cron` são 95) não estão no comando e ficam na versão nova; o próximo deploy pela pipeline sobrescreve a volta; quem não quiser voltar uma release apaga a linha dela.
-- [ ] 23.5 Testes da montagem: só containers que mudaram, release com vários Deployments (`gateway-worker`, 14), deploy sem anterior conhecido, e o comando sem nenhum campo além de namespace, nome do Deployment, container, repositório e tag.
+- [x] 23.1 Extração do Deployment: guardar também o nome de cada container e o repositório da imagem (sem env, volume nem nada mais do template), para montar o comando. Ampliar a asserção de `test-rollout-state.js` de que env e volumes não sobrevivem.
+- [x] 23.2 Versão anterior: do histórico do painel (banco, 7 dias), o último deploy concluído da mesma release com imagem diferente; sem ele, o que estava no ar quando a virada começou (guardado pela revisão, porque o Helm troca a imagem antes de o controlador subir a revisão). Sem nenhum dos dois, o cartão diz "versão anterior desconhecida" e não mostra comando; virada que não trocou imagem diz que não há o que voltar.
+- [x] 23.3 Montagem (função pura no servidor, exposta no snapshot só para quem está logado): uma linha `kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag anterior>` por Deployment das releases do deploy, só com os containers cuja tag mudou (o `nginx` não entra), seguida de `kubectl -n <ns> rollout status deployment/<nome>` de cada um.
+- [x] 23.4 Cartão: botão "Como voltar" em deploy concluído ou travado do cluster, abrindo o comando com botão de copiar e os avisos: os CronJobs da release (o `gateway-cron` são 95) não estão no comando e ficam na versão nova; o próximo deploy pela pipeline sobrescreve a volta; quem não quiser voltar uma release apaga a linha dela.
+- [x] 23.5 Testes da montagem: só containers que mudaram, release com vários Deployments (`gateway-worker`, 14), deploy sem anterior conhecido, e o comando sem nenhum campo além de namespace, nome do Deployment, container, repositório e tag. Também: restart, release só de CronJobs, histórico vencendo o que estava no ar, deploy perdido depois de reinício e valor com caractere de shell (`test-rollback.js`).
 
 ## 24. Entrega da fase 6
 
