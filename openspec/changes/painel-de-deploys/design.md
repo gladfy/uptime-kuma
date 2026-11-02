@@ -66,7 +66,6 @@ Phone não têm workload no EKS; Pro, Convite e Portaria Web são apps do Amplif
 
 **Non-Goals:**
 - Passos da pipeline no Bitbucket (exigiria token e consulta à API; ver Pendências da proposta).
-- Persistir histórico no banco do Kuma.
 - Ações a partir da tela (disparar, cancelar, desfazer deploy).
 - Notificação de deploy pelos providers do Kuma.
 - Alterar a status page, a TV ou as pipelines dos outros repositórios.
@@ -283,6 +282,32 @@ inteiro, ler o Amplify antes da fase 5). *Descartado:* mostrar a cobertura no pa
 ampliar o RBAC do Kuma para listar todos os namespaces, só para responder uma pergunta eventual; e
 uma conferência manual sem script, que não se repete igual da segunda vez.
 
+### 13. Histórico no banco do Kuma, gravado no encerramento
+
+**Decisão:** migration nova do fork cria `deploy_board_deploy` (`id`, `deploy_id` único, `project`,
+`sha`, `started_at`, `ended_at` em milissegundos e `data` com o registro em JSON). O store chama a
+gravação quando um deploy encerra (concluído, substituído, ou ao sair para o histórico) e quando um
+deploy reaberto volta a encerrar; a gravação é assíncrona, numa fila só, e um erro vira linha de log
+sem o conteúdo. No boot, `DeployBoard` lê as últimas 24 horas e as entrega ao store **antes** de
+ligar o cluster, para a primeira virada já poder juntar a um deploy carregado. Limpeza no boot e a
+cada hora apaga o que encerrou há mais de 7 dias. O identificador do deploy passa a levar o instante
+de criação, para não colidir com o de um deploy carregado depois de um reinício. O registro gravado
+é o mesmo que o store mantém para o histórico (projeto, versão, SHA, desfecho, horários e as viradas
+com namespace, release, estado, réplicas e tags), sem nenhum campo do objeto do Kubernetes além
+desses.
+
+A mesma fase corrige o agrupamento: uma virada com SHA junta ao deploy do projeto com o mesmo SHA
+ainda que ele já esteja no histórico, que então volta a ser cartão. Antes, o integration e o prod do
+mesmo commit, separados por mais de 10 minutos, viravam duas entradas.
+
+*Por quê:* o Kuma de produção tem banco (SQLite no volume EBS, com backup no S3 antes de cada
+deploy), o volume de escrita é de algumas linhas por deploy, e uma tabela nova só do fork não
+encosta em nada do upstream. *Descartado:* reconstruir o histórico pelos ReplicaSets no boot — exige
+mais permissão no cluster e só recupera quando cada revisão foi criada, não quanto durou nem se
+travou; e gravar também os deploys em andamento — no reinício a linha de base do cluster já os
+reencontra, e um registro aberto cuja virada terminou com o Kuma fora do ar ficaria aberto para
+sempre.
+
 ## Risks / Trade-offs
 
 - [O watch do Kubernetes cai em silêncio (conexão viva sem eventos)] → o servidor pede o watch com
@@ -300,7 +325,8 @@ uma conferência manual sem script, que não se repete igual da segunda vez.
 - [Coletores no mesmo processo dos monitores] → trabalho é I/O e cálculo pequeno; memória limitada
   (histórico com teto de 500, só campos necessários). Uma exceção num coletor é capturada e vira
   estado "sem leitura" da fonte, nunca derruba o processo.
-- [Histórico some ao reiniciar o Kuma] → aceito na proposta (Pendências futuras).
+- [Histórico some ao reiniciar o Kuma] → resolvido na fase 3.1 (decisão 13). Medido em 31/10/2026:
+  o reinício do deploy da fase 3 apagou a virada do `winker-integration` de 15 minutos antes.
 - [Reinício do Kuma durante o próprio deploy] → o painel fica fora do ar por esse minuto; ao voltar,
   mostra a linha de base do cluster.
 - [Imagem maior com o AWS SDK] → `@aws-sdk/client-amplify` e o núcleo do smithy; medir o tamanho da
@@ -309,8 +335,10 @@ uma conferência manual sem script, que não se repete igual da segunda vez.
 ## Migration Plan
 
 A entrega é em seis fases. Cada uma vai ao master do fork, passa pela pipeline dele (que faz
-backup do banco antes do deploy) e é conferida em produção antes da seguinte. Nenhuma fase tem
-migration de banco, então o rollback é sempre de imagem ou de configuração.
+backup do banco antes do deploy) e é conferida em produção antes da seguinte. Só a fase 3.1 tem
+migration, e ela só cria uma tabela nova do fork; o rollback continua sendo de imagem ou de
+configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a mais no banco: avisa
+"you may be downgrading" e sobe).
 
 **Fase 1 — Página e monitores.**
 - Código: decisões 1, 2, 3 e 9; esqueleto de 5, 7 e 8 (config, store e socket handler, com as
@@ -341,6 +369,14 @@ migration de banco, então o rollback é sempre de imagem ou de configuração.
 - Conferência: `kubectl auth can-i` nos namespaces novos; tags `deploy` nos monitores Água/Gás,
   Superlógica, Status, Observer, Site, Jambonz Worker, Temporal e Prefect; uma virada nova no painel.
 - Rollback: voltar ao chart 0.2.0.
+
+**Fase 3.1 — Histórico no banco.**
+- Código: decisão 13 (migration, repositório, gravação no encerramento, carga no boot, limpeza de 7
+  dias e o agrupamento pelo SHA também com o histórico).
+- Infraestrutura: nenhuma. O banco é o SQLite do volume, com o backup que a pipeline já faz.
+- Conferência: depois do deploy, a lista "Hoje" continua com as viradas de antes do reinício; o
+  próximo deploy do condominio aparece como uma entrada só, com as duas releases.
+- Rollback: imagem anterior; a tabela fica sem uso.
 
 **Fase 4 — Pipelines.**
 - Código: decisão 5 e a correlação completa da decisão 7; a linha do roteador no `server.js`.

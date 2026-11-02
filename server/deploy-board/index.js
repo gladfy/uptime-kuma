@@ -1,9 +1,14 @@
 const { log } = require("../../src/util");
 const { loadDeployBoardConfig } = require("./config");
-const { DeployBoardStore } = require("./store");
+const { DeployBoardStore, HISTORY_MS } = require("./store");
 const { broadcastToLoggedIn } = require("./broadcast");
 const { ClusterTracker } = require("./cluster-tracker");
 const { KubernetesSource } = require("./kubernetes-source");
+const { DeployHistoryRepository } = require("./history-repository");
+
+/** The database keeps a week of deploys; the screen shows the last HISTORY_MS of them. */
+const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const PRUNE_EVERY_MS = 60 * 60 * 1000;
 
 /**
  * The deploy board: configuration, state and (from phase 2 on) the sources that feed it.
@@ -14,11 +19,21 @@ class DeployBoard {
      * @param {object} options.env Environment (process.env by default).
      * @param {DeployBoardStore} options.store State (a new one by default).
      * @param {object} options.kubernetes Extra options of the KubernetesSource (tests).
+     * @param {DeployHistoryRepository} options.history Where ended deploys are kept.
      */
-    constructor({ env = process.env, store = new DeployBoardStore(), kubernetes = {} } = {}) {
+    constructor({
+        env = process.env,
+        store = new DeployBoardStore(),
+        kubernetes = {},
+        history = new DeployHistoryRepository(),
+    } = {}) {
         this.env = env;
         this.store = store;
+        this.history = history;
+        this.store.persist = this.store.persist || ((record) => this.history.save(record));
         this.kubernetesOptions = kubernetes;
+        this.ready = Promise.resolve();
+        this.pruneTimer = null;
         this.cluster = null;
         this.config = null;
         this.configStatus = "missing";
@@ -50,7 +65,14 @@ class DeployBoard {
                 log.info("deploy-board", "DEPLOY_BOARD_CONFIG is not set; every deploy source is off.");
             } else {
                 log.info("deploy-board", `Configuration loaded from ${loaded.path}`);
-                this.startCluster(loaded.config);
+                if (this.history.available()) {
+                    // The history goes in first, so the first rollout can join a deploy loaded from it.
+                    this.ready = this.loadHistory()
+                        .then(() => this.startCluster(loaded.config))
+                        .catch((e) => log.error("deploy-board", `Could not start the cluster source: ${e.message}`));
+                } else {
+                    this.startCluster(loaded.config);
+                }
             }
         } catch (e) {
             this.configStatus = "invalid";
@@ -60,6 +82,27 @@ class DeployBoard {
 
         if (io) {
             this.store.onChange((snapshot) => broadcastToLoggedIn(io, snapshot));
+        }
+    }
+
+    /**
+     * Put the history of the database back on the board, and keep the database to a week.
+     * @returns {Promise<void>} Never rejects.
+     */
+    async loadHistory() {
+        try {
+            const now = this.store.now();
+            await this.history.prune(now - HISTORY_RETENTION_MS);
+            const records = await this.history.load(now - HISTORY_MS);
+            this.store.restore(records);
+            log.info("deploy-board", `History loaded: ${records.length} deploys of the last 24 hours`);
+            this.pruneTimer = setInterval(
+                () => this.history.prune(this.store.now() - HISTORY_RETENTION_MS),
+                PRUNE_EVERY_MS
+            );
+            this.pruneTimer.unref?.();
+        } catch (e) {
+            log.error("deploy-board", `Could not load the history: ${e.message}`);
         }
     }
 
@@ -97,6 +140,7 @@ class DeployBoard {
      * @returns {void}
      */
     stop() {
+        clearInterval(this.pruneTimer);
         this.cluster?.stop();
         this.store.close();
     }
@@ -112,6 +156,7 @@ class DeployBoard {
 const deployBoard = new DeployBoard();
 
 module.exports = {
+    HISTORY_RETENTION_MS,
     DeployBoard,
     deployBoard,
 };

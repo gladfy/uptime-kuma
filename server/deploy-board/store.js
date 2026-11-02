@@ -19,6 +19,24 @@ const EMIT_INTERVAL_MS = 1000;
 const DEPLOY_PUBLIC_FIELDS = ["id", "project", "version", "label", "state", "startedAt", "endedAt", "confirmed", "releases"];
 const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "releases"];
 
+/**
+ * Fields of a rollout kept in a history record, which is also what goes to the database. Built field
+ * by field, like the snapshot: whatever else the tracker attaches to a rollout stays out.
+ */
+const ROLLOUT_RECORD_FIELDS = [
+    "id",
+    "namespace",
+    "release",
+    "state",
+    "updated",
+    "desired",
+    "cronJobsUpdated",
+    "atBoot",
+    "startedAt",
+    "endedAt",
+    "images",
+];
+
 /** A finished deploy stays on screen this long before going to the history. */
 const DONE_VISIBLE_MS = 10 * 60 * 1000;
 
@@ -58,10 +76,12 @@ class DeployBoardStore {
      * @param {object} options Options.
      * @param {Function} options.now Clock, in milliseconds (injectable for tests).
      * @param {number} options.emitIntervalMs Minimum time between broadcasts.
+     * @param {Function|null} options.persist Called with the record of a deploy whenever it ends.
      */
-    constructor({ now = () => Date.now(), emitIntervalMs = EMIT_INTERVAL_MS } = {}) {
+    constructor({ now = () => Date.now(), emitIntervalMs = EMIT_INTERVAL_MS, persist = null } = {}) {
         this.now = now;
         this.emitIntervalMs = emitIntervalMs;
+        this.persist = persist;
         this.sources = {};
         for (const id of SOURCE_IDS) {
             this.sources[id] = { state: "unconfigured", lastDataAt: null, detail: null };
@@ -159,13 +179,45 @@ class DeployBoardStore {
         if (!deploy) {
             deploy = this.deployFor(project, rollout);
         }
+        const wasEnded = deploy.endedAt !== null;
         deploy.rollouts.set(rollout.id, { ...rollout });
         refresh(deploy);
         if (deploy.state === "done") {
             const last = this.lastDoneStartedAt.get(project.name) ?? -Infinity;
             this.lastDoneStartedAt.set(project.name, Math.max(last, deploy.startedAt));
         }
+        // Saved as it ends, not only as it leaves the screen: a restart in those 10 minutes would lose it.
+        if (!wasEnded && deploy.endedAt !== null) {
+            this.save(recordOf(deploy, deploy.state === "superseded" ? "replaced" : "done", deploy.endedAt));
+        }
         this.settle();
+        this.changed();
+    }
+
+    /**
+     * Put back the history read from the database at boot, before the cluster is read, so that the
+     * first rollout can already join a deploy loaded here.
+     * @param {object[]} records History records, as saved.
+     * @returns {void}
+     */
+    restore(records) {
+        const now = this.now();
+        const known = new Set(this.history.map((h) => h.id));
+        for (const record of records) {
+            if (known.has(record.id) || now - record.endedAt >= HISTORY_MS) {
+                continue;
+            }
+            // Rollout ids are a counter of the tracker that started over with the process: renamed, so
+            // a new rollout can never be taken for one of these.
+            const rollouts = (record.rollouts || []).map((r) => ({ ...pickPublic(r, ROLLOUT_RECORD_FIELDS), id: `${r.id}@${record.id}` }));
+            this.history.push({ ...record, rollouts });
+            if (record.outcome === "done") {
+                const last = this.lastDoneStartedAt.get(record.project) ?? -Infinity;
+                this.lastDoneStartedAt.set(record.project, Math.max(last, record.startedAt));
+            }
+        }
+        this.history.sort((a, b) => b.endedAt - a.endedAt);
+        this.history = this.history.slice(0, HISTORY_MAX);
         this.changed();
     }
 
@@ -270,9 +322,13 @@ class DeployBoardStore {
         };
 
         let deploy = this.deploys.find(fits);
+        if (!deploy && sha) {
+            deploy = this.reopen(project, sha, (h) => !h.rollouts.some((r) => r.namespace === rollout.namespace && r.release === rollout.release));
+        }
         if (!deploy) {
             deploy = {
-                id: `${project.name}:${++this.sequence}`,
+                // The creation time keeps it apart from the ids of deploys loaded after a restart.
+                id: `${project.name}:${this.now()}-${++this.sequence}`,
                 project: project.name,
                 pipelineSource: project.source,
                 sha,
@@ -285,6 +341,52 @@ class DeployBoardStore {
             this.deploys.push(deploy);
         }
         return deploy;
+    }
+
+    /**
+     * Bring a deploy of the history back to the screen: the integration and the production of the same
+     * commit roll tens of minutes apart, and are one deploy.
+     * @param {{name: string, source: string}} project Project of the rollout.
+     * @param {string} sha Commit in the image tag.
+     * @param {Function} accepts Whether a history record may take the rollout.
+     * @returns {object|null} The reopened deploy, or null when none fits.
+     */
+    reopen(project, sha, accepts) {
+        const index = this.history.findIndex((h) => h.project === project.name && h.sha === sha && accepts(h));
+        if (index === -1) {
+            return null;
+        }
+        const [record] = this.history.splice(index, 1);
+        const deploy = {
+            id: record.id,
+            project: project.name,
+            pipelineSource: project.source,
+            sha,
+            version: record.version,
+            rollouts: new Map(record.rollouts.map((r) => [r.id, { ...r }])),
+            state: "done",
+            startedAt: record.startedAt,
+            // Open again: when it ends it is saved again, even if the rollout that reopened it arrives done.
+            endedAt: null,
+        };
+        this.deploys.push(deploy);
+        return deploy;
+    }
+
+    /**
+     * Hand a record to the database. Never throws: losing a write must not stop the board.
+     * @param {object} record History record.
+     * @returns {void}
+     */
+    save(record) {
+        if (!this.persist) {
+            return;
+        }
+        try {
+            this.persist(record);
+        } catch (e) {
+            // The repository logs its own failures; the board goes on in memory.
+        }
     }
 
     /**
@@ -321,15 +423,9 @@ class DeployBoardStore {
      */
     toHistory(deploy, outcome, now) {
         this.deploys.splice(this.deploys.indexOf(deploy), 1);
-        this.history.unshift({
-            id: deploy.id,
-            project: deploy.project,
-            version: deploy.version,
-            outcome,
-            startedAt: deploy.startedAt,
-            endedAt: deploy.endedAt ?? now,
-            releases: [...deploy.rollouts.values()].map((r) => ({ namespace: r.namespace, release: r.release })),
-        });
+        const record = recordOf(deploy, outcome, deploy.endedAt ?? now);
+        this.history.unshift(record);
+        this.save(record);
     }
 
     /**
@@ -438,6 +534,29 @@ function refresh(deploy) {
 }
 
 /**
+ * The history record of a deploy: what the "Today" list shows and what the database keeps. The
+ * rollouts are kept (to join a later rollout of the same commit) but never leave by the snapshot.
+ * @param {object} deploy Internal deploy.
+ * @param {string} outcome "done", "stuck" or "replaced".
+ * @param {number} endedAt When it ended.
+ * @returns {object} Record.
+ */
+function recordOf(deploy, outcome, endedAt) {
+    const rollouts = [...deploy.rollouts.values()].map((r) => pickPublic(r, ROLLOUT_RECORD_FIELDS));
+    return {
+        id: deploy.id,
+        project: deploy.project,
+        version: deploy.version,
+        sha: deploy.sha,
+        outcome,
+        startedAt: deploy.startedAt,
+        endedAt,
+        releases: rollouts.map((r) => ({ namespace: r.namespace, release: r.release })),
+        rollouts,
+    };
+}
+
+/**
  * @param {object} deploy Internal deploy.
  * @returns {object[]} Its rollouts that were not replaced, or all of them when every one was.
  */
@@ -476,6 +595,7 @@ module.exports = {
     EMIT_INTERVAL_MS,
     DEPLOY_PUBLIC_FIELDS,
     HISTORY_PUBLIC_FIELDS,
+    ROLLOUT_RECORD_FIELDS,
     DONE_VISIBLE_MS,
     HISTORY_MS,
     HISTORY_MAX,
