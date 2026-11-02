@@ -6,7 +6,23 @@
             <span class="db-card-label">{{ $t(labelKey) }}</span>
         </header>
 
-        <p class="db-card-time">{{ timeText }}</p>
+        <p class="db-card-time">
+            <span>{{ timeText }}</span>
+            <span v-if="steps" class="db-steps-count">{{ $t("deployBoardStepCount", [stepNumber, steps.length]) }}</span>
+        </p>
+
+        <ol v-if="steps" class="db-steps" :style="{ '--db-steps': steps.length }" :aria-label="$t('deployBoardStepsLabel')">
+            <li
+                v-for="s in steps"
+                :key="s.key"
+                class="db-step"
+                :class="'is-' + s.status"
+                :aria-current="s.status === 'current' ? 'step' : null"
+            >
+                <i aria-hidden="true"></i>
+                <span>{{ $t(STEP_KEYS[s.key]) }}</span>
+            </li>
+        </ol>
 
         <section v-if="pipeline" class="db-pipeline" :class="'is-' + pipeline.state">
             <div class="db-pipeline-head">
@@ -104,6 +120,15 @@ const JOB_KEYS = {
     stopped: "deployBoardJobStopped",
 };
 
+/** Step of the deploy → i18n key. */
+const STEP_KEYS = {
+    merge: "deployBoardStepMerge",
+    pipeline: "deployBoardStepPipeline",
+    built: "deployBoardStepBuilt",
+    rollout: "deployBoardStepRollout",
+    live: "deployBoardStepLive",
+};
+
 /** Why a release has no command → i18n key. */
 const GAP_KEYS = {
     unknown: "deployBoardRollbackUnknown",
@@ -152,6 +177,7 @@ export default {
         return {
             GAP_KEYS,
             PIPELINE_KEYS,
+            STEP_KEYS,
             rollbackOpen: false,
             copied: false,
         };
@@ -199,6 +225,16 @@ export default {
                 return "warn";
             }
             return TONES[this.deploy.state] || "rolling";
+        },
+
+        /** @returns {object[]|null} Steps from the merge to "No ar" (older servers do not send them) */
+        steps() {
+            return this.deploy.steps?.length ? this.deploy.steps : null;
+        },
+
+        /** @returns {number} Number of the step it is on, from 1: the last one reached */
+        stepNumber() {
+            return this.steps.findLastIndex((s) => s.status !== "pending") + 1;
         },
 
         /** @returns {object|null} Pipeline of the deploy (older servers do not send it) */
@@ -370,9 +406,100 @@ export default {
 }
 
 .db-card-time {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.2em 0.8em;
     margin: 0;
     font-size: 0.85em;
     color: var(--db-ink-3);
+}
+
+.db-steps-count {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--db-ink-2);
+}
+
+.db-steps {
+    display: grid;
+    grid-template-columns: repeat(var(--db-steps), minmax(0, 1fr));
+    gap: 0.3em;
+    margin: 0.1em 0 0.15em;
+    padding: 0;
+    list-style: none;
+}
+
+.db-step {
+    display: grid;
+    gap: 0.3em;
+    min-width: 0;
+    font-size: 0.72em;
+    color: var(--db-ink-3);
+
+    i {
+        display: block;
+        height: 0.45rem;
+        border-radius: 0.2rem;
+        background: var(--db-panel-2);
+    }
+
+    span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &.is-done {
+        color: var(--db-ink-2);
+
+        i {
+            background: var(--db-ok);
+        }
+    }
+
+    // A step the deploy went past without seeing it: no pipeline for this commit.
+    &.is-skipped i {
+        background: transparent;
+        border: 1px dashed var(--db-line-2);
+    }
+
+    &.is-current,
+    &.is-warn,
+    &.is-failed {
+        font-weight: 800;
+    }
+
+    &.is-current {
+        color: var(--db-brand);
+
+        i {
+            background: var(--db-brand);
+            animation: db-step-pulse 1.6s ease-in-out infinite;
+        }
+    }
+
+    &.is-warn {
+        color: var(--db-warn);
+
+        i {
+            background: var(--db-warn);
+        }
+    }
+
+    &.is-failed {
+        color: var(--db-bad);
+
+        i {
+            background: var(--db-bad);
+        }
+    }
+}
+
+@keyframes db-step-pulse {
+    50% {
+        opacity: 0.45;
+    }
 }
 
 .db-card-releases {
@@ -589,6 +716,10 @@ export default {
 @media (prefers-reduced-motion: reduce) {
     .db-release-bar i {
         transition: none;
+    }
+
+    .db-step.is-current i {
+        animation: none;
     }
 }
 </style>

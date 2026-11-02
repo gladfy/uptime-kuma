@@ -158,6 +158,37 @@ de pipeline ali é falta de fonte, não deploy manual.
 - **WHEN** o projeto `temporal` está configurado sem origem de pipeline, os segredos do Bitbucket e do GitHub existem, e a release `temporal/temporal` muda de revisão
 - **THEN** o cartão mostra só a virada, sem seção de pipeline e sem "Sem pipeline"
 
+### Requirement: O cartão diz em que etapa o deploy está
+
+O cartão SHALL mostrar as etapas do deploy, em ordem — "Merge", "Pipeline", "Build pronto",
+"Virada" e "No ar" —, com "etapa N de M" e uma faixa com um segmento por etapa. A etapa atual
+SHALL aparecer destacada; as anteriores, como concluídas; a que falhou (pipeline que falhou,
+virada travada) em vermelho; a que parou sem falhar (pipeline cancelada, virada sem progresso,
+nenhuma virada depois da pipeline verde) em amarelo.
+
+As etapas SHALL ser só as que as fontes do projeto conseguem ver: sem fonte de pipeline (não
+configurada, ou projeto sem origem), o cartão começa na "Virada" ("etapa 1 de 2"); sem a fonte do
+cluster, termina na pipeline verde ("Merge", "Pipeline", "No ar"). Quando o projeto tem pipeline e
+o deploy chegou sem ela (virada manual, ou vista com o painel fora do ar), as três primeiras etapas
+SHALL aparecer como puladas, e não como concluídas. A conta é do servidor, que já decide o rótulo:
+o navegador só desenha.
+
+#### Scenario: Pipeline do condominio rodando
+- **WHEN** o merge chegou e a pipeline do condominio está rodando
+- **THEN** o cartão mostra "etapa 2 de 5", com "Merge" concluída e "Pipeline" destacada
+
+#### Scenario: Virada travada
+- **WHEN** a pipeline ficou verde e a virada do `winker-prod` passou do prazo
+- **THEN** o cartão mostra "etapa 4 de 5", com "Virada" em vermelho
+
+#### Scenario: Virada sem pipeline num projeto com pipeline
+- **WHEN** a fonte de pipeline do condominio está configurada e o `winker-prod` vira sem pipeline correspondente
+- **THEN** o cartão mostra "etapa 4 de 5", com "Merge", "Pipeline" e "Build pronto" puladas
+
+#### Scenario: Projeto sem origem de pipeline
+- **WHEN** a release `microservices-prod/agua-gas` vira
+- **THEN** o cartão mostra "etapa 1 de 2", com "Virada" destacada e "No ar" a seguir
+
 ### Requirement: Ordem e ciclo de vida dos cartões
 
 Os cartões SHALL aparecer nesta ordem: com falha, travados, em andamento, concluídos. Um deploy
