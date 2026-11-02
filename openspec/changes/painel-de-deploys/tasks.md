@@ -145,7 +145,7 @@ Achado de 02/11/2026: o deploy do condominio de 31/10 apareceu com uma linha só
 
 - [x] 12.1 `npm run build`, `npm run test-backend` (inclui `test-migration.js`, que roda todas as migrations em SQLite e MariaDB), `npm run lint`, `node extra/check-lang-json.js` e `node extra/check-knex-filenames.mjs` verdes.
   - 02/11/2026, local: test-backend 367/367 (migrations ok em SQLite e em MariaDB 12), lint 0 erros (72 avisos, os de antes), langs ok, nomes de migration ok, build ok.
-- [ ] 12.2 Merge, deploy e conferência: o log mostra a carga do histórico; a lista "Hoje" sobrevive a um reinício; o próximo deploy do condominio aparece como uma entrada só.
+- [x] 12.2 Merge, deploy e conferência: o log mostra a carga do histórico; a lista "Hoje" sobrevive a um reinício; o próximo deploy do condominio aparece como uma entrada só. Conferido em 02/11/2026 com o merge `45ba525`: `winker-prod` e `winker-integration` viraram com 3 s de diferença (ReplicaSets de 19:23:32 e 19:23:35 UTC) e o cartão foi um só; o pod do Kuma reiniciou às 19:35 UTC com a `winker.28` e o boot carregou o histórico ("History loaded: 9 deploys of the last 24 hours, last version of 170 objects"); a lista continuou na tela, confirmada pelo Erik.
   - 02/11/2026 13:16 UTC: PR #8 no master, imagem `2.5.3-winker.21` no ar, migration aplicada e log "History loaded: 0 deploys of the last 24 hours" (a tabela nasceu vazia). Nenhuma virada desde então; falta ver um reinício preservar a lista e o próximo deploy do condominio sair como uma entrada só.
   - 02/11/2026: o `ai-agents-prod` virou às 13:33 UTC, foi gravado, e o reinício do Kuma às 15:09 (deploy da 3.2) o trouxe de volta: "History loaded: 1 deploys of the last 24 hours". Falta só o condominio sair como uma entrada só.
 
@@ -238,7 +238,7 @@ Pedido do Erik em 02/11/2026: o contêiner no navio, com sons realistas, nada el
 
 ## 22. Entrega da fase 5
 
-- [ ] 22.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado. Merge e deploy feitos em 02/11/2026 (`2.5.3-winker.24`); falta ouvir um deploy real.
+- [x] 22.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado. Merge e deploy feitos em 02/11/2026 (`2.5.3-winker.24`); falta ouvir um deploy real. Ouvido pelo Erik no merge do condominio de 02/11/2026.
 - [x] 22.2 Som ligado por padrão (pedido do Erik em 02/11/2026): só fica desligado no navegador em que alguém silenciou. Até o primeiro clique na página, o navegador não deixa tocar, e o painel avisa ao lado do botão.
 
 # Fase 6 — Como voltar à versão anterior
@@ -256,7 +256,7 @@ Pedido do Erik em 02/11/2026. Decisão final (02/11): o painel **não** volta a 
 ## 24. Entrega da fase 6
 
 - [x] 24.1 Chaves de i18n; `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador (copiar funciona; 400 px sem rolagem horizontal no bloco do comando); merge e deploy.
-- [ ] 24.2 Conferir, com o Erik, o comando gerado para o próximo deploy do condominio contra o que ele rodaria à mão.
+- [x] 24.2 Conferir, com o Erik, o comando gerado para o próximo deploy do condominio contra o que ele rodaria à mão. Conferido pelo Erik no merge do condominio de 02/11/2026.
 
 # Fase 7 — Amplify
 
