@@ -75,6 +75,30 @@ dela, e a seguinte não muda o que a anterior entregou.
 | **8. Conferência de cobertura** | Relatório que cruza EKS e Amplify com a configuração do painel e as tags do Kuma; lacunas fechadas ou excluídas com motivo | Nenhuma nova; criar monitores e tags que faltarem |
 | **9. Projetos da OCI** | A virada do `ia-rag`, do `ia-process-document` e do que mais rodar no OKE, com a pipeline deles no mesmo cartão; o OKE na conferência de cobertura | ServiceAccount só de leitura no OKE, credencial dela num Secret do EKS, caminho de rede do EKS até a API do OKE; cadastrar os webhooks dos repositórios da OCI |
 
+## Onde estamos (02/11/2026)
+
+No ar a imagem `2.5.3-winker.28` e o chart `uptimekuma` 0.4.0. As fases 1 a 6 estão em produção.
+A 7 está em andamento; a 8 e a 9 ainda não começaram. Uma fase só se fecha quando a conferência com deploy real
+também foi feita (as tarefas com o número entre parênteses).
+
+| Fase | Situação | O que falta |
+|---|---|---|
+| 1. Página e monitores | Em produção | Nada |
+| 2. Virada no cluster | Em produção; monitores da `winker` ligados às releases pela tag `deploy` (8 na fase 2, os demais na 10.5) | Comparar o fim da virada com o `kubectl rollout status` num merge real (8.2) |
+| 3. Cobertura do EKS | Em produção: 17 namespaces, 30 releases | Origem do `chat-api` (10.1); até lá ele aparece só com a virada |
+| 3.1 Histórico no banco | Em produção; conferido com o merge `45ba525` e o reinício da `winker.28` | Nada |
+| 3.2 Indicadores e tema | Em produção | Nada |
+| 3.3 Painel fora do ar | Em produção | Nada |
+| 4. Pipelines | Em produção. Webhooks cadastrados (8 no Bitbucket, 3 no GitHub); os 3 do GitHub conferidos pelo `ping`; a primeira entrega do Bitbucket chegou com o merge do condominio de 02/11 e abriu o cartão "Na pipeline". O cartão mostra a etapa do deploy ("etapa 2 de 5") desde a `winker.28` | Primeira entrega dos outros 7 repositórios do Bitbucket e o `refname` da pipeline de pull request (20.3); um merge do condominio acompanhado até a virada concluída, com os tempos (20.4) |
+| 5. Sons | Em produção, ligados por padrão; ouvidos num deploy real | Nada |
+| 6. Como voltar | Em produção; comando conferido pelo Erik num deploy real | Nada |
+| 7. Amplify | Em andamento | Dependência, coletor, role IAM por IRSA |
+| 8. Conferência de cobertura | Não começada; depende da 7 | Tudo |
+| 9. Projetos da OCI | Não começada; bloqueada | Inventário do OKE e caminho de rede do EKS até a API dele (29.1 e 29.2), que dependem de quem tem acesso à OCI |
+
+As conferências que faltam nas fases 2 e 4 (8.2 e 20.4) dependem do mesmo evento: um merge do
+condominio acompanhado no painel do push até "No ar", comparando o fim com o `kubectl rollout status`.
+
 A ordem segue valor e custo: a virada é o que ninguém vê hoje e só precisa de permissão no
 cluster, e a fase 3 estende o mesmo coletor ao resto do EKS sem código novo além da origem
 opcional; os webhooks exigem rota pública e cadastro em vários repositórios; o Amplify é
