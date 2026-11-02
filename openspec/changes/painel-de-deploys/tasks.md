@@ -71,7 +71,7 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
   - Rodada local de 31/10/2026: build ok, lint 0 erros (72 avisos, nenhum em arquivo do painel), langs ok, test-backend 347/348. O vermelho foi `monitors/test-rabbitmq.js` (o container não subiu em 60 s com a máquina carregada); isolado, 9/9.
   - Conferência no navegador com o estado gerado pelos módulos reais (rastreador + store) a partir de Deployments de exemplo: ordem dos cartões, rótulos sem "Sem pipeline", `9/17`, marcas "em deploy"/"virada travada" sem mudar a cor, linha do destaque ("Começou 45 min depois da virada de gateway-prod · 4c1d9e0" e "não tem deploy associado"), cluster sem leitura apagando marcas e linhas, 1920 × 1080 sem corte e 400 px sem rolagem horizontal.
 - [ ] 8.2 Deploy, marcar os monitores com a tag `deploy` e acompanhar o próximo merge de um projeto do Bitbucket no painel: a virada aparece por release, sem o rótulo "Sem pipeline", e conclui junto com o `kubectl rollout status`.
-  - 31/10/2026: deploy feito (chart 0.2.0, imagem `2.5.3-winker.18`). Tag `deploy` posta pela API do Kuma em 8 monitores da status page `winker`: Web → `condominio/winker-prod`, Web integração → `condominio/winker-integration`, Gateway (API Geral) → `gateway/gateway-prod`, Gateway Integration → `gateway/gateway-integration`, Chat → `chat/chatwoot`, Connector Access/Consumer/Queue → `connector/connector-*`. Convite e Portaria Web ficam para a fase 5 (Amplify); os outros monitores da página dependem da fase 3; Connector Geral ficou sem tag até confirmar se aponta para o EB. Falta acompanhar o próximo merge.
+  - 31/10/2026: deploy feito (chart 0.2.0, imagem `2.5.3-winker.18`). Tag `deploy` posta pela API do Kuma em 8 monitores da status page `winker`: Web → `condominio/winker-prod`, Web integração → `condominio/winker-integration`, Gateway (API Geral) → `gateway/gateway-prod`, Gateway Integration → `gateway/gateway-integration`, Chat → `chat/chatwoot`, Connector Access/Consumer/Queue → `connector/connector-*`. Convite e Portaria Web ficam para a fase 7 (Amplify); os outros monitores da página dependem da fase 3; Connector Geral ficou sem tag até confirmar se aponta para o EB. Falta acompanhar o próximo merge.
   - Botão "Deploys" no cabeçalho do Kuma (branch `feat/botao-painel-de-deploys`), abre `/deploys/winker`.
 
 # Fase 3 — Cobertura do EKS
@@ -96,7 +96,7 @@ Leva ao painel as outras aplicações que rodam no EKS. Inventário de 31/10/202
 | temporal | `temporal/temporal` | nenhuma (chart de infraestrutura) | Temporal |
 | prefect | `big-data/prefect-server` | nenhuma (chart de infraestrutura) | Prefect |
 
-Fora desta fase, para a conferência da fase 6 decidir: as variantes de estágio (`*-dev`), a observabilidade (Loki, Tempo, Grafana, Prometheus, Victoria Metrics, OTel), Envoy, ProxySQL, Redis/Valkey, External Secrets, OpenCost, Metabase e GLPI (estes dois sem release do Helm).
+Fora desta fase, para a conferência da fase 8 decidir: as variantes de estágio (`*-dev`), a observabilidade (Loki, Tempo, Grafana, Prometheus, Victoria Metrics, OTel), Envoy, ProxySQL, Redis/Valkey, External Secrets, OpenCost, Metabase e GLPI (estes dois sem release do Helm).
 
 ## 9. Projeto sem fonte de pipeline
 
@@ -143,64 +143,125 @@ Achado de 02/11/2026: o deploy do condominio de 31/10 apareceu com uma linha só
   - 02/11/2026, local: test-backend 367/367 (migrations ok em SQLite e em MariaDB 12), lint 0 erros (72 avisos, os de antes), langs ok, nomes de migration ok, build ok.
 - [ ] 12.2 Merge, deploy e conferência: o log mostra a carga do histórico; a lista "Hoje" sobrevive a um reinício; o próximo deploy do condominio aparece como uma entrada só.
 
+# Fase 3.2 — Indicadores e tema
+
+Pedido do Erik em 02/11/2026. Usa o histórico que a fase 3.1 já grava; nenhuma infraestrutura nova.
+
+## 13. Indicadores das últimas 24 horas
+
+- [ ] 13.1 Store: `stats` no `snapshot()` com a contagem das últimas 24 h por desfecho — concluídos, travados, com falha (a partir da fase 4), substituídos e em andamento — e `successRate` = concluídos ÷ (concluídos + travados + com falha), em inteiro de 0 a 100, ou `null` sem nenhum encerrado. Conta por deploy (um commit com integration e prod é um), e o deploy reaberto conta uma vez. Substituído fica fora da taxa: não deu certo nem errado, outro tomou o lugar.
+- [ ] 13.2 Cabeçalho do painel: "Deploys 24 h: N" e "Sucesso: 92% (11 de 12)", com o detalhe por desfecho no `title`. Sem encerrados, "Sucesso: —". O número não muda cor de nada: é contagem, não alarme.
+- [ ] 13.3 Testes em `test-store.js`: contagem por deploy e não por release, reaberto contado uma vez, substituído fora da taxa, janela de 24 h, `null` sem encerrados, e `stats` só com os campos permitidos.
+
+## 14. Tema e entrega da fase 3.2
+
+- [ ] 14.1 Botão pequeno no canto do cabeçalho que alterna claro e escuro, gravando na mesma preferência do Kuma (`$root.userTheme`, a de Configurações → Aparência), então a escolha vale para aquele navegador. Rótulo acessível que diz o tema de destino; ícone de sol/lua; funciona no modo de parede.
+- [ ] 14.2 Chaves de i18n novas no meio dos dois json.
+- [ ] 14.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador nos dois temas em 1920 × 1080 e em 400 px; merge e deploy.
+
 # Fase 4 — Pipelines
 
 Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 2 (três no Bitbucket, dois no GitHub) e os dos projetos da fase 3 que tiverem origem no Bitbucket ou no GitHub.
 
-## 13. Assinatura e leitura dos eventos
+## 15. Assinatura e leitura dos eventos
 
-- [ ] 13.1 Criar `server/deploy-board/signature.js`: HMAC-SHA256 sobre o `Buffer` recebido, formato `sha256=<hex>`, `crypto.timingSafeEqual` com guarda de tamanho.
-- [ ] 13.2 Criar `server/deploy-board/bitbucket-events.js` e `github-events.js` (puros): `repo:push`/`push` → merge (hora, SHA, primeira linha da mensagem truncada em 120); `repo:commit_status_*` → estado da pipeline; `workflow_run` → execução; `workflow_job` → job. Filtro por repositório e branch configurados (projeto sem origem nunca casa). Só os campos da spec saem da função.
-- [ ] 13.3 Escrever `test/backend-test/deploy-board/test-signature.js` e `test-webhook-events.js`: assinatura correta, errada, ausente, de tamanho diferente e calculada sobre o JSON reserializado (tem de falhar); payloads de exemplo reais de cada evento, branch de feature e repositório fora da configuração descartados.
+- [ ] 15.1 Criar `server/deploy-board/signature.js`: HMAC-SHA256 sobre o `Buffer` recebido, formato `sha256=<hex>`, `crypto.timingSafeEqual` com guarda de tamanho.
+- [ ] 15.2 Criar `server/deploy-board/bitbucket-events.js` e `github-events.js` (puros): `repo:push`/`push` → merge (hora, SHA, primeira linha da mensagem truncada em 120); `repo:commit_status_*` → estado da pipeline; `workflow_run` → execução; `workflow_job` → job. Filtro por repositório e branch configurados (projeto sem origem nunca casa). Só os campos da spec saem da função.
+- [ ] 15.3 Escrever `test/backend-test/deploy-board/test-signature.js` e `test-webhook-events.js`: assinatura correta, errada, ausente, de tamanho diferente e calculada sobre o JSON reserializado (tem de falhar); payloads de exemplo reais de cada evento, branch de feature e repositório fora da configuração descartados.
 
-## 14. Roteador de webhook
+## 16. Roteador de webhook
 
-- [ ] 14.1 Criar `server/routers/deploy-board-webhook-router.js`: `express.raw({ type: "application/json", limit: "1mb" })` no próprio roteador, só em `/api/deploy-board/webhook/:source`; 404 sem segredo, 401 sem assinatura válida, 413 acima do teto, 2xx para evento descartado; instância própria de `KumaRateLimiter`; log só com fonte, evento, repositório e desfecho.
-- [ ] 14.2 `server/server.js`: montar o roteador **antes** do `app.use(express.json())` da linha 213 (uma linha aditiva).
-- [ ] 14.3 Escrever `test/backend-test/deploy-board/test-webhook-router.js` com o app Express e o roteador montado antes de `express.json()`: os desfechos 404/401/413/2xx, um pedido JSON comum a outra rota continua chegando parseado, e o log capturado não contém trecho do corpo nem do segredo.
+- [ ] 16.1 Criar `server/routers/deploy-board-webhook-router.js`: `express.raw({ type: "application/json", limit: "1mb" })` no próprio roteador, só em `/api/deploy-board/webhook/:source`; 404 sem segredo, 401 sem assinatura válida, 413 acima do teto, 2xx para evento descartado; instância própria de `KumaRateLimiter`; log só com fonte, evento, repositório e desfecho.
+- [ ] 16.2 `server/server.js`: montar o roteador **antes** do `app.use(express.json())` da linha 213 (uma linha aditiva).
+- [ ] 16.3 Escrever `test/backend-test/deploy-board/test-webhook-router.js` com o app Express e o roteador montado antes de `express.json()`: os desfechos 404/401/413/2xx, um pedido JSON comum a outra rota continua chegando parseado, e o log capturado não contém trecho do corpo nem do segredo.
 
-## 15. Correlação e cartão completo
+## 17. Correlação e cartão completo
 
-- [ ] 15.1 No store, a correlação da spec "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7), janela de 20 min para tag sem SHA, "sem pipeline" só com a fonte do projeto configurada, "pipeline verde, nenhuma virada vista" só com o cluster ativo.
-- [ ] 15.2 Ampliar `test-store.js`: o chat com tag `prod`, o condominio com SHA completo, dois deploys do mesmo projeto sobrepostos, fonte de pipeline desligada, projeto sem origem e cluster desligado.
-- [ ] 15.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase.
+- [ ] 17.1 No store, a correlação da spec "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7), janela de 20 min para tag sem SHA, "sem pipeline" só com a fonte do projeto configurada, "pipeline verde, nenhuma virada vista" só com o cluster ativo.
+- [ ] 17.2 Ampliar `test-store.js`: o chat com tag `prod`, o condominio com SHA completo, dois deploys do mesmo projeto sobrepostos, fonte de pipeline desligada, projeto sem origem e cluster desligado.
+- [ ] 17.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase.
 
-## 16. Infraestrutura e entrega da fase 4
+## 18. Infraestrutura e entrega da fase 4
 
-- [ ] 16.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart.
-- [ ] 16.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
-- [ ] 16.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket.
-- [ ] 16.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
+- [ ] 18.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart.
+- [ ] 18.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
+- [ ] 18.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket.
+- [ ] 18.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
 
-# Fase 5 — Amplify
+# Fase 5 — Sons
+
+Pedido do Erik em 02/11/2026: o contêiner no navio. Vem depois da fase 4, porque "deploy iniciado" e "build concluído" são eventos da pipeline.
+
+| Evento | Quando toca | Som |
+|---|---|---|
+| Deploy iniciado | a pipeline do projeto começou (fase 4); projeto sem origem de pipeline: a virada começou | buzina marítima curta e grave |
+| Build concluído | a pipeline terminou verde | som metálico de encaixe de contêiner |
+| Deploy em andamento | a virada começou no cluster | dois bipes de radar |
+| Deploy concluído | o deploy chegou a "No ar" | sino marítimo com duas notas agradáveis |
+| Deploy falhou | a pipeline falhou ou a virada travou | buzina grave seguida de alerta eletrônico |
+
+## 19. Eventos e síntese
+
+- [ ] 19.1 Função pura `soundEvents(anterior, atual)` (arquivo próprio em `src/components/deploy-board/`): compara dois snapshots e devolve os eventos da tabela, um por deploy e por transição. Snapshot da carga da página, da reconexão do socket ou do histórico carregado do banco **não** toca nada: só transição vista ao vivo. "Sem progresso" não toca. Projeto sem origem de pipeline: a virada que começa dispara "iniciado" e "em andamento", nessa ordem.
+- [ ] 19.2 Os cinco sons sintetizados no navegador com Web Audio API (osciladores e envelopes), sem arquivo de áudio: nada de licença, nada a mais no bundle, nada para baixar na TV. Cada som com até ~2 s; uma fila toca um de cada vez, e o mesmo evento do mesmo deploy não repete.
+- [ ] 19.3 Botão "Ativar som" / "Silenciar" ao lado do de tema. O navegador só toca áudio depois de um clique na página, então o som começa desligado e a escolha fica gravada naquele navegador; na TV, ativar uma vez basta enquanto a aba estiver aberta.
+- [ ] 19.4 Testes da função pura (cada linha da tabela, carga e reconexão sem som, projeto sem origem, nada repetido) e conferência de ouvido de cada som com o Erik antes do merge.
+
+## 20. Entrega da fase 5
+
+- [ ] 20.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado.
+
+# Fase 6 — Voltar à versão anterior
+
+Pedido do Erik em 02/11/2026, com a decisão de fazer o rollback **direto no cluster**, pelo próprio Kuma. É a única ação de escrita do painel, e muda três premissas: a ServiceAccount do Kuma deixa de ser só leitura, a proposta deixa de ter "ações" fora do escopo, e o repositório `infrastructure` precisa de um ADR registrando a exceção à regra "deploy é sempre por pipeline".
+
+**Como volta:** a imagem, não o template. O painel troca a tag da imagem dos containers que mudaram de volta para a da versão anterior, com um patch só nesses campos. Voltar o template inteiro (o `kubectl rollout undo`) obrigaria o Kuma a ler o template do ReplicaSet anterior, com as variáveis de ambiente — e o `gateway-prod` tem 103 chaves de produção escritas no template. Com a imagem, o Kuma não lê env, volume nem Secret, e a permissão nova é só `patch` em Deployments. O preço: mudança de configuração do chart (env, recursos) não volta; só o código.
+
+## 21. Ação de voltar
+
+- [ ] 21.1 Configuração: `rollback: true` por projeto, desligado por padrão. Projeto sem a chave não mostra botão e o servidor recusa.
+- [ ] 21.2 Versão anterior: vem do histórico do painel (banco, 7 dias), do deploy anterior concluído da mesma release. Sem ele, o botão aparece desabilitado com "versão anterior desconhecida". A extração do Deployment passa a guardar também o nome de cada container e o repositório da imagem (sem env), para montar o patch.
+- [ ] 21.3 Socket handler `deployBoardRollback` com `checkLogin`, **exigindo 2FA ativo no usuário do Kuma**, o id de um deploy do snapshot atual (nunca nome de release livre), confirmação digitada (o nome do projeto) e limite de uma ação por projeto a cada 5 min. Patch estratégico em cada Deployment da release, só nos containers cuja tag mudou entre as duas versões. Nunca em CronJob.
+- [ ] 21.4 Trilha: linha de log com usuário, projeto, releases, de → para e desfecho; o deploy de volta aparece como virada nova com o rótulo "Voltando versão" e fica no histórico com quem pediu e quando.
+- [ ] 21.5 Cartão: botão "Voltar para <versão>" em deploy concluído ou travado do cluster, desabilitado com o cluster sem leitura ou com outra virada da mesma release em andamento. A confirmação mostra de → para, as releases e o aviso de que os CronJobs da release (o `gateway-cron` são 95) **continuam na versão nova**, e de que o próximo deploy pela pipeline sobrescreve a volta.
+- [ ] 21.6 Testes: escolha da versão anterior pelo histórico, patch só com os campos de imagem dos containers que mudaram (asserção de que nenhum outro campo do Deployment entra no corpo), recusa sem login, sem 2FA, sem `rollback: true`, com id fora do snapshot e dentro do limite de tempo, e CronJob nunca tocado.
+
+## 22. Infraestrutura e entrega da fase 6
+
+- [ ] 22.1 ADR no `infrastructure` registrando a exceção (quem pode, o que muda, por que a imagem e não o template, como desligar).
+- [ ] 22.2 Chart: ClusterRole própria `uptime-kuma-deploy-board-rollback` só com `patch` em `apps/deployments`, ligada por RoleBinding só nos namespaces dos projetos com `rollback: true`; a de leitura não muda. Conferir com `kubectl auth can-i` que ela altera Deployment ali e em nenhum outro namespace, e que continua sem Secret, Pod e `exec`.
+- [ ] 22.3 2FA ativo no usuário do Kuma que opera o painel.
+- [ ] 22.4 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; teste real num projeto de baixo risco escolhido com o Erik, voltando e depois redeployando pela pipeline.
+
+# Fase 7 — Amplify
 
 Exige a role IAM por IRSA e a dependência nova. Apps com branch de produção em 31/10/2026: `gatekeeper-dashboard`, `ia-frontend-document`, `pro`, `winker-app2`, `products`, `intercom-ui`, `site-novidades` e `guest-link`.
 
-## 17. Coletor do Amplify
+## 23. Coletor do Amplify
 
-- [ ] 17.1 Acrescentar `@aws-sdk/client-amplify` ao `package.json` e atualizar o `package-lock.json`. Anotar o tamanho da imagem `docker/winker.dockerfile` antes e depois.
-- [ ] 17.2 Criar `server/deploy-board/amplify-source.js`: descoberta de apps e branch `PRODUCTION` a cada 30 min, `ListJobs` (`maxResults: 3`) a cada 60 s ou 15 s com job em andamento, `GetJob` para os passos do job em andamento, "sem leitura" após 3 ciclos com erro, "não configurada" sem credencial ou sem `amplify.region`.
-- [ ] 17.3 Escrever `test/backend-test/deploy-board/test-amplify-source.js` com o cliente do SDK substituído por dublê: branch de estágio `NONE` ignorada, troca de ritmo 60 s ↔ 15 s, passos do `GetJob`, três erros seguidos levando a "sem leitura".
-- [ ] 17.4 Deploys do Amplify no store e no cartão (passos `BUILD`, `DEPLOY`, `VERIFY`), ligação de monitor pela tag `amplify/<app>` e as chaves de i18n da fase.
+- [ ] 23.1 Acrescentar `@aws-sdk/client-amplify` ao `package.json` e atualizar o `package-lock.json`. Anotar o tamanho da imagem `docker/winker.dockerfile` antes e depois.
+- [ ] 23.2 Criar `server/deploy-board/amplify-source.js`: descoberta de apps e branch `PRODUCTION` a cada 30 min, `ListJobs` (`maxResults: 3`) a cada 60 s ou 15 s com job em andamento, `GetJob` para os passos do job em andamento, "sem leitura" após 3 ciclos com erro, "não configurada" sem credencial ou sem `amplify.region`.
+- [ ] 23.3 Escrever `test/backend-test/deploy-board/test-amplify-source.js` com o cliente do SDK substituído por dublê: branch de estágio `NONE` ignorada, troca de ritmo 60 s ↔ 15 s, passos do `GetJob`, três erros seguidos levando a "sem leitura".
+- [ ] 23.4 Deploys do Amplify no store e no cartão (passos `BUILD`, `DEPLOY`, `VERIFY`), ligação de monitor pela tag `amplify/<app>` e as chaves de i18n da fase.
 
-## 18. Infraestrutura e entrega da fase 5
+## 24. Infraestrutura e entrega da fase 7
 
-- [ ] 18.1 Role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com `amplify:ListApps`, `amplify:ListBranches`, `amplify:ListJobs` e `amplify:GetJob`, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`.
-- [ ] 18.2 Anotação `eks.amazonaws.com/role-arn` na ServiceAccount e `amplify.region` no ConfigMap. Publicar a versão nova do chart.
-- [ ] 18.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; conferir um build da branch de produção do `pro` no painel em até 60 s e ligar os monitores dos apps do Amplify (confirmar guest-link → "Convite" e gatekeeper-dashboard → "Portaria Web").
+- [ ] 24.1 Role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com `amplify:ListApps`, `amplify:ListBranches`, `amplify:ListJobs` e `amplify:GetJob`, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`.
+- [ ] 24.2 Anotação `eks.amazonaws.com/role-arn` na ServiceAccount e `amplify.region` no ConfigMap. Publicar a versão nova do chart.
+- [ ] 24.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; conferir um build da branch de produção do `pro` no painel em até 60 s e ligar os monitores dos apps do Amplify (confirmar guest-link → "Convite" e gatekeeper-dashboard → "Portaria Web").
 
-# Fase 6 — Conferência de cobertura
+# Fase 8 — Conferência de cobertura
 
 Objetivo: tudo o que roda no EKS e no Amplify está no monitoramento, ou está de fora com um motivo escrito. Um item está **coberto** quando (a) a release está na configuração do painel (EKS) ou o app tem branch de produção descoberta pelo painel (Amplify), e (b) ao menos um monitor do Kuma que confere o serviço tem a tag `deploy` apontando para o item. Tag `deploy` que aponta para algo que não roda mais é "tag órfã" e também conta como lacuna. Worker e CronJob sem endereço próprio ficam cobertos pelo monitor do projeto, com uma tag `deploy` a mais (um monitor pode ter várias).
 
-## 19. Relatório de cobertura
+## 25. Relatório de cobertura
 
-- [ ] 19.1 Criar `extra/deploy-board-coverage.js`, só leitura: lê do cluster (contexto atual do `kubectl`) os Deployments, StatefulSets e CronJobs agrupados por release e o ConfigMap do painel; do Amplify (`aws amplify list-apps` e `list-branches`) os apps com branch `PRODUCTION`; e do Kuma, pela API de socket com login pedido no terminal, os monitores e as tags `deploy`. Imprime uma linha por item com os dois critérios e o monitor que o cobre, os excluídos com o motivo e as tags órfãs,, e sai com código 1 quando há lacuna fora da lista de exclusões.
-- [ ] 19.2 Lista de exclusões versionada (`extra/deploy-board-coverage-exclusions.json`): cada entrada com o item (namespace inteiro ou release) e o motivo. Ponto de partida: namespaces de sistema, variantes `*-dev` e a infraestrutura listada no fim da fase 3 — cada uma revisada com o Erik antes de entrar.
-- [ ] 19.3 A classificação é função pura, com teste em `test/backend-test/deploy-board/test-coverage.js`: release na config sem monitor, monitor com tag para release inexistente (tag órfã), app do Amplify sem monitor, worker coberto pela tag a mais no monitor do projeto, item excluído com e sem motivo (sem motivo não vale), e a saída sem nenhum campo de env, volume ou segredo.
+- [ ] 25.1 Criar `extra/deploy-board-coverage.js`, só leitura: lê do cluster (contexto atual do `kubectl`) os Deployments, StatefulSets e CronJobs agrupados por release e o ConfigMap do painel; do Amplify (`aws amplify list-apps` e `list-branches`) os apps com branch `PRODUCTION`; e do Kuma, pela API de socket com login pedido no terminal, os monitores e as tags `deploy`. Imprime uma linha por item com os dois critérios e o monitor que o cobre, os excluídos com o motivo e as tags órfãs, e sai com código 1 quando há lacuna fora da lista de exclusões.
+- [ ] 25.2 Lista de exclusões versionada (`extra/deploy-board-coverage-exclusions.json`): cada entrada com o item (namespace inteiro ou release) e o motivo. Ponto de partida: namespaces de sistema, variantes `*-dev` e a infraestrutura listada no fim da fase 3 — cada uma revisada com o Erik antes de entrar.
+- [ ] 25.3 A classificação é função pura, com teste em `test/backend-test/deploy-board/test-coverage.js`: release na config sem monitor, monitor com tag para release inexistente (tag órfã), app do Amplify sem monitor, worker coberto pela tag a mais no monitor do projeto, item excluído com e sem motivo (sem motivo não vale), e a saída sem nenhum campo de env, volume ou segredo.
 
-## 20. Fechamento
+## 26. Fechamento
 
-- [ ] 20.1 Rodar contra produção e registrar a tabela neste change, com data.
-- [ ] 20.2 Para cada lacuna, uma de quatro saídas, decidida com o Erik: criar o monitor no Kuma, pôr a tag `deploy`, acrescentar a release à configuração (chart novo) ou registrar a exclusão com motivo. Tags órfãs são corrigidas ou removidas.
-- [ ] 20.3 Rodar de novo: zero lacunas. Registrar a data e o resultado.
+- [ ] 26.1 Rodar contra produção e registrar a tabela neste change, com data.
+- [ ] 26.2 Para cada lacuna, uma de quatro saídas, decidida com o Erik: criar o monitor no Kuma, pôr a tag `deploy`, acrescentar a release à configuração (chart novo) ou registrar a exclusão com motivo. Tags órfãs são corrigidas ou removidas.
+- [ ] 26.3 Rodar de novo: zero lacunas. Registrar a data e o resultado.

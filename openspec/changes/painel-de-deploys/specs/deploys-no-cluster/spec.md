@@ -3,9 +3,10 @@
 ### Requirement: Observar só os namespaces configurados, com leitura apenas
 
 O servidor SHALL observar Deployments e CronJobs somente dos namespaces listados na configuração,
-por list + watch na API do Kubernetes, autenticado pela conta de serviço do pod. A permissão SHALL
-ser só `get`, `list` e `watch` sobre `deployments` (apps) e `cronjobs` (batch), concedida apenas
-nesses namespaces. O servidor SHALL NOT ler Secrets, Pods ou logs.
+por list + watch na API do Kubernetes, autenticado pela conta de serviço do pod. A permissão de
+leitura SHALL ser só `get`, `list` e `watch` sobre `deployments` (apps) e `cronjobs` (batch),
+concedida apenas nesses namespaces. A única escrita SHALL ser a da capability `voltar-versao`, numa
+permissão à parte. O servidor SHALL NOT ler Secrets, Pods ou logs.
 
 #### Scenario: Namespace fora da lista
 - **WHEN** um Deployment muda de revisão num namespace que não está na configuração

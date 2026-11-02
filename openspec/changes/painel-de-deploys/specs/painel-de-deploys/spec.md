@@ -196,6 +196,54 @@ SHALL mostrar o último evento recebido, sem alarme por tempo.
 - **WHEN** o Kuma roda na máquina de um desenvolvedor, sem conta de serviço do Kubernetes
 - **THEN** o cluster aparece como "não configurado" e o resto do painel funciona
 
+### Requirement: Indicadores das últimas 24 horas
+
+O cabeçalho SHALL mostrar quantos deploys houve nas últimas 24 horas e a taxa de sucesso, contados
+por deploy (um commit com integration e prod é um deploy). A taxa SHALL ser concluídos ÷
+(concluídos + travados + com falha); deploy substituído e deploy em andamento SHALL ficar fora dela.
+Sem nenhum deploy encerrado na janela, a taxa SHALL aparecer como "—". Os indicadores SHALL NOT mudar
+a cor de monitor nem de cartão.
+
+#### Scenario: Doze encerrados, um travado
+- **WHEN** nas últimas 24 horas houve 11 deploys concluídos, 1 travado, 2 substituídos e 1 em andamento
+- **THEN** o cabeçalho mostra "Deploys 24 h: 15" e "Sucesso: 92% (11 de 12)"
+
+#### Scenario: Nada encerrado
+- **WHEN** não há deploy encerrado nas últimas 24 horas
+- **THEN** a taxa aparece como "—", e não como 0% nem 100%
+
+### Requirement: Botão de tema
+
+Um botão pequeno no cabeçalho SHALL alternar entre o tema claro e o escuro, gravando a escolha na
+preferência de tema do próprio Kuma, para que valha nas próximas aberturas naquele navegador.
+
+#### Scenario: Trocar para claro
+- **WHEN** o painel está escuro e a pessoa clica no botão de tema
+- **THEN** o painel fica claro, e continua claro ao recarregar a página
+
+### Requirement: Sons dos eventos do deploy
+
+Com o som ativado, o painel SHALL tocar, uma vez por deploy e por evento: buzina marítima curta e
+grave quando o deploy começa (a pipeline começou, ou a virada, em projeto sem origem de pipeline);
+som metálico de encaixe de contêiner quando a pipeline termina verde; dois bipes de radar quando a
+virada começa no cluster; sino marítimo com duas notas quando o deploy fica "No ar"; buzina grave
+seguida de alerta eletrônico quando a pipeline falha ou a virada trava. Os sons SHALL ser gerados no
+navegador, sem arquivo de áudio. O som SHALL começar desligado e ser ativado por um botão, com a
+escolha gravada no navegador. Só transição vista ao vivo SHALL tocar: abrir a página, reconectar o
+socket ou carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez.
+
+#### Scenario: Virada concluída
+- **WHEN** o som está ativado e o deploy do condominio passa de "Virando no cluster" para "No ar"
+- **THEN** toca o sino de duas notas, uma vez
+
+#### Scenario: Página aberta com deploy travado
+- **WHEN** a pessoa abre o painel e já há um deploy travado
+- **THEN** nenhum som toca
+
+#### Scenario: Som desligado
+- **WHEN** o som não foi ativado naquele navegador e uma virada começa
+- **THEN** nada toca
+
 ### Requirement: Textos traduzidos e sem controles de demonstração
 
 Todo texto da página SHALL vir de chaves novas em `src/lang/en.json` e `src/lang/pt-BR.json`. A
