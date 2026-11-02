@@ -166,7 +166,12 @@ ou de virada travada SHALL sair sozinho quando um deploy posterior do mesmo proj
 sucesso, e SHALL NOT exigir clique para sair.
 
 A lista "Hoje" SHALL mostrar os deploys encerrados nas últimas 24 horas (projeto, SHA curto,
-desfecho, duração e há quanto tempo), os mais recentes primeiro.
+desfecho, duração e há quanto tempo), os mais recentes primeiro. Um deploy da lista SHALL voltar
+para a coluna de cartões quando uma virada do mesmo projeto e do mesmo SHA começar.
+
+#### Scenario: Integration e prod do mesmo commit, 26 minutos depois
+- **WHEN** o `winker-integration` concluiu o commit `9ee108f`, o deploy já saiu para a lista "Hoje", e 26 minutos depois o `winker-prod` começa a virar o mesmo commit
+- **THEN** o deploy `condominio 9ee108f` volta a ser cartão, com as duas linhas de release, e há uma entrada só desse commit
 
 #### Scenario: Falha resolvida por deploy novo
 - **WHEN** o connector-server tem uma virada travada e um deploy posterior dele conclui

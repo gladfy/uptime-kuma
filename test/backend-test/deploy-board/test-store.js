@@ -10,6 +10,7 @@ const {
     HISTORY_MS,
     HISTORY_MAX,
     GROUP_WINDOW_MS,
+    ROLLOUT_RECORD_FIELDS,
 } = require("../../../server/deploy-board/store");
 
 const SHA = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0";
@@ -313,6 +314,121 @@ describe("Estado do painel de deploys", () => {
             store.setStaleNamespaces(["chat"]);
             const byProject = Object.fromEntries(store.snapshot().deploys.map((d) => [d.project, d.confirmed]));
             assert.deepStrictEqual(byProject, { condominio: true, chat: false });
+        });
+    });
+
+    describe("histórico gravado e reaberto pelo commit", () => {
+        const integration = (o) => rollout({ id: "condominio/winker-integration:1", release: "winker-integration", desired: 2, updated: 2, ...o });
+        const prod = (o) => rollout({ id: "condominio/winker-prod:1", ...o });
+
+        beforeEach(() => {
+            store.setProjects(PROJECTS);
+            store.setSource("cluster", "active");
+        });
+
+        test("integration e prod do mesmo commit, 26 min depois: um registro com as duas releases (31/10)", () => {
+            store.upsertRollout(integration({ state: "done", endedAt: clock }));
+            advance(DONE_VISIBLE_MS);
+            store.tick();
+            assert.strictEqual(store.snapshot().history.length, 1, "o integration já saiu para o histórico");
+
+            advance(16 * 60 * 1000);
+            store.upsertRollout(prod({ startedAt: clock }));
+            let snap = store.snapshot();
+            assert.strictEqual(snap.history.length, 0, "o registro voltou a ser cartão");
+            assert.strictEqual(snap.deploys.length, 1);
+            assert.strictEqual(snap.deploys[0].state, "updating");
+            assert.deepStrictEqual(snap.deploys[0].releases.map((r) => r.release), ["winker-integration", "winker-prod"]);
+
+            store.upsertRollout(prod({ startedAt: clock, state: "done", endedAt: clock + 1000, updated: 17 }));
+            advance(DONE_VISIBLE_MS + 1000);
+            store.tick();
+            snap = store.snapshot();
+            assert.strictEqual(snap.history.length, 1);
+            assert.deepStrictEqual(snap.history[0].releases.map((r) => r.release), ["winker-integration", "winker-prod"]);
+        });
+
+        test("a mesma release no mesmo commit, publicada de novo, é outro deploy", () => {
+            store.upsertRollout(integration({ state: "done", endedAt: clock }));
+            advance(DONE_VISIBLE_MS);
+            store.tick();
+            store.upsertRollout(integration({ id: "condominio/winker-integration:2", startedAt: clock }));
+            const snap = store.snapshot();
+            assert.strictEqual(snap.history.length, 1, "o registro antigo fica no histórico");
+            assert.strictEqual(snap.deploys.length, 1);
+            assert.notStrictEqual(snap.deploys[0].id, snap.history[0].id);
+        });
+
+        test("grava ao encerrar e ao sair da tela, só com os campos permitidos", () => {
+            const saved = [];
+            store.persist = (record) => saved.push(record);
+            store.upsertRollout(prod({ token: "segredo-plantado" }));
+            assert.strictEqual(saved.length, 0, "em andamento não grava");
+            // Controle: o campo plantado está no registro interno, então a ausência abaixo é da lista permitida.
+            assert.ok(JSON.stringify([...store.deploys[0].rollouts.values()]).includes("segredo-plantado"));
+
+            store.upsertRollout(prod({ token: "segredo-plantado", state: "done", endedAt: clock }));
+            assert.strictEqual(saved.length, 1, "grava assim que conclui, ainda na tela");
+            advance(DONE_VISIBLE_MS);
+            store.tick();
+            assert.strictEqual(saved.length, 2, "grava de novo ao sair para o histórico");
+            assert.strictEqual(saved[0].id, saved[1].id, "o mesmo registro, para o upsert");
+            assert.strictEqual(saved[1].outcome, "done");
+
+            assert.deepStrictEqual(Object.keys(saved[1]).sort(), ["endedAt", "id", "outcome", "project", "releases", "rollouts", "sha", "startedAt", "version"]);
+            for (const r of saved[1].rollouts) {
+                assert.ok(Object.keys(r).every((k) => ROLLOUT_RECORD_FIELDS.includes(k)), Object.keys(r).join(","));
+            }
+            assert.ok(!JSON.stringify(saved).includes("segredo-plantado"));
+        });
+
+        test("uma gravação que lança não derruba o painel", () => {
+            store.persist = () => {
+                throw new Error("banco fora");
+            };
+            store.upsertRollout(prod({ state: "done", endedAt: clock }));
+            assert.strictEqual(store.snapshot().deploys[0].state, "done");
+        });
+
+        test("restore: o histórico volta, fora das 24 h fica de fora, e o commit carregado reabre", () => {
+            const saved = [];
+            store.persist = (record) => saved.push(record);
+            store.upsertRollout(integration({ state: "done", endedAt: clock }));
+            advance(DONE_VISIBLE_MS);
+            store.tick();
+            const record = saved[saved.length - 1];
+            const old = { ...record, id: "condominio:velho", endedAt: clock - HISTORY_MS - 1 };
+
+            // Um processo novo, depois do reinício.
+            const next = new DeployBoardStore({ now: () => clock });
+            try {
+                next.setProjects(PROJECTS);
+                next.setSource("cluster", "active");
+                next.restore([record, old]);
+                assert.deepStrictEqual(next.snapshot().history.map((h) => h.id), [record.id]);
+
+                // O contador do rastreador recomeçou: o mesmo id de virada não pode cair no registro carregado.
+                next.upsertRollout(prod({ id: "condominio/winker-integration:1", namespace: "condominio", release: "winker-prod" }));
+                const snap = next.snapshot();
+                assert.strictEqual(snap.history.length, 0);
+                assert.deepStrictEqual(snap.deploys.map((d) => d.id), [record.id], "reabriu o registro carregado");
+                assert.deepStrictEqual(snap.deploys[0].releases.map((r) => r.release), ["winker-integration", "winker-prod"]);
+            } finally {
+                next.close();
+            }
+        });
+
+        test("o id de um deploy novo não colide com o de um carregado", () => {
+            store.upsertRollout(prod({ state: "done", endedAt: clock }));
+            const first = store.snapshot().deploys[0].id;
+            const next = new DeployBoardStore({ now: () => clock + 1 });
+            try {
+                next.setProjects(PROJECTS);
+                next.upsertRollout(prod({ images: [SHA2, "1.27"] }));
+                assert.notStrictEqual(next.snapshot().deploys[0].id, first);
+            } finally {
+                next.close();
+            }
         });
     });
 });

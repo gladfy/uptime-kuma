@@ -30,6 +30,9 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
 - **Projeto sem pipeline.** Repositório no CodeCommit e chart de infraestrutura (Temporal, Prefect)
   também têm virada no EKS. O projeto pode ser configurado sem origem de pipeline: o cartão mostra
   só a virada e nunca o rótulo "Sem pipeline".
+- **Histórico no banco do Kuma.** Os deploys encerrados ficam numa tabela própria do fork, por 7
+  dias, e voltam à tela depois de um reinício; uma virada com o mesmo SHA de um deploy já encerrado
+  junta a ele em vez de abrir outro.
 - **Conferência de cobertura.** Um relatório só de leitura compara o que roda no EKS e no Amplify com
   a configuração do painel e as tags dos monitores do Kuma, e aponta o que está sem monitoramento.
 - **Correlação** entre pipeline e virada pelo SHA do commit na tag da imagem; quando a tag não
@@ -51,6 +54,7 @@ dela, e a seguinte não muda o que a anterior entregou.
 | **1. Página e monitores** | `/deploys/<slug>` com login, duas colunas, monitores ao vivo e destaque de queda; a coluna de deploys mostra as fontes como "não configurada" | Nenhuma |
 | **2. Virada no cluster** | A virada de cada release, ao vivo; a marca "em deploy" e a correlação de queda nos monitores com a tag `deploy` | ServiceAccount do Kuma, leitura em 5 namespaces, ConfigMap com namespaces e projetos; marcar os monitores |
 | **3. Cobertura do EKS** | A virada das outras 18 releases do EKS (microsserviços, observer, site, jambonz, face-api, land, chat-api, ai-agents, mcp, audit-consumer, temporal, prefect); projeto sem origem de pipeline | Leitura em mais 12 namespaces e os projetos novos no ConfigMap; marcar os monitores |
+| **3.1 Histórico no banco** | O histórico sobrevive ao reinício do Kuma (7 dias no banco, 24 h na tela); o integration e o prod do mesmo commit viram um registro só | Nenhuma; uma tabela nova do fork, por migration |
 | **4. Pipelines** | Merge, pipeline e virada num cartão só; jobs do GitHub | Secret com os segredos; cadastro dos webhooks (os 5 da fase 2 e os dos projetos da fase 3 com origem no Bitbucket ou no GitHub) |
 | **5. Amplify** | Os 8 apps do Amplify, com passos do job | Role IAM por IRSA e anotação na ServiceAccount |
 | **6. Conferência de cobertura** | Relatório que cruza EKS e Amplify com a configuração do painel e as tags do Kuma; lacunas fechadas ou excluídas com motivo | Nenhuma nova; criar monitores e tags que faltarem |
@@ -92,6 +96,7 @@ Nenhuma. `openspec/specs/` está vazio, e a mudança não altera requisito da st
 - `src/router.js` — uma rota nova, com import lazy.
 - `src/lang/en.json` e `src/lang/pt-BR.json` — chaves novas no meio do arquivo.
 - `package.json` / `package-lock.json` — dependência nova `@aws-sdk/client-amplify`.
+- `db/knex_migrations/` — uma migration nova do fork (tabela `deploy_board_deploy`), arquivo novo.
 - `src/mixins/socket.js` **não** muda: a rota fica fora de `/status`, então o socket abre normalmente.
 - Todo o resto é arquivo novo (`server/deploy-board/`, roteador, socket handler, página, testes e,
   na fase 6, `extra/deploy-board-coverage.js` com a lista de exclusões).
@@ -124,9 +129,6 @@ como faltando.
 
 ## Pendências futuras
 
-- **Histórico só em memória** (últimas 24 h): reiniciar o Kuma apaga a lista "Hoje". Revisar quando
-  o reinício do Kuma passar a acontecer fora do próprio deploy dele, ou quando alguém pedir o
-  histórico de mais de um dia.
 - **Passos da pipeline do Bitbucket por API.** Revisar quando a falta de saber em que passo a
   pipeline falhou atrapalhar um diagnóstico.
 - **O próprio deploy do Kuma não aparece ao vivo:** o pod reinicia (réplica única com volume), e o

@@ -84,7 +84,11 @@ a fonte SHALL ficar "não configurada".
 
 ### Requirement: Pipeline e virada viram um deploy só
 
-Um deploy SHALL juntar o merge, a pipeline e a virada do mesmo commit de um projeto:
+Um deploy SHALL juntar o merge, a pipeline e a virada do mesmo commit de um projeto. Uma virada
+com SHA na tag SHALL juntar ao deploy do mesmo projeto e do mesmo SHA ainda que ele já esteja no
+histórico (o integration e o prod do mesmo commit sobem com dezenas de minutos de intervalo); só
+abre outro deploy quando a release dela já está naquele deploy (o mesmo commit publicado de novo).
+As regras de correlação com a pipeline:
 
 1. Quando a tag da imagem da release contém o SHA do commit (inteiro ou prefixo de ao menos 7
    caracteres), a virada SHALL ser ligada à pipeline desse commit.
@@ -144,11 +148,29 @@ região também vêm dele), com erro legível no log, sem impedir o boot.
 - **WHEN** um projeto tem `repo` e `branch` mas não tem `source`
 - **THEN** a configuração é recusada, o log nomeia `source` desse projeto, e o painel mostra as fontes como "não configuradas"
 
-### Requirement: Histórico das últimas 24 horas em memória
+### Requirement: Histórico gravado no banco do Kuma
 
-Os deploys encerrados SHALL ficar em memória por 24 horas, com teto de 500 registros. Reiniciar o
-Kuma SHALL apagar esse histórico. Nada do painel SHALL ser gravado no banco do Kuma.
+Todo deploy encerrado (concluído, travado e substituído, ou substituído) SHALL ser gravado no banco
+do Kuma, numa tabela própria do painel, no momento em que encerra — inclusive o concluído que ainda
+está na tela. No boot, o servidor SHALL carregar os deploys encerrados nas últimas 24 horas antes de
+ler o cluster. A tela SHALL mostrar as últimas 24 horas, com teto de 500; o banco SHALL guardar 7
+dias, com limpeza periódica. Do deploy SHALL ser gravado só o que o cartão mostra (projeto, versão,
+desfecho, horários e as linhas de release com estado e réplicas); nenhum campo do objeto do
+Kubernetes além desses. Falha ao gravar ou ao ler o banco SHALL NOT derrubar o painel nem o Kuma: o
+painel segue em memória e o log registra o erro.
 
 #### Scenario: Teto
 - **WHEN** o histórico chega a 500 deploys
-- **THEN** o mais antigo sai para o novo entrar
+- **THEN** o mais antigo sai da tela para o novo entrar
+
+#### Scenario: Kuma reinicia depois de uma virada
+- **WHEN** o `winker-integration` concluiu às 19:50 e o Kuma reinicia às 20:04
+- **THEN** depois do reinício a virada do `winker-integration` continua na lista "Hoje", com o horário real
+
+#### Scenario: Retenção
+- **WHEN** um deploy encerrou há mais de 7 dias
+- **THEN** ele é apagado do banco
+
+#### Scenario: Banco indisponível
+- **WHEN** a gravação no banco falha
+- **THEN** o deploy continua na tela e no histórico em memória, e o log registra a falha sem o conteúdo do deploy

@@ -121,64 +121,86 @@ Fora desta fase, para a conferência da fase 6 decidir: as variantes de estágio
 - [x] 10.6 Acompanhar a próxima virada de uma release nova no painel.
   - 02/11/2026 07:33 UTC: virada do `site-prod` (`site-winker` revisão 648, 2/2, e `site-winker-ondemand` revisão 79, 1/1, imagem `b588b70-b629`), concluída; o Kuma ficou de pé o tempo todo, sem erro do painel no log. Conferido na tela pelo Erik: "Últimas 24 horas" com `site` e a tag `b588b70-b629`, sem "Sem pipeline". O site vira todo dia nesse horário (também em 30/10 07:33 UTC), então aparece quase sempre na lista.
 
+# Fase 3.1 — Histórico no banco
+
+Achado de 02/11/2026: o deploy do condominio de 31/10 apareceu com uma linha só. O `winker-integration` virou às 19:50, o Kuma reiniciou às 20:04 (deploy da fase 3) e apagou o histórico em memória, e o `winker-prod` virou às 20:18. Mesmo sem o reinício seriam duas entradas: o deploy concluído sai da tela em 10 min e o agrupamento por SHA só olhava os cartões.
+
+## 11. Gravação e carga
+
+- [x] 11.1 Migration `db/knex_migrations/2026-11-02-1500-create-deploy-board-deploy.js` (knex, SQLite e MariaDB): `deploy_board_deploy` com `id`, `deploy_id` único, `project`, `sha`, `started_at`, `ended_at` (ms) e `data` (JSON); índice em `ended_at`.
+  - `deploy_id` com 128 caracteres: índice único em utf8mb4 abaixo do limite de 767 bytes de MariaDB com formato de linha antigo. Rollback pela imagem anterior é seguro: o `server/database.js` trata migration a mais no banco ("the following files are missing") com aviso, sem derrubar o boot.
+- [x] 11.2 `server/deploy-board/history-repository.js`: `load(desde)`, `save(registro)` (upsert por `deploy_id`), `prune(antes)`; gravações numa fila só; erro vira log sem o conteúdo; sem banco disponível, tudo é no-op.
+- [x] 11.3 Store: o registro de histórico guarda as viradas (namespace, release, estado, réplicas, tags) sem sair pelo `snapshot()`; `onPersist` chamado quando o deploy encerra (concluído, substituído) e ao sair para o histórico; `restore(registros)` monta o histórico; identificador com o instante de criação.
+- [x] 11.4 Agrupamento: virada com SHA junta ao deploy do mesmo projeto e SHA que esteja no histórico, que volta a ser cartão; mesma release no mesmo SHA abre outro deploy.
+  - O deploy reaberto volta com `endedAt` nulo: sem isso, uma virada que o reabre já concluída num evento só não regravava o registro (achado pelo teste de boot com SQLite; a mutação que desfaz reprova). Ids de virada carregados ganham o sufixo `@<deploy>`, porque o contador do rastreador recomeça com o processo.
+- [x] 11.5 `DeployBoard`: carga das últimas 24 h antes de ligar o cluster; limpeza de 7 dias no boot e a cada hora.
+- [x] 11.6 Testes: `test-store.js` (integration e prod do mesmo commit com 26 min de intervalo viram um registro; mesma release no mesmo SHA abre outro; o registro gravado não tem campo além dos permitidos; `restore` e id sem colisão), `test-history-repository.js` com SQLite de verdade pela migration (save/upsert, load por janela, prune de 7 dias, falha de escrita sem derrubar) e o boot do `DeployBoard` com repositório.
+  - 85/85 no painel. Mutações que reprovam: sem reabrir pelo histórico (2), sem renomear id de virada carregada (1), gravar só ao sair da tela (1), reaberto com o `endedAt` antigo (1).
+
+## 12. Entrega da fase 3.1
+
+- [x] 12.1 `npm run build`, `npm run test-backend` (inclui `test-migration.js`, que roda todas as migrations em SQLite e MariaDB), `npm run lint`, `node extra/check-lang-json.js` e `node extra/check-knex-filenames.mjs` verdes.
+  - 02/11/2026, local: test-backend 367/367 (migrations ok em SQLite e em MariaDB 12), lint 0 erros (72 avisos, os de antes), langs ok, nomes de migration ok, build ok.
+- [ ] 12.2 Merge, deploy e conferência: o log mostra a carga do histórico; a lista "Hoje" sobrevive a um reinício; o próximo deploy do condominio aparece como uma entrada só.
+
 # Fase 4 — Pipelines
 
 Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 2 (três no Bitbucket, dois no GitHub) e os dos projetos da fase 3 que tiverem origem no Bitbucket ou no GitHub.
 
-## 11. Assinatura e leitura dos eventos
+## 13. Assinatura e leitura dos eventos
 
-- [ ] 11.1 Criar `server/deploy-board/signature.js`: HMAC-SHA256 sobre o `Buffer` recebido, formato `sha256=<hex>`, `crypto.timingSafeEqual` com guarda de tamanho.
-- [ ] 11.2 Criar `server/deploy-board/bitbucket-events.js` e `github-events.js` (puros): `repo:push`/`push` → merge (hora, SHA, primeira linha da mensagem truncada em 120); `repo:commit_status_*` → estado da pipeline; `workflow_run` → execução; `workflow_job` → job. Filtro por repositório e branch configurados (projeto sem origem nunca casa). Só os campos da spec saem da função.
-- [ ] 11.3 Escrever `test/backend-test/deploy-board/test-signature.js` e `test-webhook-events.js`: assinatura correta, errada, ausente, de tamanho diferente e calculada sobre o JSON reserializado (tem de falhar); payloads de exemplo reais de cada evento, branch de feature e repositório fora da configuração descartados.
+- [ ] 13.1 Criar `server/deploy-board/signature.js`: HMAC-SHA256 sobre o `Buffer` recebido, formato `sha256=<hex>`, `crypto.timingSafeEqual` com guarda de tamanho.
+- [ ] 13.2 Criar `server/deploy-board/bitbucket-events.js` e `github-events.js` (puros): `repo:push`/`push` → merge (hora, SHA, primeira linha da mensagem truncada em 120); `repo:commit_status_*` → estado da pipeline; `workflow_run` → execução; `workflow_job` → job. Filtro por repositório e branch configurados (projeto sem origem nunca casa). Só os campos da spec saem da função.
+- [ ] 13.3 Escrever `test/backend-test/deploy-board/test-signature.js` e `test-webhook-events.js`: assinatura correta, errada, ausente, de tamanho diferente e calculada sobre o JSON reserializado (tem de falhar); payloads de exemplo reais de cada evento, branch de feature e repositório fora da configuração descartados.
 
-## 12. Roteador de webhook
+## 14. Roteador de webhook
 
-- [ ] 12.1 Criar `server/routers/deploy-board-webhook-router.js`: `express.raw({ type: "application/json", limit: "1mb" })` no próprio roteador, só em `/api/deploy-board/webhook/:source`; 404 sem segredo, 401 sem assinatura válida, 413 acima do teto, 2xx para evento descartado; instância própria de `KumaRateLimiter`; log só com fonte, evento, repositório e desfecho.
-- [ ] 12.2 `server/server.js`: montar o roteador **antes** do `app.use(express.json())` da linha 213 (uma linha aditiva).
-- [ ] 12.3 Escrever `test/backend-test/deploy-board/test-webhook-router.js` com o app Express e o roteador montado antes de `express.json()`: os desfechos 404/401/413/2xx, um pedido JSON comum a outra rota continua chegando parseado, e o log capturado não contém trecho do corpo nem do segredo.
+- [ ] 14.1 Criar `server/routers/deploy-board-webhook-router.js`: `express.raw({ type: "application/json", limit: "1mb" })` no próprio roteador, só em `/api/deploy-board/webhook/:source`; 404 sem segredo, 401 sem assinatura válida, 413 acima do teto, 2xx para evento descartado; instância própria de `KumaRateLimiter`; log só com fonte, evento, repositório e desfecho.
+- [ ] 14.2 `server/server.js`: montar o roteador **antes** do `app.use(express.json())` da linha 213 (uma linha aditiva).
+- [ ] 14.3 Escrever `test/backend-test/deploy-board/test-webhook-router.js` com o app Express e o roteador montado antes de `express.json()`: os desfechos 404/401/413/2xx, um pedido JSON comum a outra rota continua chegando parseado, e o log capturado não contém trecho do corpo nem do segredo.
 
-## 13. Correlação e cartão completo
+## 15. Correlação e cartão completo
 
-- [ ] 13.1 No store, a correlação da spec "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7), janela de 20 min para tag sem SHA, "sem pipeline" só com a fonte do projeto configurada, "pipeline verde, nenhuma virada vista" só com o cluster ativo.
-- [ ] 13.2 Ampliar `test-store.js`: o chat com tag `prod`, o condominio com SHA completo, dois deploys do mesmo projeto sobrepostos, fonte de pipeline desligada, projeto sem origem e cluster desligado.
-- [ ] 13.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase.
+- [ ] 15.1 No store, a correlação da spec "Pipeline e virada viram um deploy só": SHA na tag (inteiro ou prefixo ≥ 7), janela de 20 min para tag sem SHA, "sem pipeline" só com a fonte do projeto configurada, "pipeline verde, nenhuma virada vista" só com o cluster ativo.
+- [ ] 15.2 Ampliar `test-store.js`: o chat com tag `prod`, o condominio com SHA completo, dois deploys do mesmo projeto sobrepostos, fonte de pipeline desligada, projeto sem origem e cluster desligado.
+- [ ] 15.3 Seção de pipeline no `DeployCard.vue` (estado, jobs do GitHub, SHA e primeira linha do commit, tempo desde o merge, "pipeline verde há N min" e o texto de que a virada continua no cluster), último evento de cada webhook no rodapé e as chaves de i18n da fase.
 
-## 14. Infraestrutura e entrega da fase 4
+## 16. Infraestrutura e entrega da fase 4
 
-- [ ] 14.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart.
-- [ ] 14.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
-- [ ] 14.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket.
-- [ ] 14.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
+- [ ] 16.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart.
+- [ ] 16.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
+- [ ] 16.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket.
+- [ ] 16.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
 
 # Fase 5 — Amplify
 
 Exige a role IAM por IRSA e a dependência nova. Apps com branch de produção em 31/10/2026: `gatekeeper-dashboard`, `ia-frontend-document`, `pro`, `winker-app2`, `products`, `intercom-ui`, `site-novidades` e `guest-link`.
 
-## 15. Coletor do Amplify
+## 17. Coletor do Amplify
 
-- [ ] 15.1 Acrescentar `@aws-sdk/client-amplify` ao `package.json` e atualizar o `package-lock.json`. Anotar o tamanho da imagem `docker/winker.dockerfile` antes e depois.
-- [ ] 15.2 Criar `server/deploy-board/amplify-source.js`: descoberta de apps e branch `PRODUCTION` a cada 30 min, `ListJobs` (`maxResults: 3`) a cada 60 s ou 15 s com job em andamento, `GetJob` para os passos do job em andamento, "sem leitura" após 3 ciclos com erro, "não configurada" sem credencial ou sem `amplify.region`.
-- [ ] 15.3 Escrever `test/backend-test/deploy-board/test-amplify-source.js` com o cliente do SDK substituído por dublê: branch de estágio `NONE` ignorada, troca de ritmo 60 s ↔ 15 s, passos do `GetJob`, três erros seguidos levando a "sem leitura".
-- [ ] 15.4 Deploys do Amplify no store e no cartão (passos `BUILD`, `DEPLOY`, `VERIFY`), ligação de monitor pela tag `amplify/<app>` e as chaves de i18n da fase.
+- [ ] 17.1 Acrescentar `@aws-sdk/client-amplify` ao `package.json` e atualizar o `package-lock.json`. Anotar o tamanho da imagem `docker/winker.dockerfile` antes e depois.
+- [ ] 17.2 Criar `server/deploy-board/amplify-source.js`: descoberta de apps e branch `PRODUCTION` a cada 30 min, `ListJobs` (`maxResults: 3`) a cada 60 s ou 15 s com job em andamento, `GetJob` para os passos do job em andamento, "sem leitura" após 3 ciclos com erro, "não configurada" sem credencial ou sem `amplify.region`.
+- [ ] 17.3 Escrever `test/backend-test/deploy-board/test-amplify-source.js` com o cliente do SDK substituído por dublê: branch de estágio `NONE` ignorada, troca de ritmo 60 s ↔ 15 s, passos do `GetJob`, três erros seguidos levando a "sem leitura".
+- [ ] 17.4 Deploys do Amplify no store e no cartão (passos `BUILD`, `DEPLOY`, `VERIFY`), ligação de monitor pela tag `amplify/<app>` e as chaves de i18n da fase.
 
-## 16. Infraestrutura e entrega da fase 5
+## 18. Infraestrutura e entrega da fase 5
 
-- [ ] 16.1 Role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com `amplify:ListApps`, `amplify:ListBranches`, `amplify:ListJobs` e `amplify:GetJob`, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`.
-- [ ] 16.2 Anotação `eks.amazonaws.com/role-arn` na ServiceAccount e `amplify.region` no ConfigMap. Publicar a versão nova do chart.
-- [ ] 16.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; conferir um build da branch de produção do `pro` no painel em até 60 s e ligar os monitores dos apps do Amplify (confirmar guest-link → "Convite" e gatekeeper-dashboard → "Portaria Web").
+- [ ] 18.1 Role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com `amplify:ListApps`, `amplify:ListBranches`, `amplify:ListJobs` e `amplify:GetJob`, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`.
+- [ ] 18.2 Anotação `eks.amazonaws.com/role-arn` na ServiceAccount e `amplify.region` no ConfigMap. Publicar a versão nova do chart.
+- [ ] 18.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; conferir um build da branch de produção do `pro` no painel em até 60 s e ligar os monitores dos apps do Amplify (confirmar guest-link → "Convite" e gatekeeper-dashboard → "Portaria Web").
 
 # Fase 6 — Conferência de cobertura
 
 Objetivo: tudo o que roda no EKS e no Amplify está no monitoramento, ou está de fora com um motivo escrito. Um item está **coberto** quando (a) a release está na configuração do painel (EKS) ou o app tem branch de produção descoberta pelo painel (Amplify), e (b) ao menos um monitor do Kuma que confere o serviço tem a tag `deploy` apontando para o item. Tag `deploy` que aponta para algo que não roda mais é "tag órfã" e também conta como lacuna. Worker e CronJob sem endereço próprio ficam cobertos pelo monitor do projeto, com uma tag `deploy` a mais (um monitor pode ter várias).
 
-## 17. Relatório de cobertura
+## 19. Relatório de cobertura
 
-- [ ] 17.1 Criar `extra/deploy-board-coverage.js`, só leitura: lê do cluster (contexto atual do `kubectl`) os Deployments, StatefulSets e CronJobs agrupados por release e o ConfigMap do painel; do Amplify (`aws amplify list-apps` e `list-branches`) os apps com branch `PRODUCTION`; e do Kuma, pela API de socket com login pedido no terminal, os monitores e as tags `deploy`. Imprime uma linha por item com os dois critérios e o monitor que o cobre, os excluídos com o motivo e as tags órfãs,, e sai com código 1 quando há lacuna fora da lista de exclusões.
-- [ ] 17.2 Lista de exclusões versionada (`extra/deploy-board-coverage-exclusions.json`): cada entrada com o item (namespace inteiro ou release) e o motivo. Ponto de partida: namespaces de sistema, variantes `*-dev` e a infraestrutura listada no fim da fase 3 — cada uma revisada com o Erik antes de entrar.
-- [ ] 17.3 A classificação é função pura, com teste em `test/backend-test/deploy-board/test-coverage.js`: release na config sem monitor, monitor com tag para release inexistente (tag órfã), app do Amplify sem monitor, worker coberto pela tag a mais no monitor do projeto, item excluído com e sem motivo (sem motivo não vale), e a saída sem nenhum campo de env, volume ou segredo.
+- [ ] 19.1 Criar `extra/deploy-board-coverage.js`, só leitura: lê do cluster (contexto atual do `kubectl`) os Deployments, StatefulSets e CronJobs agrupados por release e o ConfigMap do painel; do Amplify (`aws amplify list-apps` e `list-branches`) os apps com branch `PRODUCTION`; e do Kuma, pela API de socket com login pedido no terminal, os monitores e as tags `deploy`. Imprime uma linha por item com os dois critérios e o monitor que o cobre, os excluídos com o motivo e as tags órfãs,, e sai com código 1 quando há lacuna fora da lista de exclusões.
+- [ ] 19.2 Lista de exclusões versionada (`extra/deploy-board-coverage-exclusions.json`): cada entrada com o item (namespace inteiro ou release) e o motivo. Ponto de partida: namespaces de sistema, variantes `*-dev` e a infraestrutura listada no fim da fase 3 — cada uma revisada com o Erik antes de entrar.
+- [ ] 19.3 A classificação é função pura, com teste em `test/backend-test/deploy-board/test-coverage.js`: release na config sem monitor, monitor com tag para release inexistente (tag órfã), app do Amplify sem monitor, worker coberto pela tag a mais no monitor do projeto, item excluído com e sem motivo (sem motivo não vale), e a saída sem nenhum campo de env, volume ou segredo.
 
-## 18. Fechamento
+## 20. Fechamento
 
-- [ ] 18.1 Rodar contra produção e registrar a tabela neste change, com data.
-- [ ] 18.2 Para cada lacuna, uma de quatro saídas, decidida com o Erik: criar o monitor no Kuma, pôr a tag `deploy`, acrescentar a release à configuração (chart novo) ou registrar a exclusão com motivo. Tags órfãs são corrigidas ou removidas.
-- [ ] 18.3 Rodar de novo: zero lacunas. Registrar a data e o resultado.
+- [ ] 20.1 Rodar contra produção e registrar a tabela neste change, com data.
+- [ ] 20.2 Para cada lacuna, uma de quatro saídas, decidida com o Erik: criar o monitor no Kuma, pôr a tag `deploy`, acrescentar a release à configuração (chart novo) ou registrar a exclusão com motivo. Tags órfãs são corrigidas ou removidas.
+- [ ] 20.3 Rodar de novo: zero lacunas. Registrar a data e o resultado.
