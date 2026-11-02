@@ -72,6 +72,7 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
   - Conferência no navegador com o estado gerado pelos módulos reais (rastreador + store) a partir de Deployments de exemplo: ordem dos cartões, rótulos sem "Sem pipeline", `9/17`, marcas "em deploy"/"virada travada" sem mudar a cor, linha do destaque ("Começou 45 min depois da virada de gateway-prod · 4c1d9e0" e "não tem deploy associado"), cluster sem leitura apagando marcas e linhas, 1920 × 1080 sem corte e 400 px sem rolagem horizontal.
 - [ ] 8.2 Deploy, marcar os monitores com a tag `deploy` e acompanhar o próximo merge de um projeto do Bitbucket no painel: a virada aparece por release, sem o rótulo "Sem pipeline", e conclui junto com o `kubectl rollout status`.
   - 31/10/2026: deploy feito (chart 0.2.0, imagem `2.5.3-winker.18`). Tag `deploy` posta pela API do Kuma em 8 monitores da status page `winker`: Web → `condominio/winker-prod`, Web integração → `condominio/winker-integration`, Gateway (API Geral) → `gateway/gateway-prod`, Gateway Integration → `gateway/gateway-integration`, Chat → `chat/chatwoot`, Connector Access/Consumer/Queue → `connector/connector-*`. Convite e Portaria Web ficam para a fase 7 (Amplify); os outros monitores da página dependem da fase 3; Connector Geral ficou sem tag até confirmar se aponta para o EB. Falta acompanhar o próximo merge.
+  - 31/10/2026 20:18 UTC: virada do `winker-prod` (commit `9ee108f`) vista no painel pelo Erik, sem "Sem pipeline". O `winker-integration` do mesmo commit (19:50) se perdeu no reinício do Kuma das 20:04 — origem da fase 3.1. Falta só comparar o fim de uma virada com o `kubectl rollout status`.
   - Botão "Deploys" no cabeçalho do Kuma (branch `feat/botao-painel-de-deploys`), abre `/deploys/winker`.
 
 # Fase 3 — Cobertura do EKS
@@ -142,6 +143,7 @@ Achado de 02/11/2026: o deploy do condominio de 31/10 apareceu com uma linha só
 - [x] 12.1 `npm run build`, `npm run test-backend` (inclui `test-migration.js`, que roda todas as migrations em SQLite e MariaDB), `npm run lint`, `node extra/check-lang-json.js` e `node extra/check-knex-filenames.mjs` verdes.
   - 02/11/2026, local: test-backend 367/367 (migrations ok em SQLite e em MariaDB 12), lint 0 erros (72 avisos, os de antes), langs ok, nomes de migration ok, build ok.
 - [ ] 12.2 Merge, deploy e conferência: o log mostra a carga do histórico; a lista "Hoje" sobrevive a um reinício; o próximo deploy do condominio aparece como uma entrada só.
+  - 02/11/2026 13:16 UTC: PR #8 no master, imagem `2.5.3-winker.21` no ar, migration aplicada e log "History loaded: 0 deploys of the last 24 hours" (a tabela nasceu vazia). Nenhuma virada desde então; falta ver um reinício preservar a lista e o próximo deploy do condominio sair como uma entrada só.
 
 # Fase 3.2 — Indicadores e tema
 
@@ -211,27 +213,22 @@ Pedido do Erik em 02/11/2026: o contêiner no navio. Vem depois da fase 4, porqu
 
 - [ ] 20.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado.
 
-# Fase 6 — Voltar à versão anterior
+# Fase 6 — Como voltar à versão anterior
 
-Pedido do Erik em 02/11/2026, com a decisão de fazer o rollback **direto no cluster**, pelo próprio Kuma. É a única ação de escrita do painel, e muda três premissas: a ServiceAccount do Kuma deixa de ser só leitura, a proposta deixa de ter "ações" fora do escopo, e o repositório `infrastructure` precisa de um ADR registrando a exceção à regra "deploy é sempre por pipeline".
+Pedido do Erik em 02/11/2026. Decisão final (02/11): o painel **não** volta a versão; ele **mostra o comando** para quem tem acesso ao cluster copiar e rodar com a própria credencial. O Kuma continua só leitura, sem permissão nova, sem 2FA e sem ADR de exceção. O comando volta **só a imagem**, também por decisão do Erik: `kubectl set image` para a tag do deploy anterior, e não `kubectl rollout undo`, que volta o template inteiro e pode cair numa revisão que foi só um restart.
 
-**Como volta:** a imagem, não o template. O painel troca a tag da imagem dos containers que mudaram de volta para a da versão anterior, com um patch só nesses campos. Voltar o template inteiro (o `kubectl rollout undo`) obrigaria o Kuma a ler o template do ReplicaSet anterior, com as variáveis de ambiente — e o `gateway-prod` tem 103 chaves de produção escritas no template. Com a imagem, o Kuma não lê env, volume nem Secret, e a permissão nova é só `patch` em Deployments. O preço: mudança de configuração do chart (env, recursos) não volta; só o código.
+## 21. Comando para copiar
 
-## 21. Ação de voltar
+- [ ] 21.1 Extração do Deployment: guardar também o nome de cada container e o repositório da imagem (sem env, volume nem nada mais do template), para montar o comando. Ampliar a asserção de `test-rollout-state.js` de que env e volumes não sobrevivem.
+- [ ] 21.2 Versão anterior: do histórico do painel (banco, 7 dias), o deploy anterior concluído da mesma release. Sem ele, o cartão diz "versão anterior desconhecida" e não mostra comando.
+- [ ] 21.3 Montagem (função pura no servidor, exposta no snapshot só para quem está logado): uma linha `kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag anterior>` por Deployment das releases do deploy, só com os containers cuja tag mudou (o `nginx` não entra), seguida de `kubectl -n <ns> rollout status deployment/<nome>` de cada um.
+- [ ] 21.4 Cartão: botão "Como voltar" em deploy concluído ou travado do cluster, abrindo o comando com botão de copiar e os avisos: os CronJobs da release (o `gateway-cron` são 95) não estão no comando e ficam na versão nova; o próximo deploy pela pipeline sobrescreve a volta; quem não quiser voltar uma release apaga a linha dela.
+- [ ] 21.5 Testes da montagem: só containers que mudaram, release com vários Deployments (`gateway-worker`, 14), deploy sem anterior conhecido, e o comando sem nenhum campo além de namespace, nome do Deployment, container, repositório e tag.
 
-- [ ] 21.1 Configuração: `rollback: true` por projeto, desligado por padrão. Projeto sem a chave não mostra botão e o servidor recusa.
-- [ ] 21.2 Versão anterior: vem do histórico do painel (banco, 7 dias), do deploy anterior concluído da mesma release. Sem ele, o botão aparece desabilitado com "versão anterior desconhecida". A extração do Deployment passa a guardar também o nome de cada container e o repositório da imagem (sem env), para montar o patch.
-- [ ] 21.3 Socket handler `deployBoardRollback` com `checkLogin`, **exigindo 2FA ativo no usuário do Kuma**, o id de um deploy do snapshot atual (nunca nome de release livre), confirmação digitada (o nome do projeto) e limite de uma ação por projeto a cada 5 min. Patch estratégico em cada Deployment da release, só nos containers cuja tag mudou entre as duas versões. Nunca em CronJob.
-- [ ] 21.4 Trilha: linha de log com usuário, projeto, releases, de → para e desfecho; o deploy de volta aparece como virada nova com o rótulo "Voltando versão" e fica no histórico com quem pediu e quando.
-- [ ] 21.5 Cartão: botão "Voltar para <versão>" em deploy concluído ou travado do cluster, desabilitado com o cluster sem leitura ou com outra virada da mesma release em andamento. A confirmação mostra de → para, as releases e o aviso de que os CronJobs da release (o `gateway-cron` são 95) **continuam na versão nova**, e de que o próximo deploy pela pipeline sobrescreve a volta.
-- [ ] 21.6 Testes: escolha da versão anterior pelo histórico, patch só com os campos de imagem dos containers que mudaram (asserção de que nenhum outro campo do Deployment entra no corpo), recusa sem login, sem 2FA, sem `rollback: true`, com id fora do snapshot e dentro do limite de tempo, e CronJob nunca tocado.
+## 22. Entrega da fase 6
 
-## 22. Infraestrutura e entrega da fase 6
-
-- [ ] 22.1 ADR no `infrastructure` registrando a exceção (quem pode, o que muda, por que a imagem e não o template, como desligar).
-- [ ] 22.2 Chart: ClusterRole própria `uptime-kuma-deploy-board-rollback` só com `patch` em `apps/deployments`, ligada por RoleBinding só nos namespaces dos projetos com `rollback: true`; a de leitura não muda. Conferir com `kubectl auth can-i` que ela altera Deployment ali e em nenhum outro namespace, e que continua sem Secret, Pod e `exec`.
-- [ ] 22.3 2FA ativo no usuário do Kuma que opera o painel.
-- [ ] 22.4 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; teste real num projeto de baixo risco escolhido com o Erik, voltando e depois redeployando pela pipeline.
+- [ ] 22.1 Chaves de i18n; `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador (copiar funciona; 400 px sem rolagem horizontal no bloco do comando); merge e deploy.
+- [ ] 22.2 Conferir, com o Erik, o comando gerado para o próximo deploy do condominio contra o que ele rodaria à mão.
 
 # Fase 7 — Amplify
 

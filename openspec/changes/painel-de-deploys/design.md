@@ -62,13 +62,12 @@ Phone não têm workload no EKS; Pro, Convite e Portaria Web são apps do Amplif
 - Manter saúde (Kuma) e deploy como sinais separados na tela.
 - Custo de merge com o upstream próximo de zero: quase tudo em arquivo novo, e o que toca arquivo
   quente é inserção de uma linha.
-- Kubernetes e AWS só leitura, com uma exceção: o `patch` de imagem da fase 6, só em Deployments e
-  só nos namespaces dos projetos que optarem por ele.
+- Nenhuma permissão de escrita em lugar nenhum: Kubernetes e AWS só leitura.
 
 **Non-Goals:**
 - Passos da pipeline no Bitbucket (exigiria token e consulta à API; ver Pendências da proposta).
-- Ações a partir da tela além de voltar à imagem anterior (disparar, cancelar deploy, voltar
-  configuração do chart).
+- Ações a partir da tela (disparar, cancelar, desfazer deploy). Para voltar a versão, o painel
+  mostra o comando (decisão 17).
 - Notificação de deploy pelos providers do Kuma.
 - Alterar a status page, a TV ou as pipelines dos outros repositórios.
 
@@ -333,31 +332,27 @@ repete. Começa desligado, porque o navegador só toca depois de um clique, e a 
 navegador. *Descartado:* arquivos de áudio — licença, peso no bundle e mais uma coisa para baixar
 na TV; e tocar no servidor — o som é de quem está olhando a tela.
 
-### 17. Voltar à versão anterior: a imagem, direto no cluster
+### 17. Voltar à versão anterior: o painel mostra o comando, não executa
 
-**Decisão do Erik (02/11/2026):** o rollback é feito pelo próprio Kuma no cluster, não pela
-pipeline. Para isso caber com o menor poder possível:
+**Decisão do Erik (02/11/2026):** o cartão mostra o comando para copiar; quem tem acesso ao cluster
+roda com a própria credencial. O comando volta **só a imagem**: uma linha
+`kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag>` por Deployment das
+releases do deploy, só com os containers cuja tag mudou, mais o `rollout status` de cada um. A tag
+de destino é a do deploy anterior concluído da mesma release, tirada do histórico da fase 3.1; sem
+ele, o cartão diz que não sabe e não inventa comando. A extração do Deployment passa a guardar o
+nome do container e o repositório da imagem — nada mais do template.
 
-- **Imagem, não template.** Um patch estratégico troca só o campo `image` dos containers cuja tag
-  mudou entre as duas versões. Voltar o template inteiro, como o `kubectl rollout undo`, exigiria
-  ler o template do ReplicaSet anterior com as variáveis de ambiente (o `gateway-prod` tem 103
-  chaves de produção no template); assim o Kuma continua sem ler env, volume ou Secret, e a
-  permissão nova é só `patch` em Deployments. Configuração do chart não volta.
-- **A versão anterior vem do histórico** do painel (banco, 7 dias): o deploy anterior concluído da
-  mesma release. A extração do Deployment passa a guardar o nome de cada container e o repositório da
-  imagem, para montar o patch.
-- **Quem pode:** usuário logado com 2FA ativo, confirmação digitada com o nome do projeto, uma ação
-  por projeto a cada 5 minutos, e só em projetos com `rollback: true` na configuração.
-- **O que não volta, dito na confirmação:** os CronJobs (o `gateway-cron` são 95) ficam na versão
-  nova, e o próximo deploy pela pipeline sobrescreve a volta, porque o Helm continua achando que a
-  release atual é a nova.
-- **Permissão à parte:** ClusterRole própria com `patch` em `apps/deployments`, com RoleBinding só
-  nos namespaces dos projetos que optarem. A de leitura não muda.
+O cartão avisa o que o comando não cobre: os CronJobs da release (o `gateway-cron` são 95) ficam na
+imagem nova, e o próximo deploy pela pipeline sobrescreve a volta (o Helm continua achando que a
+release atual é a nova).
 
-*Descartado:* reexecutar a pipeline do commit anterior (mantinha o caminho da pipeline, mas não serve
-aos projetos sem pipeline e não foi a escolha); `helm rollback` (o Helm guarda as releases em
-Secrets, e ler ou escrever Secret está fora); o `rollout undo` com template inteiro (ler env de
-produção).
+*Por que `set image` e não `rollout undo`:* o `undo` volta o template inteiro (env e recursos
+também) e volta para a **revisão** anterior, que pode ser um `rollout restart` com a mesma imagem;
+o pedido é voltar a imagem do deploy anterior. *Descartado:* o Kuma executar a volta no cluster
+(chegou a ser planejado: exigia `patch` em Deployments, 2FA, limite de tempo e ADR de exceção à
+regra "deploy é sempre por pipeline", num Kuma aberto na internet — o comando para copiar entrega o
+mesmo resultado sem nenhuma permissão nova); `helm rollback` (o Helm guarda as releases em Secrets);
+reexecutar a pipeline do commit anterior (não serve aos projetos sem pipeline).
 
 ## Risks / Trade-offs
 
@@ -380,13 +375,10 @@ produção).
   o reinício do deploy da fase 3 apagou a virada do `winker-integration` de 15 minutos antes.
 - [Reinício do Kuma durante o próprio deploy] → o painel fica fora do ar por esse minuto; ao voltar,
   mostra a linha de base do cluster.
-- [Um botão no Kuma muda produção] → o Kuma fica em `monitor-clientes.winker.com.br`, aberto na
-  internet, com login único. Mitigação: 2FA obrigatório para a ação, confirmação digitada, limite de
-  uma por projeto a cada 5 min, `rollback: true` por projeto, permissão só de `patch` em Deployments
-  dos namespaces que optarem, e trilha em log e no histórico. Desligar é tirar `rollback` da
-  configuração ou a RoleBinding.
-- [Versões misturadas depois da volta] → os CronJobs da release continuam na imagem nova; a
-  confirmação avisa e o cartão mostra.
+- [Versões misturadas depois da volta] → o comando não toca CronJob; o cartão avisa, e quem roda
+  decide.
+- [Comando com a versão errada] → a versão anterior vem do histórico do próprio painel, e sem ele não
+  há comando; o teste de entrega compara com o que o Erik rodaria à mão.
 - [Imagem maior com o AWS SDK] → `@aws-sdk/client-amplify` e o núcleo do smithy; medir o tamanho da
   imagem antes e depois na task de build.
 
@@ -459,13 +451,10 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 - Conferência: cada som ouvido e aprovado pelo Erik; um deploy real com o som ligado.
 - Rollback: imagem anterior.
 
-**Fase 6 — Voltar à versão anterior.**
-- Código: decisão 17.
-- Infraestrutura: ADR no `infrastructure`; ClusterRole de `patch` com RoleBinding nos namespaces
-  dos projetos com `rollback: true`; 2FA no usuário do Kuma.
-- Conferência: `kubectl auth can-i` (altera Deployment só onde optou; segue sem Secret, Pod e
-  `exec`); uma volta real num projeto de baixo risco, seguida de redeploy pela pipeline.
-- Rollback: tirar `rollback` da configuração (o botão some e o servidor recusa) ou a RoleBinding.
+**Fase 6 — Como voltar à versão anterior.**
+- Código: decisão 17. Infraestrutura: nenhuma; o Kuma continua só leitura.
+- Conferência: o comando gerado para um deploy real do condominio bate com o que o Erik rodaria.
+- Rollback: imagem anterior.
 
 **Fase 7 — Amplify.**
 - Código: decisão 6 e a dependência.

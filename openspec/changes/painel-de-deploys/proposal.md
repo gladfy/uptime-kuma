@@ -37,8 +37,8 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
   sucesso, e um botão pequeno alterna o tema claro e escuro.
 - **Sons.** Cinco sons do tema "contêiner no navio" marcam o início, o build, a virada, a conclusão e
   a falha do deploy, sintetizados no navegador e ligados por um botão.
-- **Voltar à versão anterior.** No cartão, um botão volta a imagem anterior direto no cluster, pelo
-  próprio Kuma — a única ação de escrita do painel, desligada por projeto, com 2FA e confirmação.
+- **Como voltar à versão anterior.** No cartão, um botão mostra o comando `kubectl set image` que
+  volta a imagem do deploy anterior, pronto para copiar. O painel não executa nada.
 - **Conferência de cobertura.** Um relatório só de leitura compara o que roda no EKS e no Amplify com
   a configuração do painel e as tags dos monitores do Kuma, e aponta o que está sem monitoramento.
 - **Correlação** entre pipeline e virada pelo SHA do commit na tag da imagem; quando a tag não
@@ -64,7 +64,7 @@ dela, e a seguinte não muda o que a anterior entregou.
 | **3.2 Indicadores e tema** | Deploys das últimas 24 h e taxa de sucesso no cabeçalho; botão de tema claro/escuro | Nenhuma |
 | **4. Pipelines** | Merge, pipeline e virada num cartão só; jobs do GitHub | Secret com os segredos; cadastro dos webhooks (os 5 da fase 2 e os dos projetos da fase 3 com origem no Bitbucket ou no GitHub) |
 | **5. Sons** | Buzina, encaixe de contêiner, radar, sino e alarme nos eventos do deploy, com botão de ativar | Nenhuma |
-| **6. Voltar à versão anterior** | Botão no cartão que volta a imagem anterior no cluster | ClusterRole só com `patch` em Deployments, nos namespaces dos projetos com `rollback: true`; ADR no `infrastructure`; 2FA no usuário do Kuma |
+| **6. Como voltar à versão anterior** | Botão no cartão com o comando que volta a imagem anterior, para copiar | Nenhuma |
 | **7. Amplify** | Os 8 apps do Amplify, com passos do job | Role IAM por IRSA e anotação na ServiceAccount |
 | **8. Conferência de cobertura** | Relatório que cruza EKS e Amplify com a configuração do painel e as tags do Kuma; lacunas fechadas ou excluídas com motivo | Nenhuma nova; criar monitores e tags que faltarem |
 
@@ -85,8 +85,8 @@ faz sentido com todas as fontes ligadas: ela mede o que as anteriores deixaram d
   revisão, estados por release e a permissão só de leitura que isso exige.
 - `deploys-de-pipeline`: webhooks assinados do Bitbucket e do GitHub, consulta dos jobs do Amplify
   e a correlação de pipeline com virada.
-- `voltar-versao`: o botão de voltar à imagem anterior, o patch só de imagem, quem pode usar e a
-  permissão de escrita restrita que isso exige.
+- `voltar-versao`: o comando de voltar à imagem anterior que o cartão mostra, de onde vem a versão
+  anterior e o que o comando não cobre.
 - `conferencia-de-cobertura`: o relatório que cruza o que roda no EKS e no Amplify com a
   configuração do painel e as tags dos monitores, e a lista de exclusões com motivo.
 
@@ -116,17 +116,13 @@ Nenhuma. `openspec/specs/` está vazio, e a mudança não altera requisito da st
 - chart `helm-packages/tools/uptimekuma`: ServiceAccount própria para o Kuma (hoje ele roda com a
   `default`), ClusterRole de leitura de Deployments e CronJobs ligada por RoleBinding só nos
   namespaces observados (5 na fase 2, 17 a partir da fase 3), ConfigMap com a configuração, Secret
-  com os segredos dos webhooks, na fase 6 uma ClusterRole à parte só com `patch` em Deployments
-  (RoleBinding só nos namespaces dos projetos com `rollback: true`) e, na fase 7, a anotação de IRSA
-  na ServiceAccount;
-- `docs/adr/`: ADR da exceção à regra "deploy é sempre por pipeline" (fase 6);
+  com os segredos dos webhooks e, na fase 7, a anotação de IRSA na ServiceAccount;
 - `terraform/`: a role IAM com as quatro ações de leitura do Amplify, no padrão de
   `terraform/iam-cost-exporter`.
 
 **Configuração fora do código:** cadastrar os webhooks nos repositórios com origem no Bitbucket ou
 no GitHub (os cinco da fase 2 e os da fase 3) apontando para `monitor-clientes.winker.com.br`,
-marcar os monitores com a tag `deploy`, ativar o 2FA no usuário do Kuma que opera o painel (fase 6)
-e, na fase 8, criar os monitores que a conferência apontar
+marcar os monitores com a tag `deploy` e, na fase 8, criar os monitores que a conferência apontar
 como faltando.
 
 ## Fora de escopo
@@ -135,8 +131,8 @@ como faltando.
   inteira; os passos ("Build & Push Docker", "Deploy") exigiriam consultar a API com um token. O
   painel infere a etapa pelo cluster (imagem nova aplicada = passou do deploy). No GitHub os jobs
   chegam pelo `workflow_job`.
-- **Outras ações.** Além de voltar à imagem anterior (fase 6), o painel não dispara nem cancela
-  deploy, e não volta configuração do chart nem CronJob.
+- **Ações.** O painel só mostra; não dispara, cancela nem desfaz deploy. Para voltar a versão ele
+  mostra o comando (fase 6), e quem roda é quem tem acesso ao cluster.
 - **Notificação de deploy** pelos providers do Kuma.
 - **Outros clusters** (OKE na OCI) e ambientes Elastic Beanstalk.
 - **Alterar a status page do cliente ou a TV.** As duas continuam como estão.
