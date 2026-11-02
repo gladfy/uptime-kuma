@@ -244,11 +244,11 @@ Pedido do Erik em 02/11/2026. Decisão final (02/11): o painel **não** volta a 
 
 ## 23. Comando para copiar
 
-- [ ] 23.1 Extração do Deployment: guardar também o nome de cada container e o repositório da imagem (sem env, volume nem nada mais do template), para montar o comando. Ampliar a asserção de `test-rollout-state.js` de que env e volumes não sobrevivem.
-- [ ] 23.2 Versão anterior: do histórico do painel (banco, 7 dias), o deploy anterior concluído da mesma release. Sem ele, o cartão diz "versão anterior desconhecida" e não mostra comando.
-- [ ] 23.3 Montagem (função pura no servidor, exposta no snapshot só para quem está logado): uma linha `kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag anterior>` por Deployment das releases do deploy, só com os containers cuja tag mudou (o `nginx` não entra), seguida de `kubectl -n <ns> rollout status deployment/<nome>` de cada um.
-- [ ] 23.4 Cartão: botão "Como voltar" em deploy concluído ou travado do cluster, abrindo o comando com botão de copiar e os avisos: os CronJobs da release (o `gateway-cron` são 95) não estão no comando e ficam na versão nova; o próximo deploy pela pipeline sobrescreve a volta; quem não quiser voltar uma release apaga a linha dela.
-- [ ] 23.5 Testes da montagem: só containers que mudaram, release com vários Deployments (`gateway-worker`, 14), deploy sem anterior conhecido, e o comando sem nenhum campo além de namespace, nome do Deployment, container, repositório e tag.
+- [x] 23.1 Extração do Deployment: guardar também o nome de cada container e o repositório da imagem (sem env, volume nem nada mais do template), para montar o comando. Ampliar a asserção de `test-rollout-state.js` de que env e volumes não sobrevivem.
+- [x] 23.2 Versão anterior: do histórico do painel (banco, 7 dias), o último deploy concluído da mesma release com imagem diferente; sem ele, o que estava no ar quando a virada começou (guardado pela revisão, porque o Helm troca a imagem antes de o controlador subir a revisão). Sem nenhum dos dois, o cartão diz "versão anterior desconhecida" e não mostra comando; virada que não trocou imagem diz que não há o que voltar.
+- [x] 23.3 Montagem (função pura no servidor, exposta no snapshot só para quem está logado): uma linha `kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag anterior>` por Deployment das releases do deploy, só com os containers cuja tag mudou (o `nginx` não entra), seguida de `kubectl -n <ns> rollout status deployment/<nome>` de cada um.
+- [x] 23.4 Cartão: botão "Como voltar" em deploy concluído ou travado do cluster, abrindo o comando com botão de copiar e os avisos: os CronJobs da release (o `gateway-cron` são 95) não estão no comando e ficam na versão nova; o próximo deploy pela pipeline sobrescreve a volta; quem não quiser voltar uma release apaga a linha dela.
+- [x] 23.5 Testes da montagem: só containers que mudaram, release com vários Deployments (`gateway-worker`, 14), deploy sem anterior conhecido, e o comando sem nenhum campo além de namespace, nome do Deployment, container, repositório e tag. Também: restart, release só de CronJobs, histórico vencendo o que estava no ar, deploy perdido depois de reinício e valor com caractere de shell (`test-rollback.js`).
 
 ## 24. Entrega da fase 6
 

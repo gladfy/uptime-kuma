@@ -3,6 +3,7 @@ const assert = require("node:assert");
 const {
     NO_PROGRESS_MS,
     imageTag,
+    imageRepository,
     releaseOf,
     extractDeployment,
     extractCronJob,
@@ -27,6 +28,20 @@ describe("Estado da virada", () => {
         assert.strictEqual(imageTag("registry:5000/team/app:2.5.3-winker.16"), "2.5.3-winker.16");
         assert.strictEqual(imageTag("tiwinker/chatwoot:prod@sha256:ffff"), "prod");
         assert.strictEqual(imageTag("registry:5000/team/app"), "latest");
+    });
+
+    test("repositório da imagem: com registro, porta, digest e sem tag", () => {
+        assert.strictEqual(imageRepository("tiwinker/portal:abc1234"), "tiwinker/portal");
+        assert.strictEqual(imageRepository("registry:5000/team/app:2.5.3-winker.16"), "registry:5000/team/app");
+        assert.strictEqual(imageRepository("tiwinker/chatwoot:prod@sha256:ffff"), "tiwinker/chatwoot");
+        assert.strictEqual(imageRepository("registry:5000/team/app"), "registry:5000/team/app");
+    });
+
+    test("cada container guarda só nome, repositório e tag, na ordem do template", () => {
+        assert.deepStrictEqual(kept({ tag: "9ee108f" }).containers, [
+            { name: "php-fpm", repository: "tiwinker/portal", tag: "9ee108f" },
+            { name: "nginx", repository: "nginx", tag: "1.27" },
+        ]);
     });
 
     test("release: anotação do Helm, depois o rótulo instance, depois o nome", () => {
@@ -130,6 +145,7 @@ describe("Estado da virada", () => {
         assert.deepStrictEqual(Object.keys(out).sort(), [
             "available",
             "conditions",
+            "containers",
             "generation",
             "images",
             "name",
@@ -141,6 +157,9 @@ describe("Estado da virada", () => {
             "total",
             "updated",
         ]);
+        for (const c of out.containers) {
+            assert.deepStrictEqual(Object.keys(c).sort(), ["name", "repository", "tag"]);
+        }
 
         const cron = {
             metadata: { namespace: "gateway", name: "c1", generation: 3, annotations: { "meta.helm.sh/release-name": "gateway-cron" } },

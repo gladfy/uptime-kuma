@@ -25,6 +25,31 @@
         </ul>
 
         <p v-if="!deploy.confirmed" class="db-card-warning">{{ $t("deployBoardUnconfirmed") }}</p>
+
+        <div v-if="deploy.rollback" class="db-rollback">
+            <button type="button" class="db-rollback-toggle" :aria-expanded="String(rollbackOpen)" @click="rollbackOpen = !rollbackOpen">
+                {{ $t("deployBoardRollbackButton") }}
+            </button>
+
+            <div v-if="rollbackOpen" class="db-rollback-body">
+                <template v-if="rollbackText">
+                    <pre ref="command" class="db-rollback-command"><code>{{ rollbackText }}</code></pre>
+                    <button type="button" class="db-rollback-copy" @click="copyRollback">
+                        {{ $t(copied ? "deployBoardRollbackCopied" : "deployBoardRollbackCopy") }}
+                    </button>
+                </template>
+
+                <ul class="db-rollback-notes">
+                    <li v-for="r in rollbackGaps" :key="r.namespace + '/' + r.release">
+                        {{ $t(GAP_KEYS[r.status], [r.release]) }}
+                    </li>
+                    <li v-if="rollbackText">{{ $t("deployBoardRollbackRunYourself") }}</li>
+                    <li v-if="rollbackCronJobs > 0">{{ $t("deployBoardRollbackCronJobs", [rollbackCronJobs]) }}</li>
+                    <li v-if="rollbackText">{{ $t("deployBoardRollbackNextDeploy") }}</li>
+                    <li v-if="rollbackKnown.length > 1">{{ $t("deployBoardRollbackDeleteRelease") }}</li>
+                </ul>
+            </div>
+        </div>
     </article>
 </template>
 
@@ -37,6 +62,19 @@ const LABEL_KEYS = {
     live: "deployBoardLabelLive",
     noPipeline: "deployBoardLabelNoPipeline",
 };
+
+/** Why a release has no command → i18n key. */
+const GAP_KEYS = {
+    unknown: "deployBoardRollbackUnknown",
+    unchanged: "deployBoardRollbackUnchanged",
+    cronOnly: "deployBoardRollbackCronOnly",
+};
+
+/** A tag that is a commit is shown short, as the card shows the version. */
+const SHA_RE = /^[0-9a-f]{7,40}$/;
+
+/** How long "Copied" stays on the button. */
+const COPIED_MS = 2000;
 
 /** Deploy state → tone of the card. */
 const TONES = {
@@ -65,7 +103,45 @@ export default {
         },
     },
 
+    data() {
+        return {
+            GAP_KEYS,
+            rollbackOpen: false,
+            copied: false,
+        };
+    },
+
     computed: {
+        /** @returns {object[]} Releases with a command to go back */
+        rollbackKnown() {
+            return this.deploy.rollback.releases.filter((r) => r.status === "known");
+        },
+
+        /** @returns {object[]} Releases without one, to say why */
+        rollbackGaps() {
+            return this.deploy.rollback.releases.filter((r) => r.status !== "known");
+        },
+
+        /** @returns {number} CronJobs of the deploy that the command leaves on the new version */
+        rollbackCronJobs() {
+            return this.deploy.rollback.releases.reduce((n, r) => n + r.cronJobs, 0);
+        },
+
+        /**
+         * The text to copy: per release, a comment naming it, the `set image` lines and then the
+         * `rollout status` lines. Empty when no release has a previous version.
+         * @returns {string} Command.
+         */
+        rollbackText() {
+            return this.rollbackKnown
+                .map((r) => {
+                    const previous = SHA_RE.test(r.previous) ? r.previous.slice(0, 7) : r.previous;
+                    const head = `# ${this.$t("deployBoardRollbackComment", [`${r.namespace}/${r.release}`, previous])}`;
+                    return [head, ...r.setImage, ...r.rolloutStatus].join("\n");
+                })
+                .join("\n\n");
+        },
+
         /** @returns {string} i18n key of the label */
         labelKey() {
             return LABEL_KEYS[this.deploy.label] || LABEL_KEYS.rolling;
@@ -89,7 +165,37 @@ export default {
         },
     },
 
+    beforeUnmount() {
+        clearTimeout(this.copiedTimer);
+    },
+
     methods: {
+        /**
+         * Copy the command. Where the browser refuses the clipboard, the text is selected for Ctrl+C.
+         * @returns {void}
+         */
+        copyRollback() {
+            const done = () => {
+                this.copied = true;
+                clearTimeout(this.copiedTimer);
+                this.copiedTimer = setTimeout(() => {
+                    this.copied = false;
+                }, COPIED_MS);
+            };
+            const select = () => {
+                const range = document.createRange();
+                range.selectNodeContents(this.$refs.command);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            };
+            if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(this.rollbackText).then(done, select);
+            } else {
+                select();
+            }
+        },
+
         /**
          * @param {string} state Release state.
          * @returns {string} Kebab-case class suffix.
@@ -245,6 +351,67 @@ export default {
     font-size: 0.85em;
     font-weight: 600;
     color: var(--db-warn);
+}
+
+.db-rollback {
+    display: grid;
+    gap: 0.5em;
+    justify-items: start;
+    min-width: 0;
+}
+
+.db-rollback-toggle,
+.db-rollback-copy {
+    padding: 0.25em 0.7em;
+    border: 1px solid var(--db-line-2);
+    border-radius: 6px;
+    background: var(--db-panel-2);
+    color: var(--db-ink);
+    font: inherit;
+    font-size: 0.85em;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+        border-color: var(--db-brand);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--db-brand);
+        outline-offset: 2px;
+    }
+}
+
+.db-rollback-body {
+    display: grid;
+    gap: 0.5em;
+    justify-items: start;
+    width: 100%;
+    min-width: 0;
+}
+
+.db-rollback-command {
+    width: 100%;
+    max-height: 18em;
+    margin: 0;
+    padding: 0.6em 0.8em;
+    overflow: auto;
+    border: 1px solid var(--db-line);
+    border-radius: 6px;
+    background: var(--db-bg);
+    color: var(--db-ink);
+    font-size: 0.8em;
+    line-height: 1.5;
+    white-space: pre;
+}
+
+.db-rollback-notes {
+    display: grid;
+    gap: 0.2em;
+    margin: 0;
+    padding-left: 1.1em;
+    font-size: 0.85em;
+    color: var(--db-ink-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

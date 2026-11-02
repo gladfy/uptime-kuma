@@ -1,3 +1,5 @@
+const { releaseRollback } = require("./rollback");
+
 /** The deploy sources the server reads. Kuma itself is read by the browser, not here. */
 const SOURCE_IDS = ["cluster", "bitbucket", "github", "amplify"];
 
@@ -16,7 +18,19 @@ const EMIT_INTERVAL_MS = 1000;
  * Fields of a deploy, and of a history entry, that may reach the browser. Anything else stays on
  * the server, so a field added to the internal record never leaks by default.
  */
-const DEPLOY_PUBLIC_FIELDS = ["id", "project", "version", "label", "state", "startedAt", "endedAt", "missed", "confirmed", "releases"];
+const DEPLOY_PUBLIC_FIELDS = [
+    "id",
+    "project",
+    "version",
+    "label",
+    "state",
+    "startedAt",
+    "endedAt",
+    "missed",
+    "confirmed",
+    "releases",
+    "rollback",
+];
 const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "missed", "releases"];
 
 /**
@@ -36,6 +50,8 @@ const ROLLOUT_RECORD_FIELDS = [
     "startedAt",
     "endedAt",
     "images",
+    "deployments",
+    "before",
 ];
 
 /** A finished deploy stays on screen this long before going to the history. */
@@ -68,6 +84,9 @@ const STATE_LABELS = {
     done: "live",
     superseded: "replaced",
 };
+
+/** Deploy states with a "how to go back" on the card. */
+const ROLLBACK_STATES = ["done", "stuck"];
 
 /** An image tag that is a commit: the full SHA or a prefix of it. */
 const SHA_RE = /^[0-9a-f]{7,40}$/;
@@ -333,7 +352,41 @@ class DeployBoardStore {
                 cronJobsUpdated: r.cronJobsUpdated,
                 atBoot: r.atBoot,
             })),
+            rollback: ROLLBACK_STATES.includes(deploy.state) ? this.rollbackOf(deploy, rollouts) : null,
         };
+    }
+
+    /**
+     * The command to go back each release of a deploy (see rollback.js).
+     * @param {object} deploy Internal deploy.
+     * @param {object[]} rollouts Its live rollouts.
+     * @returns {{releases: object[]}} One plan per release.
+     */
+    rollbackOf(deploy, rollouts) {
+        return { releases: rollouts.map((r) => releaseRollback(r, this.earlierDone(deploy, r))) };
+    }
+
+    /**
+     * Finished rollouts of the same release in other deploys, on screen or in the history, that
+     * started before this one: newest first.
+     * @param {object} deploy Deploy the rollout belongs to.
+     * @param {object} rollout Rollout.
+     * @returns {object[]} Rollouts.
+     */
+    earlierDone(deploy, rollout) {
+        const others = [
+            ...this.deploys.filter((d) => d !== deploy && d.state === "done").map((d) => [...d.rollouts.values()]),
+            ...this.history.filter((h) => h.outcome === "done" && h.id !== deploy.id).map((h) => h.rollouts || []),
+        ].flat();
+        return others
+            .filter(
+                (r) =>
+                    r.state === "done" &&
+                    r.namespace === rollout.namespace &&
+                    r.release === rollout.release &&
+                    r.startedAt < rollout.startedAt
+            )
+            .sort((a, b) => b.startedAt - a.startedAt);
     }
 
     /**

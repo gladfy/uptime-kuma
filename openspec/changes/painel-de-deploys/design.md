@@ -338,9 +338,20 @@ na TV; e tocar no servidor — o som é de quem está olhando a tela.
 roda com a própria credencial. O comando volta **só a imagem**: uma linha
 `kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag>` por Deployment das
 releases do deploy, só com os containers cuja tag mudou, mais o `rollout status` de cada um. A tag
-de destino é a do deploy anterior concluído da mesma release, tirada do histórico da fase 3.1; sem
-ele, o cartão diz que não sabe e não inventa comando. A extração do Deployment passa a guardar o
-nome do container e o repositório da imagem — nada mais do template.
+de destino é a do último deploy concluído da mesma release com imagem diferente, tirado do
+histórico da fase 3.1 (um deploy das mesmas imagens de novo não é versão para voltar). Sem ele, vale
+o que estava no ar quando o painel viu a virada começar; sem nenhum dos dois, o cartão diz que não
+sabe e não inventa comando. Virada que não trocou imagem (um `rollout restart`) diz que não há o que
+voltar. A extração do Deployment passa a guardar o nome do container e o repositório da imagem —
+nada mais do template.
+
+*Por que também o que estava no ar (implementação, 02/11):* o histórico guarda 7 dias, e um projeto
+que faz deploy uma vez por mês nunca teria comando. O histórico vence porque o que estava no ar pode
+ser um deploy travado. Armadilha medida no código: o Helm troca a imagem do template **antes** de o
+controlador subir a revisão, então "o objeto do evento anterior" já tem a imagem nova; o rastreador
+guarda as imagens de cada revisão como eram quando ela foi vista pela primeira vez. E como o comando
+vai parar num terminal, valor lido do cluster com caractere fora do que nome e imagem admitem deixa
+a release sem comando.
 
 O cartão avisa o que o comando não cobre: os CronJobs da release (o `gateway-cron` são 95) ficam na
 imagem nova, e o próximo deploy pela pipeline sobrescreve a volta (o Helm continua achando que a
