@@ -205,11 +205,9 @@ export default {
                 }));
         },
 
-        /** @returns {object[]} Monitors that stay in the grid, with their deploy mark */
+        /** @returns {object[]} Every monitor in its place, with its deploy mark: none leaves the grid */
         gridMonitors() {
-            return this.monitors
-                .filter((m) => m.tone !== "down" && m.tone !== "pending")
-                .map((m) => ({ ...m, mark: this.deployMark(m) }));
+            return this.monitors.map((m) => ({ ...m, mark: this.deployMark(m) }));
         },
 
         /** @returns {{tone: string, title: string, sub: string}} Services verdict of the top bar */
@@ -814,6 +812,9 @@ body.deploy-board-body .Vue-Toastification__container {
     --db-warn-soft: #fbeed6;
     --db-bad: #c42828;
     --db-bad-soft: #fbe3e3;
+    // Solid red with white text: deep enough in both themes for the text to read.
+    --db-bad-solid: #c42828;
+    --db-on-bad: #fff;
     --db-maint: #535e8d;
     --db-maint-soft: #e8eaf4;
     // "Deploy em andamento", on both columns. Brand magenta is only identity.
@@ -856,6 +857,7 @@ body.deploy-board-body .Vue-Toastification__container {
         --db-warn-soft: #35290f;
         --db-bad: #f2625f;
         --db-bad-soft: #3b1a1c;
+        --db-bad-solid: #c8302e;
         --db-maint: #959ec7;
         --db-maint-soft: #23263a;
         --db-deploy: #5aa7ff;

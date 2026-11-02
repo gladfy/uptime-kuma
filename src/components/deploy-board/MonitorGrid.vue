@@ -9,9 +9,13 @@
             >
                 <template v-if="cell">
                     <span class="db-row-name" :title="cell.name">{{ cell.name }}</span>
-                    <span v-if="cell.tone !== 'up'" class="db-row-state">{{ cell.label }}</span>
+                    <!-- Words only for the exception: a monitor that is up says so by its bars. -->
+                    <span v-if="cell.tone !== 'up'" class="db-pill" :class="'is-' + cell.tone">
+                        <span v-if="cell.tone === 'down'" aria-hidden="true">▲</span>
+                        {{ cell.label }}
+                    </span>
                     <span v-else class="db-visually-hidden">{{ cell.label }}</span>
-                    <span v-if="cell.mark" class="db-row-mark" :class="'is-' + cell.mark">
+                    <span v-if="cell.mark" class="db-pill" :class="cell.mark === 'stuck' ? 'is-stuck' : 'is-deploy'">
                         {{ $t(cell.mark === "stuck" ? "deployBoardMarkStuck" : "deployBoardMarkRolling") }}
                     </span>
                     <span class="db-beats" aria-hidden="true">
@@ -106,6 +110,7 @@ export default {
         rowClass(cell, i) {
             return {
                 ["is-" + (cell ? cell.tone : "empty")]: true,
+                "is-deploying": cell?.mark === "rolling",
                 "is-last-row": i % this.rows === this.rows - 1,
                 "is-last-col": i >= (this.cols - 1) * this.rows,
             };
@@ -161,6 +166,28 @@ export default {
     &.is-last-col {
         border-right: 0;
     }
+
+    // A 3 px mark on the side for the two states that matter from across the room.
+    &.is-deploying::before,
+    &.is-down::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 3px;
+        background: var(--db-deploy);
+    }
+
+    &.is-down {
+        background: var(--db-bad-soft);
+
+        &::before {
+            background: var(--db-bad);
+        }
+
+        .db-row-name {
+            color: var(--db-bad);
+        }
+    }
 }
 
 .db-row-name {
@@ -173,14 +200,6 @@ export default {
     font-weight: 600;
 }
 
-.db-row-state {
-    flex-shrink: 0;
-    font-size: 0.82em;
-    font-weight: 700;
-    white-space: nowrap;
-    color: var(--db-ink-3);
-}
-
 .db-visually-hidden {
     position: absolute;
     width: 1px;
@@ -190,15 +209,35 @@ export default {
     white-space: nowrap;
 }
 
-.db-row-mark {
+.db-pill {
     flex-shrink: 0;
-    padding: 0.05em 0.45em;
-    border-radius: 0.6em;
-    font-size: 0.72em;
-    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.78em;
+    font-weight: 600;
     white-space: nowrap;
-    color: var(--db-deploy);
-    background: var(--db-deploy-soft);
+    color: var(--db-ink-2);
+    background: var(--db-panel-2);
+
+    &.is-deploy {
+        color: var(--db-deploy);
+        background: var(--db-deploy-soft);
+    }
+
+    &.is-down {
+        color: var(--db-on-bad);
+        background: var(--db-bad-solid);
+    }
+
+    &.is-pending {
+        color: var(--db-warn);
+        background: var(--db-warn-soft);
+    }
+
+    &.is-maintenance {
+        color: var(--db-maint);
+        background: var(--db-maint-soft);
+    }
 
     &.is-stuck {
         color: var(--db-bad);
