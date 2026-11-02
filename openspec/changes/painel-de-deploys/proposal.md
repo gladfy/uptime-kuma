@@ -42,6 +42,10 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
   volta a imagem do deploy anterior, pronto para copiar. O painel não executa nada.
 - **Conferência de cobertura.** Um relatório só de leitura compara o que roda no EKS e no Amplify com
   a configuração do painel e as tags dos monitores do Kuma, e aponta o que está sem monitoramento.
+- **Projetos da OCI.** O `ia-rag` e o `ia-process-document` (e o que mais o inventário achar) fazem
+  o deploy num cluster Kubernetes da Oracle Cloud (OKE), não no EKS. O painel passa a ler também esse
+  cluster, só leitura, para a virada deles aparecer como a do EKS; os webhooks dos repositórios deles
+  ligam a pipeline ao cartão, e a conferência de cobertura passa a incluir o OKE.
 - **Correlação** entre pipeline e virada pelo SHA do commit na tag da imagem; quando a tag não
   carrega SHA, pela janela de tempo da pipeline do mesmo repositório. Virada sem pipeline
   correspondente aparece como "sem pipeline" (deploy manual).
@@ -53,7 +57,7 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
 
 ## Fases de entrega
 
-A implementação sai em oito fases, mais três intermediárias (3.1, 3.2 e 3.3). Cada uma vai para produção sozinha, com só a infraestrutura
+A implementação sai em nove fases, mais três intermediárias (3.1, 3.2 e 3.3). Cada uma vai para produção sozinha, com só a infraestrutura
 dela, e a seguinte não muda o que a anterior entregou.
 
 | Fase | O que entra em produção | Infraestrutura e configuração |
@@ -65,16 +69,19 @@ dela, e a seguinte não muda o que a anterior entregou.
 | **3.2 Indicadores e tema** | Deploys das últimas 24 h e taxa de sucesso no cabeçalho; botão de tema claro/escuro | Nenhuma |
 | **3.3 Deploy com o painel fora do ar** | O deploy do próprio Kuma, e qualquer outro que aconteça com ele fora do ar, aparece depois do boot, concluído e sem duração | Nenhuma; uma tabela nova do fork |
 | **4. Pipelines** | Merge, pipeline e virada num cartão só; jobs do GitHub | Secret com os segredos; cadastro dos webhooks (os 5 da fase 2 e os dos projetos da fase 3 com origem no Bitbucket ou no GitHub) |
-| **5. Sons** | Buzina, encaixe de contêiner, radar, sino e alarme nos eventos do deploy, com botão de ativar | Nenhuma |
+| **5. Sons** | Gravações reais (buzina de navio, apito de trem, sino de bordo) nos eventos do deploy, ligadas por padrão, com botão de silenciar | Nenhuma |
 | **6. Como voltar à versão anterior** | Botão no cartão com o comando que volta a imagem anterior, para copiar | Nenhuma |
 | **7. Amplify** | Os 8 apps do Amplify, com passos do job | Role IAM por IRSA e anotação na ServiceAccount |
 | **8. Conferência de cobertura** | Relatório que cruza EKS e Amplify com a configuração do painel e as tags do Kuma; lacunas fechadas ou excluídas com motivo | Nenhuma nova; criar monitores e tags que faltarem |
+| **9. Projetos da OCI** | A virada do `ia-rag`, do `ia-process-document` e do que mais rodar no OKE, com a pipeline deles no mesmo cartão; o OKE na conferência de cobertura | ServiceAccount só de leitura no OKE, credencial dela num Secret do EKS, caminho de rede do EKS até a API do OKE; cadastrar os webhooks dos repositórios da OCI |
 
 A ordem segue valor e custo: a virada é o que ninguém vê hoje e só precisa de permissão no
 cluster, e a fase 3 estende o mesmo coletor ao resto do EKS sem código novo além da origem
 opcional; os webhooks exigem rota pública e cadastro em vários repositórios; o Amplify é
-independente e é a única fase com IAM e dependência nova. A conferência fica por último porque só
-faz sentido com todas as fontes ligadas: ela mede o que as anteriores deixaram de fora.
+independente e é a única fase com IAM e dependência nova. A conferência fica depois das fontes
+porque só faz sentido com elas ligadas: ela mede o que as anteriores deixaram de fora. A OCI vem por
+último, a pedido do Erik (02/11/2026): é o único caminho que pede credencial e rede de outra nuvem, e
+a fase 9 refaz a conferência com o OKE incluído.
 
 ## Capabilities
 
@@ -91,6 +98,9 @@ faz sentido com todas as fontes ligadas: ela mede o que as anteriores deixaram d
   anterior e o que o comando não cobre.
 - `conferencia-de-cobertura`: o relatório que cruza o que roda no EKS e no Amplify com a
   configuração do painel e as tags dos monitores, e a lista de exclusões com motivo.
+- `deploys-na-oci`: a leitura do cluster OKE da Oracle Cloud ao lado do EKS, a credencial só de
+  leitura que isso exige, a identificação do cluster em cada release e o que acontece quando a OCI
+  não responde.
 
 ### Modified Capabilities
 
@@ -118,9 +128,14 @@ Nenhuma. `openspec/specs/` está vazio, e a mudança não altera requisito da st
 - chart `helm-packages/tools/uptimekuma`: ServiceAccount própria para o Kuma (hoje ele roda com a
   `default`), ClusterRole de leitura de Deployments e CronJobs ligada por RoleBinding só nos
   namespaces observados (5 na fase 2, 17 a partir da fase 3), ConfigMap com a configuração, Secret
-  com os segredos dos webhooks e, na fase 7, a anotação de IRSA na ServiceAccount;
+  com os segredos dos webhooks e, na fase 7, a anotação de IRSA na ServiceAccount; na fase 9, a
+  montagem da credencial do OKE (Secret criado à mão, como o dos webhooks);
 - `terraform/`: a role IAM com as quatro ações de leitura do Amplify, no padrão de
   `terraform/iam-cost-exporter`.
+
+**OCI (fase 9):** ServiceAccount no OKE com leitura de Deployments e CronJobs só nos namespaces
+observados, e o caminho de rede do EKS até a API do OKE (endpoint público com lista de IPs de saída
+do EKS, ou rota privada). Onde isso é versionado do lado da OCI ainda é pergunta aberta.
 
 **Configuração fora do código:** cadastrar os webhooks nos repositórios com origem no Bitbucket ou
 no GitHub (os cinco da fase 2 e os da fase 3) apontando para `monitor-clientes.winker.com.br`,
@@ -136,7 +151,7 @@ como faltando.
 - **Ações.** O painel só mostra; não dispara, cancela nem desfaz deploy. Para voltar a versão ele
   mostra o comando (fase 6), e quem roda é quem tem acesso ao cluster.
 - **Notificação de deploy** pelos providers do Kuma.
-- **Outros clusters** (OKE na OCI) e ambientes Elastic Beanstalk.
+- **Ambientes Elastic Beanstalk.** (O OKE da OCI entrou como fase 9.)
 - **Alterar a status page do cliente ou a TV.** As duas continuam como estão.
 - **Colocar `--wait` nas pipelines dos outros repositórios.** É mudança nas pipelines, não no Kuma;
   o painel mostra a virada com ou sem ele.
