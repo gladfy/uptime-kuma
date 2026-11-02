@@ -323,20 +323,21 @@ export default {
         },
 
         /**
-         * Deploys that a monitor can be linked to: the ones the cluster is vouching for right now.
-         * With the cluster off or not answering nothing is linked, so nothing is claimed.
-         * @returns {{active: object[], ended: object[]}|null} Deploys by release, or null.
+         * Deploys that a monitor can be linked to, with the sources: a monitor is only linked while
+         * every source its tags point to (cluster, Amplify) is being read, so nothing is claimed.
+         * @returns {{active: object[], ended: object[], sources: object}|null} Deploys, or null.
          */
-        clusterDeploys() {
-            if (!this.board || this.board.sources.cluster.state !== "active") {
+        linkedDeploys() {
+            if (!this.board) {
                 return null;
             }
-            const active = this.board.deploys.filter((d) => d.state !== "done");
+            // On screen but over (failed, cancelled, replaced): no longer "in deploy".
+            const active = this.board.deploys.filter((d) => !ENDED_STATES.includes(d.state));
             const ended = [
                 ...this.board.deploys.filter((d) => d.state === "done"),
                 ...this.board.history.filter((h) => h.outcome === "done"),
             ];
-            return { active, ended };
+            return { active, ended, sources: this.board.sources };
         },
 
         /** @returns {string} Wall clock */
@@ -578,8 +579,8 @@ export default {
          * @returns {string|null} "rolling", "stuck" or null.
          */
         deployMark(monitor) {
-            const deploys = this.clusterDeploys;
-            if (!deploys || !monitor.releases.length) {
+            const deploys = this.linkedDeploys;
+            if (!deploys || !monitor.releases.length || !sourcesRead(monitor.releases, deploys.sources)) {
                 return null;
             }
             const touching = deploys.active.filter((d) => touches(d, monitor.releases));
@@ -590,18 +591,23 @@ export default {
         },
 
         /**
-         * Line about deploys in the highlight of a monitor that is down or pending. Omitted when the
-         * cluster is not being read: "no related deploy" can only be said by who reads the source.
+         * Line about deploys in the highlight of a monitor that is down or pending. Omitted when a
+         * source of its tags is not being read: "no related deploy" can only be said by who reads it.
          * @param {object} monitor Live monitor.
          * @returns {string|null} The line, or null.
          */
         incidentDeployLine(monitor) {
-            const deploys = this.clusterDeploys;
+            const deploys = this.linkedDeploys;
             if (!deploys) {
                 return null;
             }
             if (!monitor.releases.length) {
-                return this.$t("deployBoardIncidentNoTag");
+                return ["cluster", "amplify"].some((id) => deploys.sources[id]?.state === "active")
+                    ? this.$t("deployBoardIncidentNoTag")
+                    : null;
+            }
+            if (!sourcesRead(monitor.releases, deploys.sources)) {
+                return null;
             }
             const running = deploys.active.find((d) => touches(d, monitor.releases));
             if (running) {
@@ -612,8 +618,8 @@ export default {
                 .filter((d) => touches(d, monitor.releases) && d.endedAt <= start && start - d.endedAt <= RELATED_MS)
                 .sort((a, b) => b.endedAt - a.endedAt)[0];
             if (before) {
-                const release = before.releases.find((r) => monitor.releases.includes(`${r.namespace}/${r.release}`));
-                const line = this.$t("deployBoardIncidentAfter", [this.formatDuration(start - before.endedAt), release.release]);
+                const link = linksOf(before).find((l) => monitor.releases.includes(l));
+                const line = this.$t("deployBoardIncidentAfter", [this.formatDuration(start - before.endedAt), link.split("/")[1]]);
                 return before.version ? `${line} · ${before.version}` : line;
             }
             return this.$t("deployBoardIncidentNoneRecent");
@@ -641,26 +647,46 @@ export default {
 /** A rollout that ended this long before an outage is named in its highlight. */
 const RELATED_MS = 60 * 60 * 1000;
 
+/** Deploy states that are over, though the card is still on screen. */
+const ENDED_STATES = ["done", "failed", "cancelled", "superseded"];
+
 /**
- * Releases a monitor is linked to, from its Kuma tags named "deploy" ("<namespace>/<release>").
- * The "amplify/<app>" values belong to the Amplify source and are left out here.
+ * What a monitor is linked to, from its Kuma tags named "deploy": "<namespace>/<release>" of the
+ * cluster, or "amplify/<app>".
  * @param {object|undefined} monitor Monitor from the socket list.
- * @returns {string[]} "<namespace>/<release>" values.
+ * @returns {string[]} Tag values.
  */
 function deployTags(monitor) {
     return (monitor?.tags || [])
         .filter((t) => t.name === "deploy" && typeof t.value === "string" && t.value.includes("/"))
-        .map((t) => t.value.trim())
-        .filter((v) => !v.startsWith("amplify/"));
+        .map((t) => t.value.trim());
+}
+
+/**
+ * @param {string[]} tags Tag values of a monitor.
+ * @param {object} sources Sources of the board.
+ * @returns {boolean} Whether every source its tags point to is being read: "no related deploy" can
+ * only be said by who reads the source.
+ */
+function sourcesRead(tags, sources) {
+    return tags.every((t) => sources[t.startsWith("amplify/") ? "amplify" : "cluster"]?.state === "active");
 }
 
 /**
  * @param {object} deploy Deploy or history entry.
- * @param {string[]} releases "<namespace>/<release>" values of a monitor.
+ * @returns {string[]} The tag values it answers to (older servers send only the releases).
+ */
+function linksOf(deploy) {
+    return deploy.links || deploy.releases.map((r) => `${r.namespace}/${r.release}`);
+}
+
+/**
+ * @param {object} deploy Deploy or history entry.
+ * @param {string[]} tags Tag values of a monitor.
  * @returns {boolean} Whether the deploy touches any of them.
  */
-function touches(deploy, releases) {
-    return deploy.releases.some((r) => releases.includes(`${r.namespace}/${r.release}`));
+function touches(deploy, tags) {
+    return linksOf(deploy).some((l) => tags.includes(l));
 }
 
 /**

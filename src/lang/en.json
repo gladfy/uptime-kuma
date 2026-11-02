@@ -363,6 +363,7 @@
     "deployBoardReleaseCronJobs": "{0} CronJobs on the new image",
     "deployBoardFoundAtBoot": "already rolling out when the board started",
     "deployBoardUnconfirmed": "Rollout state not confirmed: the cluster is not answering for this namespace.",
+    "deployBoardUnconfirmedAmplify": "Job state not confirmed: the Amplify is not answering.",
     "deployBoardStepsLabel": "Deploy steps",
     "deployBoardStepCount": "step {0} of {1}",
     "deployBoardStepMerge": "Merge",

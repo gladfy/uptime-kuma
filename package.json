@@ -70,6 +70,7 @@
         "create-release": "node ./extra/release/create-release.mjs"
     },
     "dependencies": {
+        "@aws-sdk/client-amplify": "3.1106.0",
         "@grpc/grpc-js": "~1.8.22",
         "@louislam/ping": "~0.4.4-mod.1",
         "@louislam/sqlite3": "15.1.6",

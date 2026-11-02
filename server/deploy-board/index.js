@@ -7,6 +7,7 @@ const { KubernetesSource } = require("./kubernetes-source");
 const { DeployHistoryRepository } = require("./history-repository");
 const { parseBitbucket } = require("./bitbucket-events");
 const { parseGithub } = require("./github-events");
+const { AmplifySource } = require("./amplify-source");
 
 /** Where the secret of each webhook comes from. Never in the configuration file. */
 const WEBHOOK_SECRET_ENVS = {
@@ -34,18 +35,22 @@ class DeployBoard {
      * @param {DeployBoardStore} options.store State (a new one by default).
      * @param {object} options.kubernetes Extra options of the KubernetesSource (tests).
      * @param {DeployHistoryRepository} options.history Where ended deploys are kept.
+     * @param {object} options.amplify Extra options of the AmplifySource (tests).
      */
     constructor({
         env = process.env,
         store = new DeployBoardStore(),
         kubernetes = {},
         history = new DeployHistoryRepository(),
+        amplify = {},
     } = {}) {
         this.env = env;
         this.store = store;
         this.history = history;
         this.store.persist = this.store.persist || ((record) => this.history.save(record));
         this.kubernetesOptions = kubernetes;
+        this.amplifyOptions = amplify;
+        this.amplify = null;
         this.ready = Promise.resolve();
         this.pruneTimer = null;
         this.known = new Map();
@@ -86,10 +91,10 @@ class DeployBoard {
                 if (this.history.available()) {
                     // The history goes in first, so the first rollout can join a deploy loaded from it.
                     this.ready = this.loadHistory()
-                        .then(() => this.startCluster(loaded.config))
-                        .catch((e) => log.error("deploy-board", `Could not start the cluster source: ${e.message}`));
+                        .then(() => this.startSources(loaded.config))
+                        .catch((e) => log.error("deploy-board", `Could not start the deploy sources: ${e.message}`));
                 } else {
-                    this.startCluster(loaded.config);
+                    this.startSources(loaded.config);
                 }
             }
         } catch (e) {
@@ -173,6 +178,35 @@ class DeployBoard {
     }
 
     /**
+     * @param {object} config Normalized configuration.
+     * @returns {void}
+     */
+    startSources(config) {
+        this.startCluster(config);
+        this.startAmplify(config);
+    }
+
+    /**
+     * Start reading the jobs of the Amplify apps. Without `amplify.region` the source stays
+     * "unconfigured"; without an AWS credential it says so after the first read.
+     * @param {object} config Normalized configuration.
+     * @returns {void}
+     */
+    startAmplify(config) {
+        this.amplify = new AmplifySource({
+            region: config.amplify?.region || null,
+            store: this.store,
+            ...this.amplifyOptions,
+        });
+        if (this.amplify.start()) {
+            this.store.startTicking();
+            log.info("deploy-board", `Reading the Amplify apps of ${config.amplify.region}`);
+        } else {
+            log.info("deploy-board", "No amplify.region in the configuration; the Amplify source is off.");
+        }
+    }
+
+    /**
      * Start reading rollouts from the cluster. Outside Kubernetes the source stays "unconfigured".
      * @param {object} config Normalized configuration.
      * @returns {void}
@@ -210,6 +244,7 @@ class DeployBoard {
     stop() {
         clearInterval(this.pruneTimer);
         this.cluster?.stop();
+        this.amplify?.stop();
         this.store.close();
     }
 

@@ -178,8 +178,19 @@ não autenticam o conteúdo).
 padrão de credenciais (no EKS, o webhook de identidade injeta `AWS_ROLE_ARN` e
 `AWS_WEB_IDENTITY_TOKEN_FILE`). Descoberta (`ListApps` + `ListBranches`, filtrando estágio
 `PRODUCTION`) a cada 30 minutos; `ListJobs` (`maxResults: 3`) por branch a cada 60 s, ou 15 s
-enquanto houver job em andamento; `GetJob` só para job em andamento, para os passos. Com os 8 apps
-de hoje: cerca de 500 chamadas por hora parado.
+enquanto houver job em andamento; `GetJob` para job em andamento e uma vez quando ele termina,
+para os passos. Com os 8 apps de hoje: cerca de 500 chamadas por hora parado.
+
+Como entra no store (implementado em 02/11/2026): cada app com branch `PRODUCTION` vira um projeto de
+origem `amplify`, sem release no cluster; o job é uma execução de pipeline e cada passo (`BUILD`,
+`DEPLOY`, `VERIFY`) um job dela, os mesmos eventos do GitHub. Sem evento de merge: a primeira linha
+da mensagem do commit vem na própria execução. O deploy termina no job verde, sem esperar virada
+(o Amplify publica sozinho), e as etapas do cartão são "Merge", "Pipeline" e "No ar". O que já tinha
+acabado na primeira leitura de uma branch não aparece: acabou com o painel sem olhar. App com o nome
+de um projeto da configuração fica de fora, com aviso no log, para um cartão nunca misturar os dois.
+O deploy publica `links`, os valores da tag `deploy` que ele atende (`<namespace>/<release>` de cada
+release e `amplify/<app>`), e a página liga os monitores por eles; um monitor só é ligado enquanto
+todas as fontes das tags dele estão sendo lidas.
 
 *Alternativa descartada:* EventBridge (`Amplify Deployment Status Change`) → API destination
 chamando um webhook do Kuma. Exige regra, conexão com segredo e destino na AWS, mais uma rota
