@@ -69,14 +69,10 @@
                     :aria-label="$t('deployBoardServices')"
                 >
                     <div class="db-services-head">
-                        <h2 class="db-section-title">{{ $t("deployBoardServices") }}</h2>
-                        <span class="db-legend">
-                            <span class="db-legend-item is-up">{{ $t("deployBoardStatusUp") }}</span>
-                            <span class="db-legend-item is-pending">{{ $t("deployBoardStatusPending") }}</span>
-                            <span class="db-legend-item is-down">{{ $t("deployBoardStatusDown") }}</span>
-                            <span class="db-legend-item is-maintenance">{{ $t("deployBoardStatusMaintenance") }}</span>
-                            <span>{{ $t("deployBoardBeatsHint") }}</span>
-                        </span>
+                        <h2 class="db-section-title">
+                            {{ $t("deployBoardServices") }}
+                            <span v-if="curationLoaded" class="db-section-count">{{ $t("deployBoardMonitorCount", monitors.length) }}</span>
+                        </h2>
                     </div>
 
                     <p v-if="!kumaConnected" class="db-warning">{{ $t("deployBoardKumaNoReadDetail") }}</p>
@@ -1227,6 +1223,14 @@ body.deploy-board-body .Vue-Toastification__container {
     gap: 0.3em 1.2em;
 }
 
+.db-section-count {
+    margin-left: 8px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--db-ink-3);
+}
+
 .db-section-title {
     margin: 0;
     font-size: 0.8em;
@@ -1234,44 +1238,6 @@ body.deploy-board-body .Vue-Toastification__container {
     letter-spacing: 0.13em;
     text-transform: uppercase;
     color: var(--db-ink-2);
-}
-
-.db-legend {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.3em 0.9em;
-    font-size: 0.8em;
-    color: var(--db-ink-3);
-}
-
-.db-legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
-
-    &::before {
-        content: "";
-        width: 0.6em;
-        height: 0.6em;
-        border-radius: 2px;
-        background: var(--db-ok);
-    }
-
-    &.is-pending::before {
-        background: var(--db-warn);
-    }
-
-    &.is-down::before {
-        width: 0.75em;
-        border-radius: 0;
-        background: var(--db-bad);
-        clip-path: polygon(50% 0, 100% 100%, 0 100%);
-    }
-
-    &.is-maintenance::before {
-        background: var(--db-maint);
-    }
 }
 
 .db-warning {

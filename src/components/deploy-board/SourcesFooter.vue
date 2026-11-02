@@ -4,6 +4,14 @@
             {{ item.name }}
             <b>{{ item.text }}</b>
         </span>
+        <!-- The legend of the grid, out of the way: needed once, not every time the eye passes. -->
+        <span class="db-legend">
+            <span class="db-legend-item is-up">{{ $t("deployBoardStatusUp") }}</span>
+            <span class="db-legend-item is-pending">{{ $t("deployBoardStatusPending") }}</span>
+            <span class="db-legend-item is-down">{{ $t("deployBoardStatusDown") }}</span>
+            <span class="db-legend-item is-maintenance">{{ $t("deployBoardStatusMaintenance") }}</span>
+            <span>{{ $t("deployBoardBeatsHint") }}</span>
+        </span>
     </footer>
 </template>
 
@@ -142,12 +150,56 @@ export default {
         clip-path: polygon(50% 0, 100% 100%, 0 100%);
     }
 
+    &.is-warn b {
+        color: var(--db-warn);
+    }
+
     &.is-bad b {
         color: var(--db-bad);
     }
 
     &.is-muted::before {
         background: var(--db-line-2);
+    }
+}
+
+.db-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    margin-left: auto;
+    font-size: 0.92em;
+    color: var(--db-ink-3);
+    opacity: 0.85;
+}
+
+.db-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--db-ok);
+    }
+
+    &.is-pending::before {
+        background: var(--db-warn);
+    }
+
+    &.is-down::before {
+        width: 10px;
+        border-radius: 0;
+        background: var(--db-bad);
+        clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    }
+
+    &.is-maintenance::before {
+        background: var(--db-maint);
     }
 }
 </style>

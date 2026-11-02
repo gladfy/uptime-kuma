@@ -477,6 +477,7 @@
     "deployBoardStatusMaintenance": "Manutenção",
     "deployBoardStatusPaused": "Pausado",
     "deployBoardStatusUnknown": "Sem dado",
+    "deployBoardMonitorCount": "{n} monitor | {n} monitores",
     "deployBoardBeatsHint": "cada barra é uma verificação",
     "deployBoardNoSources": "Nenhuma fonte de deploy ligada ainda. As viradas no cluster, as pipelines e os builds do Amplify aparecem aqui à medida que as fontes forem ligadas.",
     "deployBoardNoSourcesShort": "Nenhuma fonte ligada",

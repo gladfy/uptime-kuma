@@ -295,6 +295,7 @@
     "deployBoardStatusMaintenance": "Maintenance",
     "deployBoardStatusPaused": "Paused",
     "deployBoardStatusUnknown": "No data",
+    "deployBoardMonitorCount": "{n} monitor | {n} monitors",
     "deployBoardBeatsHint": "each bar is one check",
     "deployBoardNoSources": "No deploy source is on yet. Cluster rollouts, pipelines and Amplify builds will show up here as their sources are switched on.",
     "deployBoardNoSourcesShort": "No source on",
