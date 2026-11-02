@@ -323,14 +323,26 @@ substituído fica fora da taxa (ninguém o terminou, outro tomou o lugar). Sem e
 que o Kuma já guarda no navegador. *Descartado:* um tema só do painel — duas preferências para a
 mesma coisa, e a página voltaria a divergir do resto do Kuma.
 
-### 16. Sons sintetizados, só para o que se viu acontecer
+### 16. Sons gravados, só para o que se viu acontecer
 
-**Decisão:** Web Audio API, com osciladores e envelopes, sem arquivo de áudio. Os eventos saem de uma
-função pura que compara o snapshot anterior com o atual; carga da página, reconexão e histórico
-carregado do banco não tocam nada. Um som por vez, numa fila, e o mesmo evento do mesmo deploy não
-repete. Começa desligado, porque o navegador só toca depois de um clique, e a escolha fica no
-navegador. *Descartado:* arquivos de áudio — licença, peso no bundle e mais uma coisa para baixar
-na TV; e tocar no servidor — o som é de quem está olhando a tela.
+**Decisão (revista em 02/11/2026):** gravações reais, por pedido do Erik ("nada de sons
+eletrônicos/gameficados"), escolhidas de ouvido por ele numa página de audição. Três gravações do
+Freesound fazem os cinco sons: a mesma buzina de navio (CC0) dá o toque longo de "iniciado", os dois
+toques curtos de "em andamento" e, mais grave e com cinco toques curtos, o "falhou" (o sinal de
+perigo do RIPEAM, no lugar dos bipes de radar e do alerta eletrônico do pedido original, que são
+eletrônicos por natureza); um apito de trem a vapor (CC BY 4.0, escolha do Erik) é o "build
+concluído"; o sino de bordo de dois toques (CC0) é o "concluído". Cortados e com o volume igualado
+por `ffmpeg`, somam 140 KB, entram pelo Vite (nome com hash) e só são baixados quando o som é
+ativado. Origem, licença e corte de cada um estão em `src/assets/deploy-board-sounds/CREDITS.md`; o
+crédito da CC BY também aparece no texto de ajuda do botão.
+
+Os eventos saem de uma função pura que compara o snapshot anterior com o atual; carga da página,
+reconexão e histórico carregado do banco não tocam nada. Um som por vez, numa fila de no máximo
+quatro, e o mesmo evento do mesmo deploy na mesma etapa não repete (a produção depois da integração
+é outra etapa, e toca de novo). Começa desligado, e a escolha fica no navegador. Depois de recarregar
+a página, o navegador não toca nada até alguém clicar nela, e o painel diz isso ao lado do botão.
+*Descartado:* síntese com osciladores (a primeira decisão: sem licença nem peso, mas soa eletrônica);
+e tocar no servidor — o som é de quem está olhando a tela.
 
 ### 17. Voltar à versão anterior: o painel mostra o comando, não executa
 
