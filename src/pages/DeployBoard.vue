@@ -61,7 +61,13 @@
             </header>
 
             <main class="db-main">
-                <DeployColumn :board="board" :now="now" :format-duration="formatDuration" />
+                <DeployColumn
+                    :board="board"
+                    :failures="failures"
+                    :now="now"
+                    :format-duration="formatDuration"
+                    @dismiss="dismiss"
+                />
 
                 <section
                     class="db-services"
@@ -129,6 +135,25 @@ const IDLE_MS = 2500;
 /** What counts as someone at the screen. */
 const ACTIVITY_EVENTS = ["mousemove", "pointerdown", "touchstart", "keydown"];
 
+/** States and outcomes that are a failure: a card that stays until someone dismisses it. */
+const FAILED = ["failed", "stuck"];
+
+/** Where this browser keeps the failures someone dismissed. */
+const DISMISSED_KEY = "deployBoardDismissed";
+const DISMISSED_MAX = 200;
+
+/**
+ * @returns {string[]} Ids of the dismissed failures (empty when the browser keeps nothing).
+ */
+function dismissedSaved() {
+    try {
+        const ids = JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]");
+        return Array.isArray(ids) ? ids : [];
+    } catch (e) {
+        return [];
+    }
+}
+
 /** Where this browser remembers that sound is on. */
 const SOUND_KEY = "deployBoardSound";
 
@@ -171,6 +196,7 @@ export default {
             now: Date.now(),
             wall: window.matchMedia(WALL_QUERY).matches,
             idle: false,
+            dismissed: dismissedSaved(),
             soundOn: soundSaved(),
             // After a reload the browser plays nothing until someone clicks the page.
             soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
@@ -198,6 +224,39 @@ export default {
                 .filter((m) => m.tone === "down")
                 .sort((a, b) => (a.since ?? Infinity) - (b.since ?? Infinity))
                 .map((m) => ({ ...m, deployLine: this.incidentDeployLine(m) }));
+        },
+
+        /**
+         * Failed and stuck deploys nobody dismissed: the ones on screen with their whole card, and the
+         * ones the server already moved to the history with what the history keeps. The column draws
+         * them and the header counts them, so dismissing one quiets both.
+         * @returns {object[]} Deploys, as DeployCard takes them
+         */
+        failures() {
+            if (!this.board) {
+                return [];
+            }
+            const live = this.board.deploys.filter((d) => FAILED.includes(d.state));
+            const seen = new Set(live.map((d) => d.id));
+            const past = this.board.history
+                .filter((h) => FAILED.includes(h.outcome) && !seen.has(h.id))
+                .map((h) => ({
+                    id: h.id,
+                    project: h.project,
+                    version: h.version,
+                    state: h.outcome,
+                    label: h.outcome,
+                    missed: h.missed,
+                    startedAt: h.startedAt,
+                    endedAt: h.endedAt,
+                    confirmed: true,
+                    releases: (h.releases || []).map((r) => ({ ...r, updated: 0, desired: 0, cronJobsUpdated: 0 })),
+                    links: h.links,
+                    rollback: null,
+                    pipeline: null,
+                    steps: null,
+                }));
+            return [...live, ...past].filter((d) => !this.dismissed.includes(d.id));
         },
 
         /** @returns {object[]} Every monitor in its place, with its deploy mark: none leaves the grid */
@@ -311,14 +370,14 @@ export default {
                 return { tone: "muted", title: this.$t("deployBoardNoSourcesShort"), sub: "" };
             }
             const verdicts = [
-                [(d) => d.state === "failed", "bad", "deployBoardVerdictFailed"],
-                [(d) => d.state === "stuck", "bad", "deployBoardVerdictStuck"],
+                [(d) => d.state === "failed", "bad", "deployBoardVerdictFailed", this.failures],
+                [(d) => d.state === "stuck", "bad", "deployBoardVerdictStuck", this.failures],
                 [(d) => d.state === "noProgress", "warn", "deployBoardVerdictNoProgress"],
                 [(d) => d.label === "noRollout", "warn", "deployBoardVerdictNoRollout"],
                 [(d) => ["updating", "pipeline", "built"].includes(d.state), "rolling", "deployBoardVerdictRolling"],
             ];
-            for (const [matches, tone, key] of verdicts) {
-                const deploys = this.board.deploys.filter(matches);
+            for (const [matches, tone, key, from = this.board.deploys] of verdicts) {
+                const deploys = from.filter(matches);
                 if (deploys.length) {
                     const sub =
                         tone === "rolling"
@@ -672,6 +731,20 @@ export default {
         },
 
         /**
+         * Take a failure off the screen, in this browser: its card and its count in the header.
+         * @param {string} id Deploy id.
+         * @returns {void}
+         */
+        dismiss(id) {
+            this.dismissed = [...this.dismissed, id].slice(-DISMISSED_MAX);
+            try {
+                localStorage.setItem(DISMISSED_KEY, JSON.stringify(this.dismissed));
+            } catch (e) {
+                // Not kept: it comes back after a reload.
+            }
+        },
+
+        /**
          * @param {object} deploy Deploy of the board.
          * @returns {string} Name of the step it is on ("Virada"), or "" when it has none.
          */
@@ -867,10 +940,6 @@ body.deploy-board-body .Vue-Toastification__container {
 
 /* Buttons and links of the whole board, children included, fade out with no one at the screen; a
    keyboard focus brings its own back. Here, unscoped, because they live in the child components. */
-.deploy-board .db-control {
-    transition: opacity 0.3s ease;
-}
-
 .deploy-board.is-idle .db-control {
     opacity: 0;
     pointer-events: none;
@@ -925,7 +994,8 @@ body.deploy-board-body .Vue-Toastification__container {
         Roboto,
         Arial,
         sans-serif;
-    font-size: clamp(14px, calc(0.45vw + 8px), 19px);
+    // The type scale is fixed (12.5 / 13.5 / 15 / 17 / 21 / 32): the base is the 15.
+    font-size: 15px;
     line-height: 1.35;
     -webkit-font-smoothing: antialiased;
 
@@ -960,15 +1030,15 @@ body.deploy-board-body .Vue-Toastification__container {
     display: grid;
     place-items: center;
     min-height: 100%;
-    padding: 2em max(16px, env(safe-area-inset-right, 0px)) 2em max(16px, env(safe-area-inset-left, 0px));
+    padding: 32px max(16px, env(safe-area-inset-right, 0px)) 32px max(16px, env(safe-area-inset-left, 0px));
 }
 
 .db-shell {
     display: flex;
     flex-direction: column;
-    gap: 0.9em;
+    gap: 12px;
     min-height: 100%;
-    padding-block: 0.9em;
+    padding-block: 12px;
     padding-left: max(16px, env(safe-area-inset-left, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
@@ -977,20 +1047,19 @@ body.deploy-board-body .Vue-Toastification__container {
     display: flex;
     flex-wrap: wrap;
     align-items: stretch;
-    gap: 0.7em 1em;
+    gap: 12px 16px;
 }
 
 .db-ident {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 0.2em;
-    margin-right: auto;
+    gap: 4px;
     min-width: 0;
 }
 
 .db-eyebrow {
-    font-size: 0.78em;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -999,8 +1068,8 @@ body.deploy-board-body .Vue-Toastification__container {
 
 .db-title {
     margin: 0;
-    font-size: 1.8em;
-    font-weight: 800;
+    font-size: 21px;
+    font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.05;
 }
@@ -1031,7 +1100,7 @@ body.deploy-board-body .Vue-Toastification__container {
 }
 
 .db-seg-key {
-    font-size: 0.8em;
+    font-size: 12.5px;
     color: var(--db-ink-3);
 }
 
@@ -1039,7 +1108,7 @@ body.deploy-board-body .Vue-Toastification__container {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 1.25em;
+    font-size: 21px;
     font-weight: 600;
     line-height: 1.2;
 
@@ -1062,7 +1131,7 @@ body.deploy-board-body .Vue-Toastification__container {
 }
 
 .db-seg-sub {
-    font-size: 0.8em;
+    font-size: 12.5px;
     color: var(--db-ink-3);
     overflow-wrap: anywhere;
 }
@@ -1109,23 +1178,31 @@ body.deploy-board-body .Vue-Toastification__container {
     }
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .db-dot.is-rolling,
+    .db-dot.is-bad {
+        animation: none;
+    }
+}
+
 .db-clock {
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: flex-end;
-    gap: 0.15em;
+    gap: 4px;
+    margin-left: auto;
 }
 
 .db-clock-time {
-    font-size: 1.7em;
+    font-size: 32px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     line-height: 1;
 }
 
 .db-clock-date {
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
@@ -1136,7 +1213,7 @@ body.deploy-board-body .Vue-Toastification__container {
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.5em;
+    gap: 8px;
 }
 
 .db-sound {
@@ -1156,11 +1233,11 @@ body.deploy-board-body .Vue-Toastification__container {
     top: calc(100% + 0.4em);
     right: 0;
     z-index: 2;
-    padding: 0.3em 0.6em;
+    padding: 4px 8px;
     border: 1px solid var(--db-warn);
-    border-radius: 6px;
+    border-radius: 999px;
     background: var(--db-warn-soft);
-    font-size: 0.8em;
+    font-size: 12.5px;
     font-weight: 600;
     white-space: nowrap;
     color: var(--db-warn);
@@ -1193,14 +1270,14 @@ body.deploy-board-body .Vue-Toastification__container {
 .db-main {
     display: flex;
     flex-direction: column;
-    gap: 1.2em;
+    gap: 16px;
     min-width: 0;
 }
 
 .db-services {
     display: flex;
     flex-direction: column;
-    gap: 0.6em;
+    gap: 8px;
     min-width: 0;
     min-height: 0;
 
@@ -1213,30 +1290,27 @@ body.deploy-board-body .Vue-Toastification__container {
 .db-services-body {
     display: flex;
     flex-direction: column;
-    gap: 0.6em;
+    gap: 8px;
 }
 
 .db-services-head {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.3em 1.2em;
+    gap: 4px 16px;
 }
 
 .db-section-count {
     margin-left: 8px;
+    font-size: 13.5px;
     font-weight: 400;
-    letter-spacing: 0;
-    text-transform: none;
     color: var(--db-ink-3);
 }
 
 .db-section-title {
     margin: 0;
-    font-size: 0.8em;
-    font-weight: 800;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--db-ink-2);
 }
 
@@ -1261,7 +1335,7 @@ body.deploy-board-body .Vue-Toastification__container {
     .db-main {
         display: grid;
         grid-template-columns: minmax(26em, 30%) minmax(0, 1fr);
-        gap: 1.4em;
+        gap: 20px;
         min-height: 0;
     }
 

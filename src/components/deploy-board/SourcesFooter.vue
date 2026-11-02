@@ -114,17 +114,17 @@ export default {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.4em 1.3em;
-    padding-top: 0.6em;
+    gap: 8px 20px;
+    padding-top: 8px;
     border-top: 1px solid var(--db-line);
-    font-size: 0.8em;
+    font-size: 12.5px;
     color: var(--db-ink-3);
 }
 
 .db-source {
     display: inline-flex;
     align-items: center;
-    gap: 0.4em;
+    gap: 8px;
 
     &::before {
         content: "";
@@ -169,7 +169,7 @@ export default {
     align-items: center;
     gap: 4px 12px;
     margin-left: auto;
-    font-size: 0.92em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
     opacity: 0.85;
 }

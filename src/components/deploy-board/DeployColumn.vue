@@ -14,7 +14,7 @@
                     :now="now"
                     :format-duration="formatDuration"
                     dismissible
-                    @dismiss="dismiss"
+                    @dismiss="$emit('dismiss', $event)"
                 />
             </div>
         </template>
@@ -45,12 +45,27 @@
                     <span class="db-history-name">
                         <span class="db-history-project">{{ item.project }}</span>
                         <code v-if="item.version" class="db-history-version">{{ item.version }}</code>
+                        <!-- A small button in the name, so the line keeps its height while it is hidden. -->
+                        <button
+                            v-if="item.rollback"
+                            type="button"
+                            class="db-history-back db-control"
+                            :aria-expanded="String(backOpen === item.id)"
+                            @click="backOpen = backOpen === item.id ? null : item.id"
+                        >
+                            {{ $t("deployBoardRollbackButton") }}
+                        </button>
                     </span>
                     <span class="db-history-took" :class="{ 'is-unknown': item.missed }">
                         {{ item.missed ? "—" : formatDuration(item.endedAt - item.startedAt) }}
                     </span>
                     <span class="db-history-when">{{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}</span>
-                    <RollbackPanel v-if="item.rollback" :rollback="item.rollback" class="db-history-rollback" />
+                    <RollbackPanel
+                        v-if="item.rollback && backOpen === item.id"
+                        :rollback="item.rollback"
+                        :toggle="false"
+                        class="db-history-rollback"
+                    />
                 </li>
             </ol>
             <p v-if="historyRows.some((item) => item.missed)" class="db-history-note">{{ $t("deployBoardMissedNote") }}</p>
@@ -65,30 +80,11 @@ import RollbackPanel from "./RollbackPanel.vue";
 /** States of a deploy still moving: it has a card under "Em andamento". */
 const RUNNING_STATES = ["pipeline", "built", "updating", "noProgress"];
 
-/** States and outcomes that are a failure: a card that stays until dismissed. */
-const FAILED = ["failed", "stuck"];
-
 /** An ended deploy on screen → the outcome of its line in the history. */
 const ENDED_OUTCOMES = { done: "done", cancelled: "cancelled", superseded: "replaced" };
 
 /** A deploy that went live is highlighted at the top of the history this long. */
 const FRESH_MS = 15 * 60 * 1000;
-
-/** Where this browser keeps the failures someone dismissed. */
-const DISMISSED_KEY = "deployBoardDismissed";
-const DISMISSED_MAX = 200;
-
-/**
- * @returns {string[]} Ids of the dismissed failures (empty when the browser keeps nothing).
- */
-function dismissedSaved() {
-    try {
-        const ids = JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]");
-        return Array.isArray(ids) ? ids : [];
-    } catch (e) {
-        return [];
-    }
-}
 
 /**
  * Outcome → a mark that reads at a glance; the word is its title and its accessible name. ✓ and ✕
@@ -137,10 +133,17 @@ export default {
             type: Function,
             required: true,
         },
+        /** Failures nobody dismissed (the page keeps the list: the header counts the same ones) */
+        failures: {
+            type: Array,
+            default: () => [],
+        },
     },
 
+    emits: ["dismiss"],
+
     data() {
-        return { OUTCOME_KEYS, OUTCOME_MARKS, dismissed: dismissedSaved(), clipped: false };
+        return { OUTCOME_KEYS, OUTCOME_MARKS, clipped: false, backOpen: null };
     },
 
     computed: {
@@ -152,38 +155,6 @@ export default {
         /** @returns {object[]} Deploys still moving */
         running() {
             return this.board ? this.board.deploys.filter((d) => RUNNING_STATES.includes(d.state)) : [];
-        },
-
-        /**
-         * Failed and stuck deploys nobody dismissed: the ones on screen with their whole card, and the
-         * ones the server already moved to the history with what the history keeps.
-         * @returns {object[]} Deploys, as DeployCard takes them
-         */
-        failures() {
-            if (!this.board) {
-                return [];
-            }
-            const live = this.board.deploys.filter((d) => FAILED.includes(d.state));
-            const seen = new Set(live.map((d) => d.id));
-            const past = this.board.history
-                .filter((h) => FAILED.includes(h.outcome) && !seen.has(h.id))
-                .map((h) => ({
-                    id: h.id,
-                    project: h.project,
-                    version: h.version,
-                    state: h.outcome,
-                    label: h.outcome,
-                    missed: h.missed,
-                    startedAt: h.startedAt,
-                    endedAt: h.endedAt,
-                    confirmed: true,
-                    releases: (h.releases || []).map((r) => ({ ...r, updated: 0, desired: 0, cronJobsUpdated: 0 })),
-                    links: h.links,
-                    rollback: null,
-                    pipeline: null,
-                    steps: null,
-                }));
-            return [...live, ...past].filter((d) => !this.dismissed.includes(d.id));
         },
 
         /**
@@ -238,20 +209,6 @@ export default {
         },
 
         /**
-         * Take a failure off the screen, in this browser.
-         * @param {string} id Deploy id.
-         * @returns {void}
-         */
-        dismiss(id) {
-            this.dismissed = [...this.dismissed, id].slice(-DISMISSED_MAX);
-            try {
-                localStorage.setItem(DISMISSED_KEY, JSON.stringify(this.dismissed));
-            } catch (e) {
-                // Not kept: it comes back after a reload.
-            }
-        },
-
-        /**
          * @param {string} outcome Outcome of a history entry.
          * @returns {string} Kebab-case class suffix.
          */
@@ -266,7 +223,7 @@ export default {
 .db-deploys {
     display: flex;
     flex-direction: column;
-    gap: 0.8em;
+    gap: 12px;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
@@ -274,26 +231,23 @@ export default {
 
 .db-section-title {
     margin: 0;
-    font-size: 0.8em;
-    font-weight: 800;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--db-ink-2);
 }
 
 .db-section-count {
     margin-left: 8px;
+    font-size: 13.5px;
     font-weight: 400;
-    letter-spacing: 0;
-    text-transform: none;
     color: var(--db-ink-3);
 }
 
 .db-empty {
     margin: 0;
-    padding: 0.9em 1em;
+    padding: 12px 16px;
     border: 1px dashed var(--db-line-2);
-    border-radius: 10px;
+    border-radius: 14px;
     color: var(--db-ink-2);
     text-wrap: pretty;
 }
@@ -301,7 +255,7 @@ export default {
 .db-cards {
     display: grid;
     flex-shrink: 0;
-    gap: 0.6em;
+    gap: 8px;
 }
 
 /* On a wall screen the history gives way first: cards are never cut, the oldest lines are. */
@@ -323,7 +277,7 @@ export default {
     padding: 0;
     overflow: hidden;
     list-style: none;
-    font-size: 0.85em;
+    font-size: 13.5px;
 
     // Cut softly, without a scrollbar, when it does not fit.
     &.is-clipped {
@@ -360,7 +314,7 @@ export default {
 .db-history-version {
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
@@ -378,13 +332,13 @@ export default {
 
 .db-history-note {
     margin: 0;
-    font-size: 0.78em;
+    font-size: 12.5px;
     color: var(--db-ink-3);
 }
 
 .db-history-outcome {
     justify-self: center;
-    font-weight: 800;
+    font-weight: 700;
     color: var(--db-ok);
 
     .is-stuck &,
@@ -420,9 +374,27 @@ export default {
     grid-column: 1 / -1;
 }
 
+.db-history-back {
+    flex-shrink: 0;
+    padding: 0 8px;
+    border: 1px solid var(--db-line-2);
+    border-radius: 999px;
+    background: var(--db-panel);
+    color: var(--db-ink-2);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:focus-visible {
+        outline: 2px solid var(--db-deploy);
+        outline-offset: 2px;
+    }
+}
+
 .db-muted {
     margin: 0;
-    font-size: 0.9em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 </style>

@@ -7,6 +7,16 @@
                 <font-awesome-icon v-if="tone === 'bad'" icon="exclamation-triangle" class="db-card-label-icon" />
                 {{ $t(labelKey) }}
             </span>
+            <button
+                v-if="dismissible"
+                type="button"
+                class="db-dismiss db-control"
+                :title="$t('deployBoardDismiss')"
+                :aria-label="$t('deployBoardDismiss')"
+                @click="$emit('dismiss', deploy.id)"
+            >
+                ✕
+            </button>
         </header>
 
         <p class="db-card-time">
@@ -73,10 +83,6 @@
         </p>
 
         <RollbackPanel v-if="deploy.rollback" :rollback="deploy.rollback" />
-
-        <button v-if="dismissible" type="button" class="db-dismiss db-control" @click="$emit('dismiss', deploy.id)">
-            {{ $t("deployBoardDismiss") }}
-        </button>
     </article>
 </template>
 
@@ -296,9 +302,9 @@ export default {
 <style lang="scss" scoped>
 .db-card {
     display: grid;
-    gap: 0.45em;
-    padding: 0.8em 1em;
-    border-radius: 10px;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 14px;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
     border-left: 4px solid var(--db-deploy);
@@ -323,26 +329,24 @@ export default {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.2em 0.6em;
+    gap: 4px 8px;
 }
 
 .db-card-project {
-    font-size: 1.15em;
-    font-weight: 800;
+    font-size: 17px;
+    font-weight: 700;
     overflow-wrap: anywhere;
 }
 
 .db-card-version {
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-2);
 }
 
 .db-card-label {
     margin-left: auto;
-    font-size: 0.8em;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-size: 13.5px;
+    font-weight: 600;
     color: var(--db-deploy);
 
     .is-ok & {
@@ -359,16 +363,16 @@ export default {
 }
 
 .db-card-label-icon {
-    margin-right: 0.2em;
+    margin-right: 4px;
 }
 
 .db-card-time {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: 0.2em 0.8em;
+    gap: 4px 12px;
     margin: 0;
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
@@ -381,23 +385,23 @@ export default {
 .db-steps {
     display: grid;
     grid-template-columns: repeat(var(--db-steps), minmax(0, 1fr));
-    gap: 0.3em;
-    margin: 0.1em 0 0.15em;
+    gap: 4px;
+    margin: 4px 0 4px;
     padding: 0;
     list-style: none;
 }
 
 .db-step {
     display: grid;
-    gap: 0.3em;
+    gap: 4px;
     min-width: 0;
-    font-size: 0.72em;
+    font-size: 12.5px;
     color: var(--db-ink-3);
 
     i {
         display: block;
         height: 0.45rem;
-        border-radius: 0.2rem;
+        border-radius: 2px;
         background: var(--db-panel-2);
     }
 
@@ -425,7 +429,7 @@ export default {
     &.is-current,
     &.is-warn,
     &.is-failed {
-        font-weight: 800;
+        font-weight: 700;
     }
 
     &.is-current {
@@ -462,7 +466,7 @@ export default {
 
 .db-card-releases {
     display: grid;
-    gap: 0.35em;
+    gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -472,8 +476,8 @@ export default {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 0.15em 0.6em;
-    font-size: 0.9em;
+    gap: 4px 8px;
+    font-size: 13.5px;
 }
 
 .db-release-name {
@@ -516,24 +520,24 @@ export default {
 
 .db-release-cron {
     grid-column: 1 / -1;
-    font-size: 0.9em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
 .db-card-warning {
     margin: 0;
-    font-size: 0.85em;
+    font-size: 13.5px;
     font-weight: 600;
     color: var(--db-warn);
 }
 
 .db-pipeline {
     display: grid;
-    gap: 0.25em;
-    padding: 0.5em 0.7em;
-    border-radius: 6px;
+    gap: 4px;
+    padding: 8px 12px;
+    border-radius: 8px;
     background: var(--db-panel-2);
-    font-size: 0.88em;
+    font-size: 13.5px;
     min-width: 0;
 }
 
@@ -542,7 +546,7 @@ export default {
     flex-wrap: wrap;
     align-items: baseline;
     justify-content: space-between;
-    gap: 0.2em 0.8em;
+    gap: 4px 12px;
 }
 
 .db-pipeline-state {
@@ -561,7 +565,7 @@ export default {
 
 .db-pipeline-link {
     color: var(--db-ink-2);
-    font-size: 0.92em;
+    font-size: 13.5px;
 
     &:hover {
         color: var(--db-brand);
@@ -581,8 +585,8 @@ export default {
 
 .db-jobs {
     display: grid;
-    gap: 0.15em;
-    margin: 0.2em 0 0;
+    gap: 4px;
+    margin: 4px 0 0;
     padding: 0;
     list-style: none;
 }
@@ -590,7 +594,7 @@ export default {
 .db-job {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.6em;
+    gap: 8px;
     color: var(--db-ink-2);
 
     &.is-failed .db-job-state {
@@ -612,20 +616,23 @@ export default {
 
 .db-card-note {
     margin: 0;
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
 .db-dismiss {
-    justify-self: start;
-    padding: 4px 12px;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
     border: 1px solid var(--db-line-2);
     border-radius: 999px;
     background: var(--db-panel);
     color: var(--db-ink-2);
     font: inherit;
-    font-size: 0.85em;
-    font-weight: 600;
+    font-size: 12.5px;
+    line-height: 1;
     cursor: pointer;
 
     &:focus-visible {

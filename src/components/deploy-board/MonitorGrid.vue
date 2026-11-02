@@ -196,7 +196,7 @@ export default {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 1.05em;
+    font-size: 17px;
     font-weight: 600;
 }
 
@@ -213,7 +213,7 @@ export default {
     flex-shrink: 0;
     padding: 2px 8px;
     border-radius: 999px;
-    font-size: 0.78em;
+    font-size: 12.5px;
     font-weight: 600;
     white-space: nowrap;
     color: var(--db-ink-2);

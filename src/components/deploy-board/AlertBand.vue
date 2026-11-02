@@ -124,9 +124,10 @@ export default {
     color: var(--db-bad);
 }
 
+// A soft pulse by opacity: no shadow, in either theme.
 @keyframes db-alert-pulse {
     50% {
-        box-shadow: 0 0 0 8px color-mix(in srgb, var(--db-bad) 18%, transparent);
+        opacity: 0.55;
     }
 }
 

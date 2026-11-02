@@ -1,6 +1,12 @@
 <template>
     <div class="db-rollback">
-        <button type="button" class="db-rollback-toggle db-control" :aria-expanded="String(rollbackOpen)" @click="rollbackOpen = !rollbackOpen">
+        <button
+            v-if="toggle"
+            type="button"
+            class="db-rollback-toggle db-control"
+            :aria-expanded="String(rollbackOpen)"
+            @click="rollbackOpen = !rollbackOpen"
+        >
             {{ $t("deployBoardRollbackButton") }}
         </button>
 
@@ -50,12 +56,17 @@ export default {
             type: Object,
             required: true,
         },
+        /** False when whoever shows the panel has its own button: then it opens at once */
+        toggle: {
+            type: Boolean,
+            default: true,
+        },
     },
 
     data() {
         return {
             GAP_KEYS,
-            rollbackOpen: false,
+            rollbackOpen: !this.toggle,
             copied: false,
         };
     },
@@ -129,20 +140,20 @@ export default {
 <style lang="scss" scoped>
 .db-rollback {
     display: grid;
-    gap: 0.5em;
+    gap: 8px;
     justify-items: start;
     min-width: 0;
 }
 
 .db-rollback-toggle,
 .db-rollback-copy {
-    padding: 0.25em 0.7em;
+    padding: 4px 12px;
     border: 1px solid var(--db-line-2);
-    border-radius: 6px;
+    border-radius: 999px;
     background: var(--db-panel-2);
     color: var(--db-ink);
     font: inherit;
-    font-size: 0.85em;
+    font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
 
@@ -158,7 +169,7 @@ export default {
 
 .db-rollback-body {
     display: grid;
-    gap: 0.5em;
+    gap: 8px;
     justify-items: start;
     width: 100%;
     min-width: 0;
@@ -168,23 +179,23 @@ export default {
     width: 100%;
     max-height: 18em;
     margin: 0;
-    padding: 0.6em 0.8em;
+    padding: 8px 12px;
     overflow: auto;
     border: 1px solid var(--db-line);
-    border-radius: 6px;
+    border-radius: 8px;
     background: var(--db-bg);
     color: var(--db-ink);
-    font-size: 0.8em;
+    font-size: 12.5px;
     line-height: 1.5;
     white-space: pre;
 }
 
 .db-rollback-notes {
     display: grid;
-    gap: 0.2em;
+    gap: 4px;
     margin: 0;
-    padding-left: 1.1em;
-    font-size: 0.85em;
+    padding-left: 16px;
+    font-size: 13.5px;
     color: var(--db-ink-2);
 }
 </style>
