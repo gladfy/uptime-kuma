@@ -66,7 +66,8 @@ Phone não têm workload no EKS; Pro, Convite e Portaria Web são apps do Amplif
 
 **Non-Goals:**
 - Passos da pipeline no Bitbucket (exigiria token e consulta à API; ver Pendências da proposta).
-- Ações a partir da tela (disparar, cancelar, desfazer deploy).
+- Ações a partir da tela (disparar, cancelar, desfazer deploy). Para voltar a versão, o painel
+  mostra o comando (decisão 17).
 - Notificação de deploy pelos providers do Kuma.
 - Alterar a status page, a TV ou as pipelines dos outros repositórios.
 
@@ -242,7 +243,7 @@ Não é monitor type nem notification provider. As pontas são:
 | Rota | `src/router.js` | 1 rota, import lazy | 1 |
 | Textos | `src/lang/en.json`, `src/lang/pt-BR.json` | chaves novas no meio | 1, e acréscimos nas seguintes |
 | Roteador de webhook | `server/server.js`, antes da linha 213 | 1 linha aditiva (`require` + `app.use`) | 4 |
-| Dependência | `package.json` | `@aws-sdk/client-amplify` | 5 |
+| Dependência | `package.json` | `@aws-sdk/client-amplify` | 7 |
 
 Esquecer a primeira ponta deixa as rotas de webhook respondendo 404; esquecer a terceira deixa o
 painel com todas as fontes "sem leitura".
@@ -278,7 +279,7 @@ cada aplicação nova. A classificação é função pura e tem teste.
 
 *Por quê:* a pergunta "o que está sem monitor?" é feita de vez em quando, por quem decide o que
 monitorar, e a resposta depende de credenciais que o pod não tem e não deve ter (listar o cluster
-inteiro, ler o Amplify antes da fase 5). *Descartado:* mostrar a cobertura no painel — exigiria
+inteiro, ler o Amplify antes da fase 7). *Descartado:* mostrar a cobertura no painel — exigiria
 ampliar o RBAC do Kuma para listar todos os namespaces, só para responder uma pergunta eventual; e
 uma conferência manual sem script, que não se repete igual da segunda vez.
 
@@ -308,6 +309,51 @@ travou; e gravar também os deploys em andamento — no reinício a linha de bas
 reencontra, e um registro aberto cuja virada terminou com o Kuma fora do ar ficaria aberto para
 sempre.
 
+### 14. Indicadores contados por deploy, a partir do histórico
+
+**Decisão:** o store calcula `stats` a cada snapshot sobre o histórico das últimas 24 horas e os
+cartões abertos: total, por desfecho, e a taxa de sucesso = concluídos ÷ (concluídos + travados +
+com falha). Conta por deploy, não por release, porque é o que a pessoa chama de "um deploy"; o
+substituído fica fora da taxa (ninguém o terminou, outro tomou o lugar). Sem encerrado, a taxa é
+`null` e a tela diz "—", em vez de 0% ou 100% inventados.
+
+### 15. Tema pela preferência do próprio Kuma
+
+**Decisão:** o botão grava em `$root.userTheme`, a mesma preferência de Configurações → Aparência,
+que o Kuma já guarda no navegador. *Descartado:* um tema só do painel — duas preferências para a
+mesma coisa, e a página voltaria a divergir do resto do Kuma.
+
+### 16. Sons sintetizados, só para o que se viu acontecer
+
+**Decisão:** Web Audio API, com osciladores e envelopes, sem arquivo de áudio. Os eventos saem de uma
+função pura que compara o snapshot anterior com o atual; carga da página, reconexão e histórico
+carregado do banco não tocam nada. Um som por vez, numa fila, e o mesmo evento do mesmo deploy não
+repete. Começa desligado, porque o navegador só toca depois de um clique, e a escolha fica no
+navegador. *Descartado:* arquivos de áudio — licença, peso no bundle e mais uma coisa para baixar
+na TV; e tocar no servidor — o som é de quem está olhando a tela.
+
+### 17. Voltar à versão anterior: o painel mostra o comando, não executa
+
+**Decisão do Erik (02/11/2026):** o cartão mostra o comando para copiar; quem tem acesso ao cluster
+roda com a própria credencial. O comando volta **só a imagem**: uma linha
+`kubectl -n <ns> set image deployment/<nome> <container>=<repositório>:<tag>` por Deployment das
+releases do deploy, só com os containers cuja tag mudou, mais o `rollout status` de cada um. A tag
+de destino é a do deploy anterior concluído da mesma release, tirada do histórico da fase 3.1; sem
+ele, o cartão diz que não sabe e não inventa comando. A extração do Deployment passa a guardar o
+nome do container e o repositório da imagem — nada mais do template.
+
+O cartão avisa o que o comando não cobre: os CronJobs da release (o `gateway-cron` são 95) ficam na
+imagem nova, e o próximo deploy pela pipeline sobrescreve a volta (o Helm continua achando que a
+release atual é a nova).
+
+*Por que `set image` e não `rollout undo`:* o `undo` volta o template inteiro (env e recursos
+também) e volta para a **revisão** anterior, que pode ser um `rollout restart` com a mesma imagem;
+o pedido é voltar a imagem do deploy anterior. *Descartado:* o Kuma executar a volta no cluster
+(chegou a ser planejado: exigia `patch` em Deployments, 2FA, limite de tempo e ADR de exceção à
+regra "deploy é sempre por pipeline", num Kuma aberto na internet — o comando para copiar entrega o
+mesmo resultado sem nenhuma permissão nova); `helm rollback` (o Helm guarda as releases em Secrets);
+reexecutar a pipeline do commit anterior (não serve aos projetos sem pipeline).
+
 ## Risks / Trade-offs
 
 - [O watch do Kubernetes cai em silêncio (conexão viva sem eventos)] → o servidor pede o watch com
@@ -329,12 +375,16 @@ sempre.
   o reinício do deploy da fase 3 apagou a virada do `winker-integration` de 15 minutos antes.
 - [Reinício do Kuma durante o próprio deploy] → o painel fica fora do ar por esse minuto; ao voltar,
   mostra a linha de base do cluster.
+- [Versões misturadas depois da volta] → o comando não toca CronJob; o cartão avisa, e quem roda
+  decide.
+- [Comando com a versão errada] → a versão anterior vem do histórico do próprio painel, e sem ele não
+  há comando; o teste de entrega compara com o que o Erik rodaria à mão.
 - [Imagem maior com o AWS SDK] → `@aws-sdk/client-amplify` e o núcleo do smithy; medir o tamanho da
   imagem antes e depois na task de build.
 
 ## Migration Plan
 
-A entrega é em seis fases. Cada uma vai ao master do fork, passa pela pipeline dele (que faz
+A entrega é em oito fases, mais duas intermediárias (3.1 e 3.2). Cada uma vai ao master do fork, passa pela pipeline dele (que faz
 backup do banco antes do deploy) e é conferida em produção antes da seguinte. Só a fase 3.1 tem
 migration, e ela só cria uma tabela nova do fork; o rollback continua sendo de imagem ou de
 configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a mais no banco: avisa
@@ -378,6 +428,12 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
   próximo deploy do condominio aparece como uma entrada só, com as duas releases.
 - Rollback: imagem anterior; a tabela fica sem uso.
 
+**Fase 3.2 — Indicadores e tema.**
+- Código: decisões 14 e 15. Infraestrutura: nenhuma.
+- Conferência: os números batem com a lista "Hoje"; o botão alterna o tema e a escolha sobrevive a
+  recarregar a página.
+- Rollback: imagem anterior.
+
 **Fase 4 — Pipelines.**
 - Código: decisão 5 e a correlação completa da decisão 7; a linha do roteador no `server.js`.
 - Infraestrutura: Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`,
@@ -390,7 +446,17 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 - Rollback: tirar os segredos faz as rotas responderem 404 e os cartões voltarem a mostrar só a
   virada.
 
-**Fase 5 — Amplify.**
+**Fase 5 — Sons.**
+- Código: decisão 16. Infraestrutura: nenhuma.
+- Conferência: cada som ouvido e aprovado pelo Erik; um deploy real com o som ligado.
+- Rollback: imagem anterior.
+
+**Fase 6 — Como voltar à versão anterior.**
+- Código: decisão 17. Infraestrutura: nenhuma; o Kuma continua só leitura.
+- Conferência: o comando gerado para um deploy real do condominio bate com o que o Erik rodaria.
+- Rollback: imagem anterior.
+
+**Fase 7 — Amplify.**
 - Código: decisão 6 e a dependência.
 - Infraestrutura: role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com as quatro
   ações de leitura, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`; anotação
@@ -398,7 +464,7 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 - Conferência: um build da branch de produção do `pro` aparece com os passos em até 60 s.
 - Rollback: tirar `amplify.region` do ConfigMap desliga a fonte.
 
-**Fase 6 — Conferência de cobertura.**
+**Fase 8 — Conferência de cobertura.**
 - Código: decisão 12 (`extra/deploy-board-coverage.js`, a lista de exclusões e o teste da
   classificação). Nada muda no servidor do Kuma.
 - Execução: rodar contra produção, registrar a tabela no change, fechar cada lacuna (monitor novo,
@@ -410,11 +476,12 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 
 - **Cabeçalho do Bitbucket:** conferir numa entrega real se o Bitbucket Cloud envia
   `X-Hub-Signature` com `sha256=`. Se vier outro formato, só a função de verificação muda.
-- **Origem dos projetos da fase 3:** Status (Bitbucket `winker/status` ou CodeCommit `status`),
-  Site, Jambonz VAD, wk-face-api, land, chat-api, ai-agents, winker-mcp e audit-consumer. Sem
-  confirmação, entram sem origem; acrescentar depois é só configuração.
-- **Monitor "Flow":** se ele confere algo em `api.winker.com.br`, é do gateway e ganha a tag
-  `gateway/gateway-prod`.
+- **Origem dos projetos da fase 3:** resolvida em 02/11/2026 para land (Bitbucket `winker/land`),
+  ai-agents (`winker/ia-agents`) e winker-mcp (`winker/mcp-winker`), que entram com origem na fase
+  4; Status e Site são CodeCommit e wk-face-api não tem deploy por pipeline, então ficam sem origem.
+  Seguem pendentes chat-api e audit-consumer; sem confirmação, ficam sem origem.
+- **Monitor "Flow":** resolvido — `flow.winker.com.br` é domínio do app `pro` do Amplify; tag
+  `amplify/pro` na fase 7.
 - **Ligações que dependem de confirmação:** guest-link → "Convite" e gatekeeper-dashboard →
   "Portaria Web" parecem corresponder, mas não foram confirmadas. Os outros apps do Amplify ficam
   sem monitor até alguém dizer qual é.

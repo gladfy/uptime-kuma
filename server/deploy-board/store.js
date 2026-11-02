@@ -53,6 +53,9 @@ const GROUP_WINDOW_MS = 20 * 60 * 1000;
 /** How often the store checks what is due to leave the screen. */
 const TICK_MS = 30 * 1000;
 
+/** Counters of the last HISTORY_MS, as the header shows them. Nothing else leaves in `stats`. */
+const STATS_FIELDS = ["total", "done", "stuck", "failed", "replaced", "inProgress", "successRate"];
+
 /** Order of the cards: what needs attention first. */
 const STATE_ORDER = ["stuck", "noProgress", "updating", "done"];
 
@@ -264,7 +267,36 @@ class DeployBoardStore {
             sources,
             deploys,
             history: this.history.map((h) => pickPublic(h, HISTORY_PUBLIC_FIELDS)),
+            stats: this.stats(),
         };
+    }
+
+    /**
+     * Deploys of the last HISTORY_MS by outcome, and the success rate. Counted per deploy (a commit
+     * with integration and production is one), from the history and the cards on screen. A replaced
+     * deploy is out of the rate: nobody finished it, a newer one took its place.
+     * @returns {object} Counters, with `successRate` from 0 to 100, or null with nothing ended.
+     */
+    stats() {
+        const counts = { done: 0, stuck: 0, failed: 0, replaced: 0, inProgress: 0 };
+        for (const h of this.history) {
+            if (counts[h.outcome] !== undefined) {
+                counts[h.outcome]++;
+            }
+        }
+        for (const d of this.deploys) {
+            if (d.state === "done" || d.state === "stuck") {
+                counts[d.state]++;
+            } else if (d.state === "superseded") {
+                counts.replaced++;
+            } else {
+                counts.inProgress++;
+            }
+        }
+        const ended = counts.done + counts.stuck + counts.failed;
+        const total = ended + counts.replaced + counts.inProgress;
+        const successRate = ended === 0 ? null : Math.round((100 * counts.done) / ended);
+        return pickPublic({ total, ...counts, successRate }, STATS_FIELDS);
     }
 
     /**
@@ -596,6 +628,7 @@ module.exports = {
     DEPLOY_PUBLIC_FIELDS,
     HISTORY_PUBLIC_FIELDS,
     ROLLOUT_RECORD_FIELDS,
+    STATS_FIELDS,
     DONE_VISIBLE_MS,
     HISTORY_MS,
     HISTORY_MAX,

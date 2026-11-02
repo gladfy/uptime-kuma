@@ -5,7 +5,8 @@
 O servidor SHALL observar Deployments e CronJobs somente dos namespaces listados na configuração,
 por list + watch na API do Kubernetes, autenticado pela conta de serviço do pod. A permissão SHALL
 ser só `get`, `list` e `watch` sobre `deployments` (apps) e `cronjobs` (batch), concedida apenas
-nesses namespaces. O servidor SHALL NOT ler Secrets, Pods ou logs.
+nesses namespaces. O servidor SHALL NOT ler Secrets, Pods ou logs, e SHALL NOT alterar nada no
+cluster.
 
 #### Scenario: Namespace fora da lista
 - **WHEN** um Deployment muda de revisão num namespace que não está na configuração
@@ -94,8 +95,8 @@ configurada", e o servidor do Kuma SHALL subir normalmente.
 
 ### Requirement: Guardar só o necessário
 
-Do objeto do Deployment, o servidor SHALL guardar só namespace, nome, release, revisão, tags de
-imagem dos containers, réplicas e condições. Variáveis de ambiente, volumes e qualquer outro campo
+Do objeto do Deployment, o servidor SHALL guardar só namespace, nome, release, revisão, nome e
+imagem (repositório e tag) de cada container, réplicas e condições. Variáveis de ambiente, volumes e qualquer outro campo
 do template SHALL NOT ser guardados nem enviados ao navegador.
 
 #### Scenario: Deployment com variáveis de ambiente
