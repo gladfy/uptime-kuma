@@ -52,7 +52,7 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
 
 ## Fases de entrega
 
-A implementação sai em oito fases, mais duas intermediárias (3.1 e 3.2). Cada uma vai para produção sozinha, com só a infraestrutura
+A implementação sai em oito fases, mais três intermediárias (3.1, 3.2 e 3.3). Cada uma vai para produção sozinha, com só a infraestrutura
 dela, e a seguinte não muda o que a anterior entregou.
 
 | Fase | O que entra em produção | Infraestrutura e configuração |
@@ -62,6 +62,7 @@ dela, e a seguinte não muda o que a anterior entregou.
 | **3. Cobertura do EKS** | A virada das outras 18 releases do EKS (microsserviços, observer, site, jambonz, face-api, land, chat-api, ai-agents, mcp, audit-consumer, temporal, prefect); projeto sem origem de pipeline | Leitura em mais 12 namespaces e os projetos novos no ConfigMap; marcar os monitores |
 | **3.1 Histórico no banco** | O histórico sobrevive ao reinício do Kuma (7 dias no banco, 24 h na tela); o integration e o prod do mesmo commit viram um registro só | Nenhuma; uma tabela nova do fork, por migration |
 | **3.2 Indicadores e tema** | Deploys das últimas 24 h e taxa de sucesso no cabeçalho; botão de tema claro/escuro | Nenhuma |
+| **3.3 Deploy com o painel fora do ar** | O deploy do próprio Kuma, e qualquer outro que aconteça com ele fora do ar, aparece depois do boot, concluído e sem duração | Nenhuma; uma tabela nova do fork |
 | **4. Pipelines** | Merge, pipeline e virada num cartão só; jobs do GitHub | Secret com os segredos; cadastro dos webhooks (os 5 da fase 2 e os dos projetos da fase 3 com origem no Bitbucket ou no GitHub) |
 | **5. Sons** | Buzina, encaixe de contêiner, radar, sino e alarme nos eventos do deploy, com botão de ativar | Nenhuma |
 | **6. Como voltar à versão anterior** | Botão no cartão com o comando que volta a imagem anterior, para copiar | Nenhuma |
@@ -143,7 +144,8 @@ como faltando.
 
 - **Passos da pipeline do Bitbucket por API.** Revisar quando a falta de saber em que passo a
   pipeline falhou atrapalhar um diagnóstico.
-- **O próprio deploy do Kuma não aparece ao vivo:** o pod reinicia (réplica única com volume), e o
-  painel volta já com a virada concluída. Revisar se o Kuma passar a ter mais de uma réplica.
+- **O próprio deploy do Kuma não aparece ao vivo:** o pod reinicia (réplica única com volume). Desde a
+  fase 3.3 ele aparece depois do boot, concluído e sem duração. Revisar se o Kuma passar a ter mais de
+  uma réplica.
 - **Webhooks no domínio dos clientes.** As rotas ficam em `monitor-clientes.winker.com.br`,
   protegidas por assinatura e limite de taxa. Revisar quando houver um host interno para o Kuma.

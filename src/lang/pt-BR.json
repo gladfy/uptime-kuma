@@ -516,6 +516,7 @@
     "deployBoardFoundAtBoot": "já estava virando quando o painel subiu",
     "deployBoardUnconfirmed": "Estado da virada não confirmado: o cluster não está respondendo por este namespace.",
     "deployBoardStartedAgo": "começou há {0}",
+    "deployBoardMissed": "virou com o painel fora do ar",
     "deployBoardTookTime": "levou {0}",
     "deployBoardAgo": "há {0}",
     "deployBoardVerdictStuck": "Viradas travadas: {0}",

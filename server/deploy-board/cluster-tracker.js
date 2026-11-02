@@ -26,11 +26,16 @@ class ClusterTracker {
      * @param {string[]} options.releases Tracked releases, as "<namespace>/<release>".
      * @param {Function} options.onRollout Called with a copy of a rollout whenever it changes.
      * @param {Function} options.now Clock, in ms.
+     * @param {Map<string, string>} options.known Last signature saved of each object (see signatureOf),
+     * to tell at boot what changed while the board was down.
+     * @param {Function} options.onSeen Called with (key, signature) when an object shows a new one.
      */
-    constructor({ releases, onRollout = () => {}, now = () => Date.now() }) {
+    constructor({ releases, onRollout = () => {}, now = () => Date.now(), known = new Map(), onSeen = () => {} }) {
         this.tracked = new Set(releases);
         this.onRollout = onRollout;
         this.now = now;
+        this.known = new Map(known);
+        this.onSeen = onSeen;
         this.objects = { deployments: new Map(), cronjobs: new Map() };
         this.rollouts = new Map();
         this.sequence = 0;
@@ -123,11 +128,22 @@ class ClusterTracker {
         map.set(key, kept);
         const release = releaseKey(kept);
 
+        const signature = signatureOf(kind, kept);
+        const saved = this.known.get(`${kind}/${key}`);
+        this.see(kind, key, signature);
+
         if (baseline) {
+            let touched = false;
             if (kind === "deployments" && oldVersionStillUp(kept)) {
                 this.touch(release, kind, kept.name, true);
+                touched = true;
+            } else if (saved !== undefined && changedSince(kind, saved, signature)) {
+                // Rolled while the board was down (its own deploy is always one: Recreate).
+                this.touch(release, kind, kept.name, true, true);
+                touched = true;
             }
-            this.recompute(release, false);
+            // Touched means changed: a rollout that already ended must still take the object in.
+            this.recompute(release, touched);
             return;
         }
 
@@ -139,14 +155,35 @@ class ClusterTracker {
     }
 
     /**
+     * Report a signature the database does not have yet.
+     * @param {string} kind Kind.
+     * @param {string} key "<namespace>/<name>".
+     * @param {string} signature Signature of the object now.
+     * @returns {void}
+     */
+    see(kind, key, signature) {
+        const objectKey = `${kind}/${key}`;
+        if (this.known.get(objectKey) === signature) {
+            return;
+        }
+        this.known.set(objectKey, signature);
+        try {
+            this.onSeen(objectKey, signature);
+        } catch (e) {
+            // Saving is best effort: the board goes on without it.
+        }
+    }
+
+    /**
      * Record that an object of a release changed: join the open rollout of the release, or start one.
      * @param {string} release "<namespace>/<release>".
      * @param {string} kind Kind of the object.
      * @param {string} name Name of the object.
      * @param {boolean} atBoot Whether the rollout was found already running.
+     * @param {boolean} missed Whether it rolled while the board was down (its start was not seen).
      * @returns {void}
      */
-    touch(release, kind, name, atBoot) {
+    touch(release, kind, name, atBoot, missed = false) {
         const now = this.now();
         let rollout = this.rollouts.get(release);
         const joinable =
@@ -167,6 +204,7 @@ class ClusterTracker {
                 namespace,
                 release: releaseName,
                 atBoot,
+                missed,
                 startedAt: now,
                 endedAt: null,
                 state: "updating",
@@ -177,6 +215,9 @@ class ClusterTracker {
                 changed: { deployments: new Set(), cronjobs: new Set() },
             };
             this.rollouts.set(release, rollout);
+        } else {
+            // Seen live by any of its objects: then its start was seen too.
+            rollout.missed = rollout.missed && missed;
         }
         rollout.changed[kind].add(name);
     }
@@ -260,6 +301,7 @@ function publicRollout(rollout, objects) {
         namespace: rollout.namespace,
         release: rollout.release,
         atBoot: rollout.atBoot,
+        missed: rollout.missed,
         startedAt: rollout.startedAt,
         endedAt: rollout.endedAt,
         state: rollout.state,
@@ -291,6 +333,31 @@ function revisionChanged(previous, kept) {
  */
 function imagesChanged(previous, kept) {
     return previous.images.join(",") !== kept.images.join(",");
+}
+
+/**
+ * What tells one version of an object from the next: the revision of a Deployment, the image tags
+ * of a CronJob (the same rules as the live detection above).
+ * @param {string} kind Kind.
+ * @param {object} kept Kept object.
+ * @returns {string} Signature.
+ */
+function signatureOf(kind, kept) {
+    return kind === "deployments" ? kept.revision : kept.images.join(",");
+}
+
+/**
+ * @param {string} kind Kind.
+ * @param {string} saved Signature saved before the board went down.
+ * @param {string} now Signature at boot.
+ * @returns {boolean} Whether it is another version. A Deployment saved without revision was being
+ * created, and getting "1" is not a deploy.
+ */
+function changedSince(kind, saved, now) {
+    if (kind === "deployments" && saved === "") {
+        return false;
+    }
+    return saved !== now;
 }
 
 /**

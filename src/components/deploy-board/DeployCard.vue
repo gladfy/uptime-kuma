@@ -78,6 +78,10 @@ export default {
 
         /** @returns {string} How long it has been running, or how long it took */
         timeText() {
+            // Its start was not seen: any duration would be made up.
+            if (this.deploy.missed) {
+                return this.$t("deployBoardMissed");
+            }
             if (this.deploy.endedAt) {
                 return this.$t("deployBoardTookTime", [this.formatDuration(this.deploy.endedAt - this.deploy.startedAt)]);
             }

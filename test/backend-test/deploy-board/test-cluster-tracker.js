@@ -205,6 +205,175 @@ describe("Viradas por release", () => {
     });
 });
 
+describe("Virada com o painel fora do ar", () => {
+    let clock;
+    let published;
+    let seen;
+
+    beforeEach(() => {
+        clock = 1_000_000;
+        published = [];
+        seen = [];
+    });
+
+    /**
+     * @param {Map<string, string>} known Signatures saved before the boot.
+     * @param {string[]} releases Tracked releases.
+     * @returns {ClusterTracker} Tracker of a board that has just booted.
+     */
+    function booted(known, releases = RELEASES) {
+        return new ClusterTracker({
+            releases,
+            now: () => clock,
+            onRollout: (r) => published.push(r),
+            known,
+            onSeen: (key, signature) => seen.push([key, signature]),
+        });
+    }
+
+    test("o próprio Kuma: revisão 40 gravada, 41 no boot — vira deploy concluído, marcado como perdido", () => {
+        const kuma = { namespace: "monitor-infra", name: "uptime-kuma", release: "uptime-kuma" };
+        const tracker = booted(new Map([["deployments/monitor-infra/uptime-kuma", "40"]]), [
+            "monitor-infra/uptime-kuma",
+        ]);
+        tracker.replace("monitor-infra", "deployments", [deployment({ ...kuma, revision: 41, replicas: 1 })], true);
+        const r = published.at(-1);
+        assert.strictEqual(r.release, "uptime-kuma");
+        assert.strictEqual(r.state, "done");
+        assert.strictEqual(r.missed, true);
+        assert.strictEqual(r.atBoot, true);
+        assert.deepStrictEqual(seen, [["deployments/monitor-infra/uptime-kuma", "41"]]);
+    });
+
+    test("mesma revisão no boot não vira nada, e não regrava", () => {
+        const tracker = booted(new Map([["deployments/condominio/winker-prod", "7"]]));
+        tracker.replace("condominio", "deployments", [deployment({})], true);
+        assert.deepStrictEqual(published, []);
+        assert.deepStrictEqual(seen, []);
+    });
+
+    test("primeiro boot, sem nada gravado: nenhum deploy, e a revisão atual passa a ser gravada", () => {
+        const tracker = booted(new Map());
+        tracker.replace("condominio", "deployments", [deployment({})], true);
+        assert.deepStrictEqual(published, []);
+        assert.deepStrictEqual(seen, [["deployments/condominio/winker-prod", "7"]]);
+    });
+
+    test("Deployment gravado sem revisão (estava nascendo) não conta como perdido", () => {
+        const tracker = booted(new Map([["deployments/condominio/winker-prod", ""]]));
+        tracker.replace("condominio", "deployments", [deployment({ revision: 1 })], true);
+        assert.deepStrictEqual(published, []);
+    });
+
+    test("CronJob com tag nova enquanto o painel estava fora vira deploy perdido da release", () => {
+        const tracker = booted(
+            new Map([
+                ["cronjobs/gateway/c0", "1111111aaaa"],
+                ["cronjobs/gateway/c1", "1111111aaaa"],
+            ])
+        );
+        tracker.replace(
+            "gateway",
+            "cronjobs",
+            [cronJob({ name: "c0", tag: "2222222bbbb" }), cronJob({ name: "c1", tag: "2222222bbbb" })],
+            true
+        );
+        const r = published.at(-1);
+        assert.strictEqual(new Set(published.map((p) => p.id)).size, 1, "os dois CronJobs são uma virada só");
+        assert.strictEqual(r.missed, true);
+        assert.strictEqual(r.cronJobsUpdated, 2);
+        assert.strictEqual(r.state, "done");
+    });
+
+    test("ao vivo, a assinatura nova é avisada uma vez só", () => {
+        const tracker = booted(new Map([["deployments/condominio/winker-prod", "7"]]));
+        tracker.replace("condominio", "deployments", [deployment({})], true);
+        tracker.apply("deployments", "MODIFIED", deployment({ revision: 8 }));
+        tracker.apply("deployments", "MODIFIED", deployment({ revision: 8, replicas: 3 }));
+        assert.deepStrictEqual(seen, [["deployments/condominio/winker-prod", "8"]]);
+        assert.strictEqual(published.at(-1).missed, false, "virada vista ao vivo não é perdida");
+    });
+
+    test("um objeto da release visto ao vivo tira a marca de perdida da virada", () => {
+        const known = new Map([
+            ["deployments/gateway/w1", "7"],
+            ["deployments/gateway/w2", "7"],
+        ]);
+        const tracker = booted(known);
+        const w = (name, o) => deployment({ namespace: "gateway", name, release: "gateway-worker", ...o });
+        // w1 virou com o painel fora; w2 está no meio da virada quando ele sobe.
+        tracker.replace(
+            "gateway",
+            "deployments",
+            [w("w1", { revision: 8 }), w("w2", { revision: 8, replicas: 4, updated: 1, total: 5 })],
+            true
+        );
+        assert.strictEqual(published.at(-1).missed, false);
+    });
+
+    test("no painel: o deploy perdido entra concluído e sem duração conhecida, e junta pelo SHA ao do histórico", () => {
+        const store = new DeployBoardStore({ now: () => clock });
+        try {
+            store.setProjects([
+                {
+                    name: "condominio",
+                    source: null,
+                    releases: [
+                        { namespace: "condominio", release: "winker-prod" },
+                        { namespace: "condominio", release: "winker-integration" },
+                    ],
+                },
+            ]);
+            store.setSource("cluster", "active");
+            const sha = "9ee108fd57e459e093b5503b1de543d66df61c2e";
+            store.restore([
+                {
+                    id: "condominio:integration",
+                    project: "condominio",
+                    version: sha.slice(0, 7),
+                    sha,
+                    outcome: "done",
+                    startedAt: clock - 60_000,
+                    endedAt: clock - 30_000,
+                    releases: [{ namespace: "condominio", release: "winker-integration" }],
+                    rollouts: [
+                        {
+                            id: "condominio/winker-integration:1",
+                            namespace: "condominio",
+                            release: "winker-integration",
+                            state: "done",
+                            updated: 2,
+                            desired: 2,
+                            cronJobsUpdated: 0,
+                            atBoot: false,
+                            missed: false,
+                            startedAt: clock - 60_000,
+                            endedAt: clock - 30_000,
+                            images: [sha],
+                        },
+                    ],
+                },
+            ]);
+            const tracker = new ClusterTracker({
+                releases: ["condominio/winker-prod", "condominio/winker-integration"],
+                now: () => clock,
+                onRollout: (r) => store.upsertRollout(r),
+                known: new Map([["deployments/condominio/winker-prod", "6"]]),
+            });
+            tracker.replace("condominio", "deployments", [deployment({ revision: 7, tag: sha })], true);
+            const [d] = store.snapshot().deploys;
+            assert.strictEqual(d.id, "condominio:integration", "juntou ao deploy do mesmo commit");
+            assert.strictEqual(d.missed, false, "o integration foi visto ao vivo: a duração dele vale");
+            assert.deepStrictEqual(
+                d.releases.map((r) => r.release),
+                ["winker-integration", "winker-prod"]
+            );
+        } finally {
+            store.close();
+        }
+    });
+});
+
 describe("Rastreador ligado ao estado do painel", () => {
     test("connector-access travado e deploy posterior da MESMA release: o travado fica até o novo concluir, e os dois vão para 'Hoje'", () => {
         let clock = 1_000_000;

@@ -72,9 +72,21 @@ deles muda junto com a release, e SHALL NOT impedir a release de ficar concluíd
 ### Requirement: Linha de base no boot e reconexão
 
 No boot, o servidor SHALL listar os Deployments e usar o estado atual como linha de base: release
-concluída não vira deploy; release no meio de uma virada aparece como deploy em andamento. Quando o
+concluída não vira deploy; release no meio de uma virada aparece como deploy em andamento. O
+servidor SHALL gravar no banco a última revisão de cada Deployment e a última imagem de cada
+CronJob que viu; no boot, o objeto cuja revisão ou imagem mudou desde a gravação SHALL virar um
+deploy concluído, marcado como "virou com o painel fora do ar", sem duração (o início não foi
+visto). Quando o
 watch fechar ou a API responder 410 (versão de recurso expirada), o servidor SHALL listar de novo e
 retomar o watch, sem criar virada falsa para o que não mudou.
+
+#### Scenario: Deploy do próprio Kuma
+- **WHEN** o Kuma é atualizado (estratégia `Recreate`: o pod antigo morre antes de o novo subir) e o `uptime-kuma` passa da revisão 40 para a 41
+- **THEN** depois do boot o painel mostra o deploy do `uptime-kuma` como concluído, com "virou com o painel fora do ar", e ele entra nos indicadores
+
+#### Scenario: Primeiro boot sem nada gravado
+- **WHEN** o banco ainda não tem a última revisão de nenhum objeto
+- **THEN** nenhum deploy é criado no boot, e as revisões atuais passam a ser gravadas
 
 #### Scenario: Kuma reinicia no meio de uma virada
 - **WHEN** o Kuma sobe enquanto o `gateway-prod` está com 6 de 16 réplicas atualizadas

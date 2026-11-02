@@ -16,8 +16,8 @@ const EMIT_INTERVAL_MS = 1000;
  * Fields of a deploy, and of a history entry, that may reach the browser. Anything else stays on
  * the server, so a field added to the internal record never leaks by default.
  */
-const DEPLOY_PUBLIC_FIELDS = ["id", "project", "version", "label", "state", "startedAt", "endedAt", "confirmed", "releases"];
-const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "releases"];
+const DEPLOY_PUBLIC_FIELDS = ["id", "project", "version", "label", "state", "startedAt", "endedAt", "missed", "confirmed", "releases"];
+const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "missed", "releases"];
 
 /**
  * Fields of a rollout kept in a history record, which is also what goes to the database. Built field
@@ -32,6 +32,7 @@ const ROLLOUT_RECORD_FIELDS = [
     "desired",
     "cronJobsUpdated",
     "atBoot",
+    "missed",
     "startedAt",
     "endedAt",
     "images",
@@ -315,6 +316,7 @@ class DeployBoardStore {
             version: deploy.version,
             state: deploy.state,
             label: deployLabel(deploy.state, { pipelineConfigured, hasPipeline: false }),
+            missed: isMissed(rollouts),
             startedAt: deploy.startedAt,
             endedAt: deploy.endedAt,
             confirmed:
@@ -581,6 +583,7 @@ function recordOf(deploy, outcome, endedAt) {
         version: deploy.version,
         sha: deploy.sha,
         outcome,
+        missed: isMissed(rollouts),
         startedAt: deploy.startedAt,
         endedAt,
         releases: rollouts.map((r) => ({ namespace: r.namespace, release: r.release })),
@@ -596,6 +599,14 @@ function liveRollouts(deploy) {
     const all = [...deploy.rollouts.values()];
     const live = all.filter((r) => r.state !== "superseded");
     return live.length ? live : all;
+}
+
+/**
+ * @param {object[]} rollouts Rollouts of a deploy.
+ * @returns {boolean} Whether all of them rolled while the board was down: then no duration is known.
+ */
+function isMissed(rollouts) {
+    return rollouts.length > 0 && rollouts.every((r) => r.missed === true);
 }
 
 /**
