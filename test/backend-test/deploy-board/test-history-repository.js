@@ -5,10 +5,11 @@ const assert = require("node:assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { DeployHistoryRepository, TABLE } = require("../../../server/deploy-board/history-repository");
+const { DeployHistoryRepository, TABLE, OBJECT_TABLE } = require("../../../server/deploy-board/history-repository");
 const { DeployBoard, HISTORY_RETENTION_MS } = require("../../../server/deploy-board");
 const { DeployBoardStore, HISTORY_MS } = require("../../../server/deploy-board/store");
 const migration = require("../../../db/knex_migrations/2026-11-02-1500-create-deploy-board-deploy");
+const objectMigration = require("../../../db/knex_migrations/2026-11-02-1700-create-deploy-board-object");
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 10, 2, 12, 0, 0);
@@ -57,6 +58,7 @@ describe("Histórico do painel no banco do Kuma", () => {
         Dialect.prototype._driver = () => require("@louislam/sqlite3");
         db = require("knex")({ client: Dialect, connection: { filename: ":memory:" }, useNullAsDefault: true });
         await migration.up(db);
+        await objectMigration.up(db);
     });
 
     afterEach(async () => {
@@ -123,6 +125,18 @@ describe("Histórico do painel no banco do Kuma", () => {
         assert.strictEqual((await repo.load(0)).length, 1);
     });
 
+    test("última versão de cada objeto: grava, regrava (upsert) e lê de volta", async () => {
+        const repo = new DeployHistoryRepository({ knex: () => db });
+        await repo.saveObject("deployments/monitor-infra/uptime-kuma", "40", NOW - 1000);
+        await repo.saveObject("deployments/monitor-infra/uptime-kuma", "41", NOW);
+        await repo.saveObject("cronjobs/gateway/c0", "1111111aaaa", NOW);
+        assert.strictEqual((await db(OBJECT_TABLE).count({ n: "*" }))[0].n, 2);
+        assert.deepStrictEqual([...(await repo.loadObjects())].sort(), [
+            ["cronjobs/gateway/c0", "1111111aaaa"],
+            ["deployments/monitor-infra/uptime-kuma", "41"],
+        ]);
+    });
+
     test("sem banco (antes do setup do Kuma) tudo é no-op", async () => {
         const repo = new DeployHistoryRepository({ knex: () => undefined });
         assert.strictEqual(repo.available(), false);
@@ -130,9 +144,35 @@ describe("Histórico do painel no banco do Kuma", () => {
         assert.deepStrictEqual(await repo.load(0), []);
     });
 
+    test("o cluster recebe as versões gravadas e grava as novas pelo repositório", () => {
+        const saved = [];
+        const repo = { available: () => true, save: () => Promise.resolve(), saveObject: (...a) => saved.push(a) };
+        const board = new DeployBoard({ env: {}, store: new DeployBoardStore({ now: () => NOW }), history: repo });
+        board.known = new Map([["deployments/condominio/winker-prod", "6"]]);
+        try {
+            board.startCluster({
+                namespaces: ["condominio"],
+                projects: [
+                    {
+                        name: "condominio",
+                        source: null,
+                        releases: [{ namespace: "condominio", release: "winker-prod" }],
+                    },
+                ],
+            });
+            const tracker = board.cluster.tracker;
+            assert.strictEqual(tracker.known.get("deployments/condominio/winker-prod"), "6");
+            tracker.see("deployments", "condominio/winker-prod", "7");
+            assert.deepStrictEqual(saved, [["deployments/condominio/winker-prod", "7", NOW]]);
+        } finally {
+            board.stop();
+        }
+    });
+
     test("boot: o histórico do banco volta à tela antes de ligar o cluster", async () => {
         const repo = new DeployHistoryRepository({ knex: () => db });
         await repo.save(record("condominio:carregado", NOW - 60 * 60 * 1000));
+        await repo.saveObject("deployments/condominio/winker-prod", "6", NOW - 60 * 60 * 1000);
         await repo.save(record("condominio:semana-passada", NOW - 8 * DAY));
 
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-board-boot-"));
@@ -149,13 +189,20 @@ describe("Histórico do painel no banco do Kuma", () => {
         const store = new DeployBoardStore({ now: () => NOW });
         const board = new DeployBoard({ env: { DEPLOY_BOARD_CONFIG: file }, store, history: repo });
         let historyAtClusterStart = null;
+        let knownAtClusterStart = null;
         board.startCluster = () => {
             historyAtClusterStart = store.snapshot().history.map((h) => h.id);
+            knownAtClusterStart = [...board.known];
         };
         try {
             board.start(null);
             await board.ready;
             assert.deepStrictEqual(historyAtClusterStart, ["condominio:carregado"], "carregado antes do cluster");
+            assert.deepStrictEqual(
+                knownAtClusterStart,
+                [["deployments/condominio/winker-prod", "6"]],
+                "as versões vistas também"
+            );
             assert.deepStrictEqual(
                 (await db(TABLE).select("deploy_id")).map((r) => r.deploy_id),
                 ["condominio:carregado"],

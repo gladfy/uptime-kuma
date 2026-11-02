@@ -376,7 +376,7 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(saved[0].id, saved[1].id, "o mesmo registro, para o upsert");
             assert.strictEqual(saved[1].outcome, "done");
 
-            assert.deepStrictEqual(Object.keys(saved[1]).sort(), ["endedAt", "id", "outcome", "project", "releases", "rollouts", "sha", "startedAt", "version"]);
+            assert.deepStrictEqual(Object.keys(saved[1]).sort(), ["endedAt", "id", "missed", "outcome", "project", "releases", "rollouts", "sha", "startedAt", "version"]);
             for (const r of saved[1].rollouts) {
                 assert.ok(Object.keys(r).every((k) => ROLLOUT_RECORD_FIELDS.includes(k)), Object.keys(r).join(","));
             }

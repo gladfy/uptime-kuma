@@ -25,7 +25,8 @@
                     <code v-if="item.version" class="db-history-version">{{ item.version }}</code>
                     <span class="db-history-outcome">{{ $t(OUTCOME_KEYS[item.outcome]) }}</span>
                     <span class="db-history-when">
-                        {{ $t("deployBoardTookTime", [formatDuration(item.endedAt - item.startedAt)]) }} ·
+                        <template v-if="item.missed">{{ $t("deployBoardMissed") }} ·</template>
+                        <template v-else>{{ $t("deployBoardTookTime", [formatDuration(item.endedAt - item.startedAt)]) }} ·</template>
                         {{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}
                     </span>
                 </li>

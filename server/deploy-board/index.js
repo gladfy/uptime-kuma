@@ -34,6 +34,7 @@ class DeployBoard {
         this.kubernetesOptions = kubernetes;
         this.ready = Promise.resolve();
         this.pruneTimer = null;
+        this.known = new Map();
         this.cluster = null;
         this.config = null;
         this.configStatus = "missing";
@@ -95,7 +96,11 @@ class DeployBoard {
             await this.history.prune(now - HISTORY_RETENTION_MS);
             const records = await this.history.load(now - HISTORY_MS);
             this.store.restore(records);
-            log.info("deploy-board", `History loaded: ${records.length} deploys of the last 24 hours`);
+            this.known = await this.history.loadObjects();
+            log.info(
+                "deploy-board",
+                `History loaded: ${records.length} deploys of the last 24 hours, last version of ${this.known.size} objects`
+            );
             this.pruneTimer = setInterval(
                 () => this.history.prune(this.store.now() - HISTORY_RETENTION_MS),
                 PRUNE_EVERY_MS
@@ -118,6 +123,8 @@ class DeployBoard {
             releases,
             now: this.store.now,
             onRollout: (rollout) => this.store.upsertRollout(rollout),
+            known: this.known,
+            onSeen: (key, signature) => this.history.saveObject(key, signature, this.store.now()),
         });
         this.cluster = new KubernetesSource({
             namespaces: config.namespaces,

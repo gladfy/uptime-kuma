@@ -334,6 +334,7 @@
     "deployBoardFoundAtBoot": "already rolling out when the board started",
     "deployBoardUnconfirmed": "Rollout state not confirmed: the cluster is not answering for this namespace.",
     "deployBoardStartedAgo": "started {0} ago",
+    "deployBoardMissed": "rolled while the board was down",
     "deployBoardTookTime": "took {0}",
     "deployBoardAgo": "{0} ago",
     "deployBoardVerdictStuck": "Rollouts stuck: {0}",

@@ -354,6 +354,23 @@ regra "deploy é sempre por pipeline", num Kuma aberto na internet — o comando
 mesmo resultado sem nenhuma permissão nova); `helm rollback` (o Helm guarda as releases em Secrets);
 reexecutar a pipeline do commit anterior (não serve aos projetos sem pipeline).
 
+### 18. O que virou com o painel fora do ar
+
+**Decisão:** o rastreador recebe, no boot, a última assinatura gravada de cada objeto — a revisão
+do Deployment, a lista de tags do CronJob — e avisa a cada assinatura nova, que o `DeployBoard`
+grava numa tabela do fork (`deploy_board_object`). Na linha de base, objeto cuja assinatura mudou
+desde a gravação (e não está no meio de uma virada, que já tem tratamento próprio) abre uma virada
+marcada `missed`, que fecha na hora como concluída. Ela segue as regras de sempre: junta com o resto
+da release, junta pelo SHA a um deploy do histórico e conta nos indicadores. Na tela, a duração dá
+lugar a "virou com o painel fora do ar". Revisão anterior vazia (Deployment recém-criado) não conta,
+como na detecção ao vivo.
+
+*Por quê:* o Kuma roda com `Recreate`, então o deploy dele é sempre feito com o painel desligado; o
+mesmo vale para um restart do nó. Medido em 02/11/2026: o deploy da fase 3.2 (revisão 40) não
+apareceu. *Descartado:* ler os ReplicaSets para saber quando a revisão nasceu (permissão a mais
+para só um horário); estimar a duração (o início não foi visto, e um número inventado é pior que
+nenhum).
+
 ## Risks / Trade-offs
 
 - [O watch do Kubernetes cai em silêncio (conexão viva sem eventos)] → o servidor pede o watch com
@@ -384,7 +401,7 @@ reexecutar a pipeline do commit anterior (não serve aos projetos sem pipeline).
 
 ## Migration Plan
 
-A entrega é em oito fases, mais duas intermediárias (3.1 e 3.2). Cada uma vai ao master do fork, passa pela pipeline dele (que faz
+A entrega é em oito fases, mais três intermediárias (3.1, 3.2 e 3.3). Cada uma vai ao master do fork, passa pela pipeline dele (que faz
 backup do banco antes do deploy) e é conferida em produção antes da seguinte. Só a fase 3.1 tem
 migration, e ela só cria uma tabela nova do fork; o rollback continua sendo de imagem ou de
 configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a mais no banco: avisa
@@ -433,6 +450,13 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 - Conferência: os números batem com a lista "Hoje"; o botão alterna o tema e a escolha sobrevive a
   recarregar a página.
 - Rollback: imagem anterior.
+
+**Fase 3.3 — Deploy com o painel fora do ar.**
+- Código: decisão 18 (tabela `deploy_board_object`, assinatura por objeto, virada `missed` no boot).
+- Infraestrutura: nenhuma.
+- Conferência: o deploy da própria 3.3 não aparece (a tabela nasce vazia); o deploy seguinte do Kuma
+  aparece concluído com "virou com o painel fora do ar".
+- Rollback: imagem anterior; a tabela fica sem uso.
 
 **Fase 4 — Pipelines.**
 - Código: decisão 5 e a correlação completa da decisão 7; a linha do roteador no `server.js`.

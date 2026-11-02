@@ -4,6 +4,9 @@ const { log } = require("../../src/util");
 /** Table of the fork migration 2026-11-02-1500-create-deploy-board-deploy. */
 const TABLE = "deploy_board_deploy";
 
+/** Table of the fork migration 2026-11-02-1700-create-deploy-board-object. */
+const OBJECT_TABLE = "deploy_board_object";
+
 /**
  * The deploys that ended, in Kuma's database. Every failure is logged and swallowed: the board keeps
  * working in memory when the database does not answer.
@@ -85,6 +88,46 @@ class DeployHistoryRepository {
     }
 
     /**
+     * @returns {Promise<Map<string, string>>} Last signature saved of each object; empty on failure.
+     */
+    async loadObjects() {
+        const known = new Map();
+        if (!this.available()) {
+            return known;
+        }
+        try {
+            for (const row of await this.knex()(OBJECT_TABLE).select("object_key", "signature")) {
+                known.set(row.object_key, row.signature);
+            }
+        } catch (e) {
+            log.error("deploy-board", `Could not read the last versions seen: ${e.message}`);
+        }
+        return known;
+    }
+
+    /**
+     * Insert or replace the last signature seen of an object, in the same queue as the deploys.
+     * @param {string} key "<kind>/<namespace>/<name>".
+     * @param {string} signature Revision of a Deployment, image tags of a CronJob.
+     * @param {number} seenAt When, in ms.
+     * @returns {Promise<void>} Settles when this write is done; never rejects.
+     */
+    saveObject(key, signature, seenAt) {
+        if (!this.available()) {
+            return Promise.resolve();
+        }
+        const row = { object_key: key, signature, seen_at: seenAt };
+        this.queue = this.queue.then(async () => {
+            try {
+                await this.knex()(OBJECT_TABLE).insert(row).onConflict("object_key").merge();
+            } catch (e) {
+                log.error("deploy-board", `Could not save the version seen of ${key}: ${e.message}`);
+            }
+        });
+        return this.queue;
+    }
+
+    /**
      * @param {number} before Records that ended before this time (ms) are deleted.
      * @returns {Promise<number>} How many were deleted; 0 on failure.
      */
@@ -103,5 +146,6 @@ class DeployHistoryRepository {
 
 module.exports = {
     TABLE,
+    OBJECT_TABLE,
     DeployHistoryRepository,
 };
