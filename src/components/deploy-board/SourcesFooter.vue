@@ -8,6 +8,11 @@
 </template>
 
 <script>
+/**
+ * The dot means the same on every source: green, recent data; amber, connected with no data yet;
+ * grey, not configured; red (a triangle), not answering.
+ */
+
 /** Sources the server reads, in the order they are shown. Kuma (read by this page) comes first. */
 const SERVER_SOURCES = [
     { id: "cluster", nameKey: "deployBoardSourceCluster", webhook: false },
@@ -50,7 +55,7 @@ export default {
                     text: this.kumaConnected
                         ? this.$t("deployBoardSourceConnected")
                         : this.$t("deployBoardSourceStale"),
-                    tone: this.kumaConnected ? "ok" : "warn",
+                    tone: this.kumaConnected ? "ok" : "bad",
                 },
             ];
 
@@ -83,10 +88,10 @@ export default {
                 const text = state.detail
                     ? `${this.$t("deployBoardSourceStale")} · ${state.detail}`
                     : this.$t("deployBoardSourceStale");
-                return { text, tone: "warn" };
+                return { text, tone: "bad" };
             }
             if (!state.lastDataAt) {
-                return { text: this.$t("deployBoardSourceWaiting"), tone: "ok" };
+                return { text: this.$t("deployBoardSourceWaiting"), tone: "warn" };
             }
             const ago = this.formatDuration(this.now - state.lastDataAt);
             const key = source.webhook ? "deployBoardSourceLastEvent" : "deployBoardSourceRead";
@@ -128,6 +133,17 @@ export default {
 
     &.is-warn::before {
         background: var(--db-warn);
+    }
+
+    &.is-bad::before {
+        width: 0.7em;
+        border-radius: 0;
+        background: var(--db-bad);
+        clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    }
+
+    &.is-bad b {
+        color: var(--db-bad);
     }
 
     &.is-muted::before {

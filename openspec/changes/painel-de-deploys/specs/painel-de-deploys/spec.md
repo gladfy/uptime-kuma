@@ -135,11 +135,19 @@ quando a fonte informar) e, para projetos no cluster, uma linha por release com
 virada continua, o cartão SHALL dizer isso explicitamente.
 
 Rótulos do cartão: "Na pipeline", "Virando no cluster", "Sem progresso", "Virada travada",
-"Falhou", "No ar" e, para virada sem pipeline correspondente, "Sem pipeline".
+"Falhou" e "No ar". Virada sem pipeline correspondente SHALL manter o rótulo do estado dela e
+mostrar ao lado uma etiqueta neutra "Sem pipeline": é um fato sobre a origem do deploy, não um
+estado, e não usa a cor de falha.
+
+Cores e formas do painel: verde é saudável ou concluído; azul é deploy em andamento, nos cartões
+da esquerda e na marca "em deploy" dos monitores da direita; âmbar é atenção; vermelho é só falha
+de verdade (fora do ar, pipeline que falhou, virada travada) e vem com um triângulo, para não
+depender só da cor. O magenta é da marca, não de estado. Monitor no ar não escreve "Normal": a cor
+diz; só a exceção tem texto.
 
 Quando a fonte de pipeline do projeto (Bitbucket ou GitHub) não está configurada, ou o projeto não
 tem origem de pipeline na configuração, o cartão SHALL
-mostrar só a virada, sem a seção de pipeline, e SHALL NOT usar o rótulo "Sem pipeline": a ausência
+mostrar só a virada, sem a seção de pipeline, e SHALL NOT mostrar "Sem pipeline": a ausência
 de pipeline ali é falta de fonte, não deploy manual.
 
 #### Scenario: Pipeline verde, virada em curso
@@ -148,7 +156,7 @@ de pipeline ali é falta de fonte, não deploy manual.
 
 #### Scenario: Virada manual
 - **WHEN** a fonte de pipeline do projeto está configurada e uma release dele muda de revisão sem pipeline correspondente
-- **THEN** o cartão aparece com o rótulo "Sem pipeline" e a virada normalmente
+- **THEN** o cartão aparece com o rótulo do estado da virada ("Virando no cluster", "Virada travada"...), a etiqueta neutra "Sem pipeline" ao lado e as três primeiras etapas puladas
 
 #### Scenario: Pipeline ainda não ligada
 - **WHEN** a fonte de pipeline do projeto não está configurada e uma release dele muda de revisão
@@ -219,6 +227,9 @@ configurada" e SHALL NOT gerar alarme.
 Webhook não tem ritmo próprio: ausência de evento não é falha. Para Bitbucket e GitHub o rodapé
 SHALL mostrar o último evento recebido, sem alarme por tempo.
 
+O ponto de cada fonte SHALL ter o mesmo significado em todas: verde, dado recente; âmbar, ligada e
+ainda sem dado; cinza, não configurada; vermelho em triângulo, sem resposta.
+
 #### Scenario: Watch do cluster cai
 - **WHEN** a conexão de watch com o cluster cai e não volta por mais de 2 minutos
 - **THEN** o rodapé marca o cluster como sem leitura e os cartões dizem que o estado da virada não está confirmado
@@ -266,6 +277,18 @@ som SHALL começar ligado; um botão SHALL silenciar e religar, com a escolha gr
 religar toca o sino uma vez. Enquanto o navegador não deixar tocar (nenhum clique na página ainda),
 o painel SHALL dizer isso ao lado do botão. Só transição vista ao vivo SHALL tocar: abrir a página, reconectar o socket ou
 carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez.
+
+O som SHALL continuar tocando com a página aberta por dias e em segundo plano: as gravações ficam na
+memória da página (um deploy do Kuma não as tira), um som pausado de fora ou que falha não trava os
+seguintes, e a página pede ao navegador para não congelar a aba.
+
+#### Scenario: Som pausado de fora
+- **WHEN** o sistema pausa o som que tocava (uma tecla de mídia, outra aba tomando o áudio) e chega o evento seguinte
+- **THEN** o som do evento seguinte toca
+
+#### Scenario: Kuma atualizado com a página aberta
+- **WHEN** o Kuma é atualizado e os arquivos de som da versão anterior deixam de existir no servidor
+- **THEN** a página aberta desde antes continua tocando os sons
 
 #### Scenario: Virada concluída
 - **WHEN** o som está ativado e o deploy do condominio passa de "Virando no cluster" para "No ar"

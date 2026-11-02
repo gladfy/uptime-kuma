@@ -77,8 +77,8 @@ dela, e a seguinte não muda o que a anterior entregou.
 
 ## Onde estamos (02/11/2026)
 
-No ar a imagem `2.5.3-winker.28` e o chart `uptimekuma` 0.4.0. As fases 1 a 6 estão em produção.
-A 7 está em andamento; a 8 e a 9 ainda não começaram. Uma fase só se fecha quando a conferência com deploy real
+No ar a imagem `2.5.3-winker.30` e o chart `uptimekuma` 0.5.0. As fases 1 a 7 estão em produção.
+Na 7 falta só a conferência com um build real; a 8 e a 9 ainda não começaram. Uma fase só se fecha quando a conferência com deploy real
 também foi feita (as tarefas com o número entre parênteses).
 
 | Fase | Situação | O que falta |
@@ -92,8 +92,8 @@ também foi feita (as tarefas com o número entre parênteses).
 | 4. Pipelines | Em produção. Webhooks cadastrados (8 no Bitbucket, 3 no GitHub); os 3 do GitHub conferidos pelo `ping`; a primeira entrega do Bitbucket chegou com o merge do condominio de 02/11 e abriu o cartão "Na pipeline". O cartão mostra a etapa do deploy ("etapa 2 de 5") desde a `winker.28` | Primeira entrega dos outros 7 repositórios do Bitbucket e o `refname` da pipeline de pull request (20.3); um merge do condominio acompanhado até a virada concluída, com os tempos (20.4) |
 | 5. Sons | Em produção, ligados por padrão; ouvidos num deploy real | Nada |
 | 6. Como voltar | Em produção; comando conferido pelo Erik num deploy real | Nada |
-| 7. Amplify | Em andamento | Dependência, coletor, role IAM por IRSA |
-| 8. Conferência de cobertura | Não começada; depende da 7 | Tudo |
+| 7. Amplify | Em produção (`winker.30`, chart 0.5.0); os 8 apps lidos pela role, sem erro | Acompanhar um build real do `pro` e ligar os monitores com `amplify/<app>` (26.3) |
+| 8. Conferência de cobertura | Não começada; é a próxima | Tudo |
 | 9. Projetos da OCI | Não começada; bloqueada | Inventário do OKE e caminho de rede do EKS até a API dele (29.1 e 29.2), que dependem de quem tem acesso à OCI |
 
 As conferências que faltam nas fases 2 e 4 (8.2 e 20.4) dependem do mesmo evento: um merge do

@@ -13,7 +13,9 @@
             <div v-for="monitor in visibleMonitors" :key="monitor.id" class="db-cell" :class="'is-' + monitor.tone">
                 <span class="db-cell-name">{{ monitor.name }}</span>
                 <span class="db-cell-row">
-                    <span class="db-cell-state">{{ monitor.label }}</span>
+                    <!-- Text only for the exception: an "up" monitor says so by its colour, not by a word. -->
+                    <span v-if="monitor.tone !== 'up'" class="db-cell-state">{{ monitor.label }}</span>
+                    <span v-else class="db-visually-hidden">{{ monitor.label }}</span>
                     <span v-if="monitor.mark" class="db-cell-mark" :class="'is-' + monitor.mark">
                         {{ $t(monitor.mark === "stuck" ? "deployBoardMarkStuck" : "deployBoardMarkRolling") }}
                     </span>
@@ -270,6 +272,7 @@ export default {
 }
 
 .db-cell {
+    position: relative;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -279,7 +282,25 @@ export default {
     padding: 0.5em 0.8em;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
+    border-left: 3px solid var(--db-line-2);
     border-radius: 8px;
+
+    &.is-up {
+        border-left-color: var(--db-ok);
+    }
+
+    &.is-maintenance {
+        border-left-color: var(--db-maint);
+    }
+}
+
+.db-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 .db-cell-probe {
@@ -320,11 +341,13 @@ export default {
     font-size: 0.72em;
     font-weight: 700;
     white-space: nowrap;
-    color: var(--db-brand);
-    border: 1px solid color-mix(in srgb, var(--db-brand) 45%, transparent);
+    color: var(--db-deploy);
+    background: var(--db-deploy-soft);
+    border: 1px solid color-mix(in srgb, var(--db-deploy) 45%, transparent);
 
     &.is-stuck {
         color: var(--db-bad);
+        background: var(--db-bad-soft);
         border-color: color-mix(in srgb, var(--db-bad) 45%, transparent);
     }
 }

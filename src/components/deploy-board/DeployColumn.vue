@@ -21,9 +21,13 @@
             <p v-if="!board || board.history.length === 0" class="db-muted">{{ $t("deployBoardHistoryEmpty") }}</p>
             <ol v-else class="db-history-list">
                 <li v-for="item in board.history" :key="item.id" class="db-history-item" :class="'is-' + outcomeClass(item.outcome)">
-                    <span class="db-history-project">{{ item.project }}</span>
-                    <code v-if="item.version" class="db-history-version">{{ item.version }}</code>
-                    <span class="db-history-outcome">{{ $t(OUTCOME_KEYS[item.outcome]) }}</span>
+                    <span class="db-history-outcome" role="img" :aria-label="$t(OUTCOME_KEYS[item.outcome])" :title="$t(OUTCOME_KEYS[item.outcome])">
+                        {{ OUTCOME_MARKS[item.outcome] || "·" }}
+                    </span>
+                    <span class="db-history-name">
+                        <span class="db-history-project">{{ item.project }}</span>
+                        <code v-if="item.version" class="db-history-version">{{ item.version }}</code>
+                    </span>
                     <span class="db-history-when">
                         <template v-if="item.missed">{{ $t("deployBoardMissed") }} ·</template>
                         <template v-else>{{ $t("deployBoardTookTime", [formatDuration(item.endedAt - item.startedAt)]) }} ·</template>
@@ -37,6 +41,20 @@
 
 <script>
 import DeployCard from "./DeployCard.vue";
+
+/**
+ * Outcome → a mark that reads at a glance; the word is its title and its accessible name. ✓ and ✕
+ * differ in shape, not only in colour.
+ */
+const OUTCOME_MARKS = {
+    done: "✓",
+    stuck: "✕",
+    failed: "✕",
+    noRollout: "!",
+    cancelled: "–",
+    replaced: "↻",
+    lost: "?",
+};
 
 /** Outcome of a finished deploy → i18n key. */
 const OUTCOME_KEYS = {
@@ -73,7 +91,7 @@ export default {
     },
 
     data() {
-        return { OUTCOME_KEYS };
+        return { OUTCOME_KEYS, OUTCOME_MARKS };
     },
 
     computed: {
@@ -157,17 +175,27 @@ export default {
     font-size: 0.85em;
 }
 
+/* Mark, name and times: the times line up in one column on the right. */
 .db-history-item {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1.1em minmax(0, 1fr) auto;
     align-items: baseline;
-    gap: 0.1em 0.5em;
+    gap: 0.5em;
     padding-bottom: 0.3em;
     border-bottom: 1px solid var(--db-line);
 }
 
+.db-history-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 0.5em;
+    min-width: 0;
+}
+
 .db-history-project {
     font-weight: 700;
+    overflow-wrap: anywhere;
 }
 
 .db-history-version {
@@ -175,7 +203,8 @@ export default {
 }
 
 .db-history-outcome {
-    font-weight: 700;
+    justify-self: center;
+    font-weight: 800;
     color: var(--db-ok);
 
     .is-stuck &,
@@ -195,7 +224,9 @@ export default {
 }
 
 .db-history-when {
-    margin-left: auto;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
     color: var(--db-ink-3);
 }
 

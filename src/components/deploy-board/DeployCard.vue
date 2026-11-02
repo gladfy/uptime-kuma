@@ -3,7 +3,13 @@
         <header class="db-card-head">
             <span class="db-card-project">{{ deploy.project }}</span>
             <code v-if="deploy.version" class="db-card-version">{{ deploy.version }}</code>
-            <span class="db-card-label">{{ $t(labelKey) }}</span>
+            <span v-if="noPipeline" class="db-card-tag" :title="$t('deployBoardNoPipelineHint')">
+                {{ $t("deployBoardLabelNoPipeline") }}
+            </span>
+            <span class="db-card-label">
+                <font-awesome-icon v-if="tone === 'bad'" icon="exclamation-triangle" class="db-card-label-icon" />
+                {{ $t(labelKey) }}
+            </span>
         </header>
 
         <p class="db-card-time">
@@ -101,6 +107,18 @@ const LABEL_KEYS = {
     failed: "deployBoardLabelFailed",
     noRollout: "deployBoardLabelNoRollout",
     cancelled: "deployBoardLabelCancelled",
+};
+
+/** Deploy state → label, for a deploy whose label is "no pipeline": the card says the state. */
+const STATE_LABELS = {
+    updating: "rolling",
+    noProgress: "noProgress",
+    stuck: "stuck",
+    done: "live",
+    pipeline: "inPipeline",
+    built: "built",
+    failed: "failed",
+    cancelled: "cancelled",
 };
 
 /** Pipeline state → i18n key. */
@@ -216,9 +234,19 @@ export default {
                 .join("\n\n");
         },
 
+        /**
+         * "No pipeline" is a fact about where the deploy came from, not a state: it goes beside the
+         * label, in neutral, and the label keeps saying how the rollout is going.
+         * @returns {boolean} Whether the deploy has no pipeline matched
+         */
+        noPipeline() {
+            return this.deploy.label === "noPipeline";
+        },
+
         /** @returns {string} i18n key of the label */
         labelKey() {
-            return LABEL_KEYS[this.deploy.label] || LABEL_KEYS.rolling;
+            const label = this.noPipeline ? STATE_LABELS[this.deploy.state] : this.deploy.label;
+            return LABEL_KEYS[label] || LABEL_KEYS.rolling;
         },
 
         /** @returns {string} Tone of the card */
@@ -350,7 +378,7 @@ export default {
     border-radius: 10px;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
-    border-left: 4px solid var(--db-brand);
+    border-left: 4px solid var(--db-deploy);
     min-width: 0;
 
     &.is-ok {
@@ -386,13 +414,28 @@ export default {
     color: var(--db-ink-2);
 }
 
+.db-card-tag {
+    margin-left: auto;
+    padding: 0.05em 0.5em;
+    border: 1px solid var(--db-line-2);
+    border-radius: 0.6em;
+    font-size: 0.72em;
+    font-weight: 700;
+    color: var(--db-ink-3);
+    white-space: nowrap;
+}
+
 .db-card-label {
     margin-left: auto;
     font-size: 0.8em;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--db-brand);
+    color: var(--db-deploy);
+
+    .db-card-tag + & {
+        margin-left: 0;
+    }
 
     .is-ok & {
         color: var(--db-ok);
@@ -405,6 +448,10 @@ export default {
     .is-bad & {
         color: var(--db-bad);
     }
+}
+
+.db-card-label-icon {
+    margin-right: 0.2em;
 }
 
 .db-card-time {
@@ -473,10 +520,10 @@ export default {
     }
 
     &.is-current {
-        color: var(--db-brand);
+        color: var(--db-deploy);
 
         i {
-            background: var(--db-brand);
+            background: var(--db-deploy);
             animation: db-step-pulse 1.6s ease-in-out infinite;
         }
     }
@@ -540,7 +587,7 @@ export default {
     i {
         display: block;
         height: 100%;
-        background: var(--db-brand);
+        background: var(--db-deploy);
         transition: width 0.6s ease;
     }
 
@@ -591,7 +638,7 @@ export default {
 
 .db-pipeline-state {
     font-weight: 700;
-    color: var(--db-brand);
+    color: var(--db-deploy);
 
     .is-success & {
         color: var(--db-ok);
