@@ -1,26 +1,44 @@
 <template>
     <section class="db-deploys" :aria-label="$t('deployBoardDeploys')">
-        <h2 class="db-section-title">{{ $t("deployBoardDeploys") }}</h2>
-
         <p v-if="!board" class="db-empty">{{ $t("deployBoardReading") }}</p>
         <p v-else-if="noSourceOn" class="db-empty">{{ $t("deployBoardNoSources") }}</p>
-        <p v-else-if="board.deploys.length === 0" class="db-empty">{{ $t("deployBoardNoActiveDeploys") }}</p>
 
-        <div v-if="board && board.deploys.length" class="db-cards">
-            <DeployCard
-                v-for="deploy in board.deploys"
-                :key="deploy.id"
-                :deploy="deploy"
-                :now="now"
-                :format-duration="formatDuration"
-            />
-        </div>
+        <!-- A failure stays until someone dismisses it; a deploy that went live becomes a line below. -->
+        <template v-if="failures.length">
+            <h2 class="db-section-title">{{ $t("deployBoardFailures") }}</h2>
+            <div class="db-cards">
+                <DeployCard
+                    v-for="deploy in failures"
+                    :key="deploy.id"
+                    :deploy="deploy"
+                    :now="now"
+                    :format-duration="formatDuration"
+                    dismissible
+                    @dismiss="dismiss"
+                />
+            </div>
+        </template>
+
+        <template v-if="running.length">
+            <h2 class="db-section-title">{{ $t("deployBoardRunning") }}</h2>
+            <div class="db-cards">
+                <DeployCard v-for="deploy in running" :key="deploy.id" :deploy="deploy" :now="now" :format-duration="formatDuration" />
+            </div>
+        </template>
 
         <div class="db-history">
-            <h3 class="db-subtitle">{{ $t("deployBoardHistory") }}</h3>
-            <p v-if="!board || board.history.length === 0" class="db-muted">{{ $t("deployBoardHistoryEmpty") }}</p>
+            <h2 class="db-section-title">
+                {{ $t("deployBoardHistory") }}
+                <span class="db-section-count">{{ $t("deployBoardStatsTotal", historyRows.length) }}</span>
+            </h2>
+            <p v-if="historyRows.length === 0" class="db-muted">{{ $t("deployBoardHistoryEmpty") }}</p>
             <ol v-else class="db-history-list">
-                <li v-for="item in board.history" :key="item.id" class="db-history-item" :class="'is-' + outcomeClass(item.outcome)">
+                <li
+                    v-for="item in historyRows"
+                    :key="item.id"
+                    class="db-history-item"
+                    :class="['is-' + outcomeClass(item.outcome), { 'is-fresh': isFresh(item) }]"
+                >
                     <span class="db-history-outcome" role="img" :aria-label="$t(OUTCOME_KEYS[item.outcome])" :title="$t(OUTCOME_KEYS[item.outcome])">
                         {{ OUTCOME_MARKS[item.outcome] || "·" }}
                     </span>
@@ -33,6 +51,7 @@
                         <template v-else>{{ $t("deployBoardTookTime", [formatDuration(item.endedAt - item.startedAt)]) }} ·</template>
                         {{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}
                     </span>
+                    <RollbackPanel v-if="item.rollback" :rollback="item.rollback" class="db-history-rollback" />
                 </li>
             </ol>
         </div>
@@ -41,6 +60,35 @@
 
 <script>
 import DeployCard from "./DeployCard.vue";
+import RollbackPanel from "./RollbackPanel.vue";
+
+/** States of a deploy still moving: it has a card under "Em andamento". */
+const RUNNING_STATES = ["pipeline", "built", "updating", "noProgress"];
+
+/** States and outcomes that are a failure: a card that stays until dismissed. */
+const FAILED = ["failed", "stuck"];
+
+/** An ended deploy on screen → the outcome of its line in the history. */
+const ENDED_OUTCOMES = { done: "done", cancelled: "cancelled", superseded: "replaced" };
+
+/** A deploy that went live is highlighted at the top of the history this long. */
+const FRESH_MS = 15 * 60 * 1000;
+
+/** Where this browser keeps the failures someone dismissed. */
+const DISMISSED_KEY = "deployBoardDismissed";
+const DISMISSED_MAX = 200;
+
+/**
+ * @returns {string[]} Ids of the dismissed failures (empty when the browser keeps nothing).
+ */
+function dismissedSaved() {
+    try {
+        const ids = JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]");
+        return Array.isArray(ids) ? ids : [];
+    } catch (e) {
+        return [];
+    }
+}
 
 /**
  * Outcome → a mark that reads at a glance; the word is its title and its accessible name. ✓ and ✕
@@ -70,6 +118,7 @@ const OUTCOME_KEYS = {
 export default {
     components: {
         DeployCard,
+        RollbackPanel,
     },
 
     props: {
@@ -91,7 +140,7 @@ export default {
     },
 
     data() {
-        return { OUTCOME_KEYS, OUTCOME_MARKS };
+        return { OUTCOME_KEYS, OUTCOME_MARKS, dismissed: dismissedSaved() };
     },
 
     computed: {
@@ -99,9 +148,84 @@ export default {
         noSourceOn() {
             return Object.values(this.board.sources).every((s) => s.state === "unconfigured");
         },
+
+        /** @returns {object[]} Deploys still moving */
+        running() {
+            return this.board ? this.board.deploys.filter((d) => RUNNING_STATES.includes(d.state)) : [];
+        },
+
+        /**
+         * Failed and stuck deploys nobody dismissed: the ones on screen with their whole card, and the
+         * ones the server already moved to the history with what the history keeps.
+         * @returns {object[]} Deploys, as DeployCard takes them
+         */
+        failures() {
+            if (!this.board) {
+                return [];
+            }
+            const live = this.board.deploys.filter((d) => FAILED.includes(d.state));
+            const seen = new Set(live.map((d) => d.id));
+            const past = this.board.history
+                .filter((h) => FAILED.includes(h.outcome) && !seen.has(h.id))
+                .map((h) => ({
+                    id: h.id,
+                    project: h.project,
+                    version: h.version,
+                    state: h.outcome,
+                    label: h.outcome,
+                    missed: h.missed,
+                    startedAt: h.startedAt,
+                    endedAt: h.endedAt,
+                    confirmed: true,
+                    releases: (h.releases || []).map((r) => ({ ...r, updated: 0, desired: 0, cronJobsUpdated: 0 })),
+                    links: h.links,
+                    rollback: null,
+                    pipeline: null,
+                    steps: null,
+                }));
+            return [...live, ...past].filter((d) => !this.dismissed.includes(d.id));
+        },
+
+        /**
+         * The history, with the deploys that ended and are still on the server's screen (a deploy that
+         * went live is a line here, not a card), newest first.
+         * @returns {object[]} Lines: outcome, project, version, times, and the way back while it has one
+         */
+        historyRows() {
+            if (!this.board) {
+                return [];
+            }
+            const ended = this.board.deploys
+                .filter((d) => ENDED_OUTCOMES[d.state])
+                .map((d) => ({ ...d, outcome: ENDED_OUTCOMES[d.state] }));
+            const ids = new Set(ended.map((d) => d.id));
+            return [...ended, ...this.board.history.filter((h) => !ids.has(h.id))].sort((a, b) => b.endedAt - a.endedAt);
+        },
     },
 
     methods: {
+        /**
+         * @param {object} item Line of the history.
+         * @returns {boolean} Whether it went live in the last FRESH_MS
+         */
+        isFresh(item) {
+            return item.outcome === "done" && this.now - item.endedAt < FRESH_MS;
+        },
+
+        /**
+         * Take a failure off the screen, in this browser.
+         * @param {string} id Deploy id.
+         * @returns {void}
+         */
+        dismiss(id) {
+            this.dismissed = [...this.dismissed, id].slice(-DISMISSED_MAX);
+            try {
+                localStorage.setItem(DISMISSED_KEY, JSON.stringify(this.dismissed));
+            } catch (e) {
+                // Not kept: it comes back after a reload.
+            }
+        },
+
         /**
          * @param {string} outcome Outcome of a history entry.
          * @returns {string} Kebab-case class suffix.
@@ -132,12 +256,11 @@ export default {
     color: var(--db-ink-2);
 }
 
-.db-subtitle {
-    margin: 0;
-    font-size: 0.72em;
-    font-weight: 700;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
+.db-section-count {
+    margin-left: 8px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
     color: var(--db-ink-3);
 }
 
@@ -221,6 +344,23 @@ export default {
     .is-lost & {
         color: var(--db-ink-3);
     }
+}
+
+/* Went live in the last minutes: the deploy's moment, in a calm green. */
+.db-history-item.is-fresh {
+    margin-inline: -8px;
+    padding-inline: 8px;
+    border-radius: 8px;
+    background: var(--db-ok-soft);
+
+    .db-history-when {
+        color: var(--db-ok);
+        font-weight: 600;
+    }
+}
+
+.db-history-rollback {
+    grid-column: 1 / -1;
 }
 
 .db-history-when {
