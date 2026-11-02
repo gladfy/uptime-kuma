@@ -161,6 +161,12 @@ describe("Sons: o que cada mudança toca", () => {
         );
     });
 
+    test("pipeline cancelada (fila do Kuma): nenhum som de falha", () => {
+        const p = (state) => ({ pipeline: { state } });
+        const running = deploy("k:1", "pipeline", [], p("running"));
+        assert.deepStrictEqual(events(snap([running]), snap([deploy("k:1", "cancelled", [], p("stopped"))])), []);
+    });
+
     test("deploy novo já com pipeline e virada (a pipeline e a virada no mesmo segundo): iniciado e em andamento", () => {
         assert.deepStrictEqual(
             events(snap([]), snap([deploy("c:1", "updating", undefined, { pipeline: { state: "running" } })])),

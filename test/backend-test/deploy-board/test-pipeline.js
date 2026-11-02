@@ -6,6 +6,7 @@ const {
     NO_ROLLOUT_MS,
     NO_ROLLOUT_LEAVE_MS,
     MERGE_WAIT_MS,
+    RUN_SILENT_MS,
 } = require("../../../server/deploy-board/store");
 
 const SHA = "c13dc62f43f7a1b2c3d4e5f6a7b8c9d0e1f2a3b4";
@@ -344,6 +345,184 @@ describe("Pipeline e virada viram um deploy só", () => {
             cards()[0].pipeline.jobs.map((j) => `${j.name}:${j.state}`),
             ["build:success", "deploy:running"]
         );
+    });
+
+    test("evento atrasado não desfaz o fim: 'concluída com falha' e depois um 'rodando' velho continua falha", () => {
+        run("chat", SHA, "failed", { updatedAt: clock });
+        run("chat", SHA, "running", { updatedAt: clock - MIN });
+        assert.strictEqual(cards()[0].state, "failed");
+        // Sem hora do remetente, o fim também não é desfeito por um não-fim.
+        run("chat", SHA, "running", { updatedAt: null });
+        assert.strictEqual(cards()[0].state, "failed");
+    });
+
+    test("Bitbucket: rerun dos passos que falharam usa a mesma chave com hora mais nova, e vale", () => {
+        run("condominio", SHA, "failed", { runId: "k", updatedAt: clock });
+        tick(5 * MIN);
+        run("condominio", SHA, "running", { runId: "k", updatedAt: clock });
+        assert.strictEqual(cards()[0].state, "pipeline");
+        tick(5 * MIN);
+        run("condominio", SHA, "success", { runId: "k", updatedAt: clock, startedAt: clock - 10 * MIN });
+        assert.strictEqual(cards()[0].state, "built");
+    });
+
+    test("execução sem notícia por 2 h: sai da tela como 'sem notícia' e não captura a virada de depois", () => {
+        run("chat", SHA, "running");
+        tick(RUN_SILENT_MS);
+        store.tick();
+        const snap = store.snapshot();
+        assert.deepStrictEqual(snap.deploys, []);
+        assert.strictEqual(snap.history[0].outcome, "lost");
+        assert.strictEqual(snap.stats.lost, 1);
+        assert.strictEqual(snap.stats.successRate, null);
+        // Uma virada de tag prod depois disso não vai para aquele commit.
+        rollout("chat", "chatwoot", "prod");
+        assert.strictEqual(cards()[0].version, "prod");
+        assert.strictEqual(cards()[0].pipeline, null);
+    });
+
+    test("execução que só parou de mandar notícia não captura virada sem SHA de dias depois", () => {
+        run("chat", SHA, "running");
+        rollout("chat", "chatwoot", "prod", { state: "done" });
+        tick(DONE_VISIBLE_MS);
+        store.tick();
+        tick(3 * 24 * 60 * MIN);
+        rollout("chat", "chatwoot", "prod", { seq: 2 });
+        const fresh = cards().find((c) => c.releases.length && c.state === "updating");
+        assert.strictEqual(fresh.version, "prod", "a virada de 3 dias depois é um deploy dela");
+    });
+
+    test("execução sem notícia num deploy que ficou na tela (travado) não captura a virada de outra release horas depois", () => {
+        const local = new DeployBoardStore({ now: () => clock });
+        local.setProjects([
+            {
+                name: "jambonz",
+                source: "github",
+                releases: [
+                    { namespace: "jambonz-prod", release: "jambonz-worker" },
+                    { namespace: "jambonz-prod", release: "jambonz-vad" },
+                ],
+            },
+        ]);
+        local.setSource("cluster", "active");
+        local.setSource("github", "active");
+        const roll = (release, o) =>
+            local.upsertRollout({
+                id: `jambonz-prod/${release}:1`,
+                namespace: "jambonz-prod",
+                release,
+                atBoot: false,
+                missed: false,
+                startedAt: clock,
+                endedAt: null,
+                state: "updating",
+                updated: 0,
+                desired: 2,
+                cronJobsUpdated: 0,
+                images: ["latest"],
+                ...o,
+            });
+        local.pipelineEvent({
+            kind: "run",
+            project: "jambonz",
+            sha: SHA,
+            branchKnown: true,
+            runId: "r",
+            name: "x",
+            state: "running",
+            startedAt: clock,
+            endedAt: null,
+        });
+        roll("jambonz-worker", { state: "stuck" });
+        assert.strictEqual(local.snapshot().deploys.length, 1, "a virada entrou na execução que rodava");
+        tick(3 * 60 * MIN);
+        roll("jambonz-vad", { startedAt: clock });
+        const vad = local.snapshot().deploys.find((d) => d.releases.some((r) => r.release === "jambonz-vad"));
+        assert.strictEqual(vad.pipeline, null, "a execução calada há 3 h não é a pipeline desta virada");
+        local.close();
+    });
+
+    test("execução cancelada (fila do Kuma, parada à mão): 'Cancelada', fora da taxa, sem falha", () => {
+        run("uptime-kuma", SHA, "stopped");
+        const [card] = cards();
+        assert.strictEqual(card.state, "cancelled");
+        assert.strictEqual(card.label, "cancelled");
+        assert.strictEqual(store.snapshot().stats.failed, 0);
+        tick(DONE_VISIBLE_MS);
+        store.tick();
+        const snap = store.snapshot();
+        assert.strictEqual(snap.history[0].outcome, "cancelled");
+        assert.strictEqual(snap.stats.cancelled, 1);
+        assert.strictEqual(snap.stats.successRate, null);
+    });
+
+    test("a hora do merge é a da chegada, não a do commit: commit de 30 min atrás não some", () => {
+        store.pipelineEvent({
+            kind: "merge",
+            source: "bitbucket",
+            project: "condominio",
+            sha: SHA,
+            message: "Merged",
+            at: clock - 30 * MIN,
+        });
+        const [card] = cards();
+        assert.strictEqual(card.pipeline.mergedAt, clock);
+        assert.strictEqual(card.startedAt, clock);
+    });
+
+    test("cluster sem leitura (um namespace negado): pipeline verde espera a virada, não vira 'No ar'", () => {
+        store.setSource("cluster", "stale", "condominio: 403");
+        run("condominio", SHA, "success");
+        let [card] = cards();
+        assert.strictEqual(card.state, "built");
+        tick(NO_ROLLOUT_MS);
+        store.tick();
+        [card] = cards();
+        assert.strictEqual(card.label, "built", "sem leitura não se diz 'nenhuma virada'");
+        assert.strictEqual(store.snapshot().stats.done, 0);
+    });
+
+    test("re-run no GitHub: os jobs da tentativa anterior saem, e evento da tentativa velha não volta", () => {
+        const job = (jobId, name, attempt, o = {}) =>
+            store.pipelineEvent({
+                kind: "job",
+                project: "chat",
+                sha: SHA,
+                runId: "r1",
+                jobId,
+                name,
+                attempt,
+                state: "failed",
+                startedAt: clock,
+                endedAt: clock,
+                ...o,
+            });
+        run("chat", SHA, "failed", { runId: "r1", attempt: 1 });
+        job("1", "build", 1);
+        tick(MIN);
+        run("chat", SHA, "running", { runId: "r1", attempt: 2 });
+        job("2", "build", 2, { state: "running", endedAt: null });
+        job("1", "build", 1, { state: "failed" });
+        const jobs = cards()[0].pipeline.jobs;
+        assert.deepStrictEqual(
+            jobs.map((j) => `${j.id}:${j.name}:${j.state}`),
+            ["2:build:running"]
+        );
+        run("chat", SHA, "failed", { runId: "r1", attempt: 1, updatedAt: clock + MIN });
+        assert.strictEqual(cards()[0].pipeline.state, "running", "a tentativa 1 não volta por cima da 2");
+    });
+
+    test("pedido de pular a pipeline no rodapé da mensagem (skip-checks) não abre deploy", () => {
+        store.pipelineEvent({
+            kind: "merge",
+            source: "github",
+            project: "chat",
+            sha: SHA,
+            message: "docs",
+            skipCi: true,
+            at: clock,
+        });
+        assert.strictEqual(cards().length, 0);
     });
 
     test("evento com data ilegível não estraga o início do deploy", () => {

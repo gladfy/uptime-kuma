@@ -457,7 +457,7 @@ describe("Estado do painel de deploys", () => {
             records.push(ended("s", "stuck", 30 * 60 * 1000), ended("r1", "replaced", 40 * 60 * 1000), ended("r2", "replaced", 50 * 60 * 1000));
             store.restore(records);
             store.upsertRollout(rollout());
-            assert.deepStrictEqual(store.snapshot().stats, { total: 15, done: 11, stuck: 1, failed: 0, replaced: 2, noRollout: 0, inProgress: 1, successRate: 92 });
+            assert.deepStrictEqual(store.snapshot().stats, { total: 15, done: 11, stuck: 1, failed: 0, replaced: 2, noRollout: 0, cancelled: 0, lost: 0, inProgress: 1, successRate: 92 });
             assert.deepStrictEqual(Object.keys(store.snapshot().stats).sort(), [...STATS_FIELDS].sort());
         });
 
@@ -492,7 +492,7 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(store.snapshot().stats.total, 1);
             advance(HISTORY_MS);
             store.tick();
-            assert.deepStrictEqual(store.snapshot().stats, { total: 0, done: 0, stuck: 0, failed: 0, replaced: 0, noRollout: 0, inProgress: 0, successRate: null });
+            assert.deepStrictEqual(store.snapshot().stats, { total: 0, done: 0, stuck: 0, failed: 0, replaced: 0, noRollout: 0, cancelled: 0, lost: 0, inProgress: 0, successRate: null });
         });
     });
 });

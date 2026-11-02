@@ -267,7 +267,16 @@ export default {
         /** @returns {string} Every counter, for the tooltip */
         statsDetail() {
             const s = this.stats;
-            return this.$t("deployBoardStatsDetail", [s.done, s.stuck, s.failed, s.replaced, s.noRollout ?? 0, s.inProgress]);
+            return this.$t("deployBoardStatsDetail", [
+                s.done,
+                s.stuck,
+                s.failed,
+                s.replaced,
+                s.noRollout ?? 0,
+                s.cancelled ?? 0,
+                s.lost ?? 0,
+                s.inProgress,
+            ]);
         },
 
         /** @returns {string} What the sound button does */

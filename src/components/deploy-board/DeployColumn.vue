@@ -45,6 +45,8 @@ const OUTCOME_KEYS = {
     replaced: "deployBoardOutcomeReplaced",
     failed: "deployBoardOutcomeFailed",
     noRollout: "deployBoardOutcomeNoRollout",
+    cancelled: "deployBoardOutcomeCancelled",
+    lost: "deployBoardOutcomeLost",
 };
 
 export default {
@@ -185,7 +187,9 @@ export default {
         color: var(--db-warn);
     }
 
-    .is-replaced & {
+    .is-replaced &,
+    .is-cancelled &,
+    .is-lost & {
         color: var(--db-ink-3);
     }
 }

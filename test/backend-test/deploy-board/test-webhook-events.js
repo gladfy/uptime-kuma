@@ -100,6 +100,7 @@ describe("Eventos do Bitbucket", () => {
                 project: "condominio",
                 sha: SHA,
                 message: "Merged develop into master",
+                skipCi: false,
                 at: Date.parse("2026-11-02T19:41:00+00:00"),
             },
         ]);
@@ -213,6 +214,7 @@ describe("Eventos do GitHub", () => {
             kind: "merge",
             sha: SHA,
             message: "Merge pull request #12 from gladfy/x",
+            skipCi: false,
             at: Date.parse("2026-11-02T19:39:00Z"),
         });
         assert.deepStrictEqual(parseGithub("push", { ...payload, ref: "refs/heads/develop" }, PROJECTS).events, []);
@@ -232,8 +234,21 @@ describe("Eventos do GitHub", () => {
             assert.strictEqual(e.state, state, JSON.stringify(o));
             assert.strictEqual(e.runId, "9988776655");
         }
-        // Pulado não é resultado de deploy.
-        assert.deepStrictEqual(parseGithub("workflow_run", githubRun({ conclusion: "skipped" }), PROJECTS).events, []);
+        // Todo concluído tem estado final: só falha de verdade é "failed"; o resto termina sem falhar.
+        for (const conclusion of ["skipped", "neutral", "stale", "action_required"]) {
+            assert.strictEqual(
+                parseGithub("workflow_run", githubRun({ conclusion }), PROJECTS).events[0].state,
+                "stopped",
+                conclusion
+            );
+        }
+        for (const conclusion of ["timed_out", "startup_failure"]) {
+            assert.strictEqual(
+                parseGithub("workflow_run", githubRun({ conclusion }), PROJECTS).events[0].state,
+                "failed",
+                conclusion
+            );
+        }
         // Do autor do commit, nada sai.
         assert.ok(!JSON.stringify(parseGithub("workflow_run", githubRun(), PROJECTS)).includes("erik@winker.com.br"));
     });
@@ -282,11 +297,28 @@ describe("Eventos do GitHub", () => {
             sha: SHA,
             runId: "9988776655",
             jobId: "111",
+            attempt: 1,
+            updatedAt: Date.parse("2026-11-02T19:55:00Z"),
             name: "deploy",
             state: "success",
             startedAt: Date.parse("2026-11-02T19:45:00Z"),
             endedAt: Date.parse("2026-11-02T19:55:00Z"),
         });
+    });
+
+    test("marcadores de pular a pipeline, no título ou como trailer", () => {
+        const { asksNoPipeline } = require("../../../server/deploy-board/bitbucket-events");
+        for (const m of [
+            "x [skip ci]",
+            "x [ci skip]",
+            "x [no ci]",
+            "x [skip actions]",
+            "x [actions skip]",
+            "x\n\nskip-checks: true",
+        ]) {
+            assert.strictEqual(asksNoPipeline(m), true, m);
+        }
+        assert.strictEqual(asksNoPipeline("Merged develop into master\n\nfix skip ci docs"), false);
     });
 
     test("projeto sem origem nunca casa, e o ping de criação do webhook não vira evento", () => {

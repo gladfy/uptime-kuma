@@ -31,6 +31,19 @@ function firstLine(value) {
 }
 
 /**
+ * GitHub's and Bitbucket's ways of asking a push for no pipeline, in the title or as a trailer.
+ */
+const SKIP_CI_RE = /\[(skip ci|ci skip|no ci|skip actions|actions skip)\]|^skip-checks:\s*true$/im;
+
+/**
+ * @param {any} value Whole commit message.
+ * @returns {boolean} Whether it asks for no pipeline: then there will be no deploy to wait for.
+ */
+function asksNoPipeline(value) {
+    return SKIP_CI_RE.test(String(value || ""));
+}
+
+/**
  * @param {any} value Time from the payload.
  * @returns {number|null} In ms, or null when absent or unreadable.
  */
@@ -90,6 +103,7 @@ function parseBitbucket(eventKey, payload, projects) {
                 project: project.name,
                 sha,
                 message: firstLine(target.target?.message),
+                skipCi: asksNoPipeline(target.target?.message),
                 at: timeOf(target.target?.date),
             });
         }
@@ -120,6 +134,9 @@ function parseBitbucket(eventKey, payload, projects) {
                 url: bitbucketLink(status.url),
                 startedAt: timeOf(status.created_on),
                 endedAt: ended ? timeOf(status.updated_on) : null,
+                attempt: 1,
+                // A rerun of failed steps reuses the key with a later updated_on.
+                updatedAt: timeOf(status.updated_on),
             });
         }
     }
@@ -128,6 +145,7 @@ function parseBitbucket(eventKey, payload, projects) {
 
 module.exports = {
     MESSAGE_MAX,
+    asksNoPipeline,
     firstLine,
     timeOf,
     parseBitbucket,
