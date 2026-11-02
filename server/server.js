@@ -211,6 +211,10 @@ const { SetupDatabase } = require("./setup-database");
 const { chartSocketHandler } = require("./socket-handlers/chart-socket-handler");
 const { deployBoardSocketHandler } = require("./socket-handlers/deploy-board-socket-handler");
 const { deployBoard } = require("./deploy-board");
+const { createDeployBoardWebhookRouter } = require("./routers/deploy-board-webhook-router");
+
+// Before express.json(): the deploy board's webhooks are signed over the raw body.
+app.use(createDeployBoardWebhookRouter({ board: deployBoard, clientIP: (req) => server.getClientIPwithProxy(req.socket.remoteAddress, req.headers) }));
 
 app.use(express.json());
 

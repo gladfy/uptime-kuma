@@ -30,6 +30,7 @@ const DEPLOY_PUBLIC_FIELDS = [
     "confirmed",
     "releases",
     "rollback",
+    "pipeline",
 ];
 const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt", "endedAt", "missed", "releases"];
 
@@ -67,14 +68,32 @@ const HISTORY_MAX = 500;
  */
 const GROUP_WINDOW_MS = 20 * 60 * 1000;
 
+/**
+ * A green pipeline of a project in the cluster with no rollout this long after it ended gets the
+ * warning "pipeline verde, nenhuma virada vista" (only while the cluster is being read)...
+ */
+const NO_ROLLOUT_MS = 10 * 60 * 1000;
+
+/** ...and leaves the screen for the history this long after it ended. */
+const NO_ROLLOUT_LEAVE_MS = 60 * 60 * 1000;
+
+/**
+ * A merge whose pipeline never reports (a "[skip ci]" commit, or a run of a workflow that is not the
+ * configured one) is dropped after this long: there was no deploy.
+ */
+const MERGE_WAIT_MS = 15 * 60 * 1000;
+
 /** How often the store checks what is due to leave the screen. */
 const TICK_MS = 30 * 1000;
 
 /** Counters of the last HISTORY_MS, as the header shows them. Nothing else leaves in `stats`. */
-const STATS_FIELDS = ["total", "done", "stuck", "failed", "replaced", "inProgress", "successRate"];
+const STATS_FIELDS = ["total", "done", "stuck", "failed", "replaced", "noRollout", "inProgress", "successRate"];
 
-/** Order of the cards: what needs attention first. */
+/** States of a deploy derived from its rollouts, worst first. */
 const STATE_ORDER = ["stuck", "noProgress", "updating", "done"];
+
+/** Order of the cards: what needs attention first, then what is moving, then what ended well. */
+const DEPLOY_ORDER = ["failed", "stuck", "noProgress", "updating", "built", "pipeline", "done"];
 
 /** Label of the card for each rollout state. */
 const STATE_LABELS = {
@@ -83,6 +102,9 @@ const STATE_LABELS = {
     stuck: "stuck",
     done: "live",
     superseded: "replaced",
+    pipeline: "inPipeline",
+    built: "built",
+    failed: "failed",
 };
 
 /** Deploy states with a "how to go back" on the card. */
@@ -112,6 +134,7 @@ class DeployBoardStore {
         this.deploys = [];
         this.history = [];
         this.projectOfRelease = new Map();
+        this.projects = new Map();
         this.staleNamespaces = new Set();
         this.lastDoneStartedAt = new Map();
         this.sequence = 0;
@@ -165,7 +188,9 @@ class DeployBoardStore {
      */
     setProjects(projects) {
         this.projectOfRelease.clear();
+        this.projects.clear();
         for (const project of projects) {
+            this.projects.set(project.name, { name: project.name, source: project.source });
             for (const r of project.releases) {
                 this.projectOfRelease.set(`${r.namespace}/${r.release}`, { name: project.name, source: project.source });
             }
@@ -204,7 +229,7 @@ class DeployBoardStore {
         }
         const wasEnded = deploy.endedAt !== null;
         deploy.rollouts.set(rollout.id, { ...rollout });
-        refresh(deploy);
+        refresh(deploy, this.clusterActive());
         if (deploy.state === "done") {
             const last = this.lastDoneStartedAt.get(project.name) ?? -Infinity;
             this.lastDoneStartedAt.set(project.name, Math.max(last, deploy.startedAt));
@@ -215,6 +240,98 @@ class DeployBoardStore {
         }
         this.settle();
         this.changed();
+    }
+
+    /**
+     * What a webhook said about the pipeline of a commit (see bitbucket-events.js and
+     * github-events.js). It joins the deploy of the same project and commit, on screen or in the
+     * history; without one, a rollout already on screen whose tag has no commit and that started
+     * while this pipeline ran (the chat's "prod"; the Kuma, whose own deploy is always seen after
+     * the fact); otherwise it starts a deploy.
+     * @param {object} event Merge, run or job of a project.
+     * @returns {void}
+     */
+    pipelineEvent(event) {
+        const project = this.projects.get(event.project);
+        if (!project || !project.source) {
+            return;
+        }
+        let deploy =
+            this.deploys.find((d) => d.project === project.name && d.sha === event.sha) ||
+            this.reopen(project, event.sha, () => true);
+        if (!deploy && event.kind === "run") {
+            deploy = this.deploys.find(
+                (d) =>
+                    d.project === project.name &&
+                    !d.sha &&
+                    !d.pipeline &&
+                    d.rollouts.size > 0 &&
+                    runCovers(event, Math.min(...[...d.rollouts.values()].map((r) => r.startedAt)))
+            );
+            if (deploy) {
+                deploy.sha = event.sha;
+                deploy.version = event.sha.slice(0, 7);
+            }
+        }
+        if (!deploy) {
+            // A status with no branch is only taken for a commit already known to be on the branch;
+            // a job only for a run already known; a "[skip ci]" merge has no pipeline to wait for.
+            if ((event.kind === "run" && !event.branchKnown) || event.kind === "job" || isSkipCi(event)) {
+                return;
+            }
+            deploy = this.newDeploy(project, event.sha, event.sha.slice(0, 7), eventTime(event) ?? this.now());
+        }
+
+        deploy.pipeline = deploy.pipeline || newPipeline(project.source);
+        if (!applyPipelineEvent(deploy.pipeline, event)) {
+            return;
+        }
+        const wasEnded = deploy.endedAt !== null;
+        refresh(deploy, this.clusterActive());
+        // Saved when it ends, and again when a pipeline of an ended deploy reports (the chat's
+        // workflow finishes after the rollout it waits for).
+        if (deploy.endedAt !== null) {
+            this.save(recordOf(deploy, outcomeOf(deploy), deploy.endedAt));
+        }
+        if (!wasEnded && deploy.state === "done") {
+            const last = this.lastDoneStartedAt.get(project.name) ?? -Infinity;
+            this.lastDoneStartedAt.set(project.name, Math.max(last, deploy.startedAt));
+        }
+        this.settle();
+        this.changed();
+    }
+
+    /**
+     * @returns {boolean} Whether the cluster is being read: only then "no rollout" can be said.
+     */
+    clusterActive() {
+        return this.sources.cluster.state === "active";
+    }
+
+    /**
+     * A deploy with nothing in it yet, on screen.
+     * @param {{name: string, source: string}} project Project.
+     * @param {string|null} sha Commit, when known.
+     * @param {string|null} version What the card shows as the version.
+     * @param {number} startedAt Start.
+     * @returns {object} The deploy.
+     */
+    newDeploy(project, sha, version, startedAt) {
+        const deploy = {
+            // The creation time keeps it apart from the ids of deploys loaded after a restart.
+            id: `${project.name}:${this.now()}-${++this.sequence}`,
+            project: project.name,
+            pipelineSource: project.source,
+            sha,
+            version,
+            rollouts: new Map(),
+            pipeline: null,
+            state: "pipeline",
+            startedAt,
+            endedAt: null,
+        };
+        this.deploys.push(deploy);
+        return deploy;
     }
 
     /**
@@ -279,7 +396,7 @@ class DeployBoardStore {
         }
         const deploys = [...this.deploys]
             .sort(
-                (a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state) || b.startedAt - a.startedAt
+                (a, b) => DEPLOY_ORDER.indexOf(a.state) - DEPLOY_ORDER.indexOf(b.state) || b.startedAt - a.startedAt
             )
             .map((d) => pickPublic(this.publicDeploy(d), DEPLOY_PUBLIC_FIELDS));
         return {
@@ -294,18 +411,19 @@ class DeployBoardStore {
     /**
      * Deploys of the last HISTORY_MS by outcome, and the success rate. Counted per deploy (a commit
      * with integration and production is one), from the history and the cards on screen. A replaced
-     * deploy is out of the rate: nobody finished it, a newer one took its place.
+     * deploy is out of the rate: nobody finished it, a newer one took its place. So is a green
+     * pipeline that never rolled: it may be a run of a commit already live, and nothing failed.
      * @returns {object} Counters, with `successRate` from 0 to 100, or null with nothing ended.
      */
     stats() {
-        const counts = { done: 0, stuck: 0, failed: 0, replaced: 0, inProgress: 0 };
+        const counts = { done: 0, stuck: 0, failed: 0, replaced: 0, noRollout: 0, inProgress: 0 };
         for (const h of this.history) {
             if (counts[h.outcome] !== undefined) {
                 counts[h.outcome]++;
             }
         }
         for (const d of this.deploys) {
-            if (d.state === "done" || d.state === "stuck") {
+            if (d.state === "done" || d.state === "stuck" || d.state === "failed") {
                 counts[d.state]++;
             } else if (d.state === "superseded") {
                 counts.replaced++;
@@ -314,7 +432,7 @@ class DeployBoardStore {
             }
         }
         const ended = counts.done + counts.stuck + counts.failed;
-        const total = ended + counts.replaced + counts.inProgress;
+        const total = ended + counts.replaced + counts.noRollout + counts.inProgress;
         const successRate = ended === 0 ? null : Math.round((100 * counts.done) / ended);
         return pickPublic({ total, ...counts, successRate }, STATS_FIELDS);
     }
@@ -329,13 +447,19 @@ class DeployBoardStore {
             deploy.pipelineSource !== null && this.sources[deploy.pipelineSource]?.state !== "unconfigured";
         const cluster = this.sources.cluster.state;
         const rollouts = liveRollouts(deploy);
+        const missed = isMissed(rollouts);
         return {
             id: deploy.id,
             project: deploy.project,
             version: deploy.version,
             state: deploy.state,
-            label: deployLabel(deploy.state, { pipelineConfigured, hasPipeline: false }),
-            missed: isMissed(rollouts),
+            label: deployLabel(deploy.state, {
+                pipelineConfigured,
+                hasPipeline: deploy.pipeline !== null,
+                missed,
+                noRollout: this.noRollout(deploy),
+            }),
+            missed,
             startedAt: deploy.startedAt,
             endedAt: deploy.endedAt,
             confirmed:
@@ -352,8 +476,20 @@ class DeployBoardStore {
                 cronJobsUpdated: r.cronJobsUpdated,
                 atBoot: r.atBoot,
             })),
-            rollback: ROLLBACK_STATES.includes(deploy.state) ? this.rollbackOf(deploy, rollouts) : null,
+            rollback:
+                ROLLBACK_STATES.includes(deploy.state) && rollouts.length > 0 ? this.rollbackOf(deploy, rollouts) : null,
+            pipeline: deploy.pipeline ? publicPipeline(deploy.pipeline) : null,
         };
+    }
+
+    /**
+     * @param {object} deploy Internal deploy.
+     * @returns {boolean} Whether it is a green pipeline with no rollout NO_ROLLOUT_MS after it ended,
+     * while the cluster is read (without it, a missing rollout is a missing source).
+     */
+    noRollout(deploy) {
+        const end = deploy.pipeline ? pipelineEnd(deploy.pipeline) : null;
+        return deploy.state === "built" && this.clusterActive() && end !== null && this.now() - end >= NO_ROLLOUT_MS;
     }
 
     /**
@@ -408,26 +544,37 @@ class DeployBoardStore {
             return !d.sha && d.endedAt === null && rollout.startedAt - d.startedAt <= GROUP_WINDOW_MS;
         };
 
-        let deploy = this.deploys.find(fits);
+        let deploy = sha ? null : this.pipelineFor(project, rollout, sameRelease);
+        deploy = deploy || this.deploys.find(fits);
         if (!deploy && sha) {
             deploy = this.reopen(project, sha, (h) => !h.rollouts.some((r) => r.namespace === rollout.namespace && r.release === rollout.release));
         }
         if (!deploy) {
-            deploy = {
-                // The creation time keeps it apart from the ids of deploys loaded after a restart.
-                id: `${project.name}:${this.now()}-${++this.sequence}`,
-                project: project.name,
-                pipelineSource: project.source,
-                sha,
-                version: sha ? sha.slice(0, 7) : rollout.images[0] || null,
-                rollouts: new Map(),
-                state: "updating",
-                startedAt: rollout.startedAt,
-                endedAt: null,
-            };
-            this.deploys.push(deploy);
+            deploy = this.newDeploy(project, sha, sha ? sha.slice(0, 7) : rollout.images[0] || null, rollout.startedAt);
+            deploy.state = "updating";
         }
         return deploy;
+    }
+
+    /**
+     * For a rollout whose tag has no commit: the latest deploy of the project whose pipeline was
+     * running when the rollout began, or ended green up to GROUP_WINDOW_MS before, and that no rollout
+     * with a commit took.
+     * @param {{name: string}} project Project of the rollout.
+     * @param {object} rollout Rollout.
+     * @param {Function} sameRelease Whether a deploy already has this release.
+     * @returns {object|null} The deploy, or null.
+     */
+    pipelineFor(project, rollout, sameRelease) {
+        const candidates = this.deploys.filter(
+            (d) =>
+                d.project === project.name &&
+                d.pipeline &&
+                !sameRelease(d) &&
+                [...d.rollouts.values()].every((r) => !shaOf(r.images)) &&
+                [...d.pipeline.runs.values()].some((run) => runCovers(run, rollout.startedAt))
+        );
+        return candidates.sort((a, b) => b.startedAt - a.startedAt)[0] || null;
     }
 
     /**
@@ -451,6 +598,7 @@ class DeployBoardStore {
             sha,
             version: record.version,
             rollouts: new Map(record.rollouts.map((r) => [r.id, { ...r }])),
+            pipeline: record.pipeline ? pipelineFromRecord(record.pipeline) : null,
             state: "done",
             startedAt: record.startedAt,
             // Open again: when it ends it is saved again, even if the rollout that reopened it arrives done.
@@ -490,9 +638,28 @@ class DeployBoardStore {
                 outcome = "done";
             } else if (deploy.state === "stuck" && (this.lastDoneStartedAt.get(deploy.project) ?? -Infinity) > deploy.startedAt) {
                 outcome = "stuck";
+            } else if (deploy.state === "failed" && now - deploy.endedAt >= DONE_VISIBLE_MS) {
+                outcome = "failed";
+            } else if (deploy.state === "built" && this.clusterActive() && now - pipelineEnd(deploy.pipeline) >= NO_ROLLOUT_LEAVE_MS) {
+                deploy.endedAt = pipelineEnd(deploy.pipeline);
+                outcome = "noRollout";
+            } else if (
+                deploy.state === "pipeline" &&
+                deploy.rollouts.size === 0 &&
+                deploy.pipeline.runs.size === 0 &&
+                now - deploy.startedAt >= MERGE_WAIT_MS
+            ) {
+                // A merge whose pipeline never reported: not a deploy, so not in the history either.
+                this.deploys.splice(this.deploys.indexOf(deploy), 1);
+                moved = true;
+                continue;
             }
             if (outcome) {
                 this.toHistory(deploy, outcome, now);
+                moved = true;
+            } else if (this.noRollout(deploy) && !deploy.noRolloutShown) {
+                // The warning shows up with time, not with an event: broadcast it.
+                deploy.noRolloutShown = true;
                 moved = true;
             }
         }
@@ -504,7 +671,7 @@ class DeployBoardStore {
 
     /**
      * @param {object} deploy Internal deploy.
-     * @param {string} outcome "done", "stuck" or "replaced".
+     * @param {string} outcome "done", "stuck", "replaced", "failed" or "noRollout".
      * @param {number} now Current time.
      * @returns {void}
      */
@@ -592,25 +759,53 @@ class DeployBoardStore {
  * @param {object} options Options.
  * @param {boolean} options.pipelineConfigured Whether the project's pipeline source is configured.
  * @param {boolean} options.hasPipeline Whether a pipeline run was matched to the deploy.
+ * @param {boolean} options.missed Whether it rolled while the board was down: then its pipeline may
+ * have reported while nobody listened, and "no pipeline" cannot be said.
+ * @param {boolean} options.noRollout Whether it is a green pipeline that no rollout followed.
  * @returns {string} Label id.
  */
-function deployLabel(state, { pipelineConfigured, hasPipeline }) {
-    if (pipelineConfigured && !hasPipeline) {
+function deployLabel(state, { pipelineConfigured, hasPipeline, missed = false, noRollout = false }) {
+    if (noRollout) {
+        return "noRollout";
+    }
+    if (pipelineConfigured && !hasPipeline && !missed) {
         return "noPipeline";
     }
     return STATE_LABELS[state];
 }
 
 /**
- * Recompute a deploy from its rollouts. A replaced rollout does not count while another of the
- * deploy is alive.
+ * Recompute a deploy. With rollouts, they say where it is (a replaced one does not count while
+ * another is alive); without, the pipeline does. It starts at the earliest of the merge, the
+ * pipeline and the rollouts, so "took N" is the time from the merge to "No ar".
  * @param {object} deploy Internal deploy.
+ * @param {boolean} clusterActive Whether the cluster is read: without it, a green pipeline is as far
+ * as the board can follow, and the deploy ends there.
  * @returns {void}
  */
-function refresh(deploy) {
+function refresh(deploy, clusterActive) {
     const all = [...deploy.rollouts.values()];
     const live = all.filter((r) => r.state !== "superseded");
-    deploy.startedAt = Math.min(...all.map((r) => r.startedAt));
+    const starts = [...all.map((r) => r.startedAt), ...(deploy.pipeline ? pipelineStarts(deploy.pipeline) : [])];
+    const known = starts.filter(Number.isFinite);
+    // An event with an unreadable date keeps the start the deploy already had.
+    if (known.length) {
+        deploy.startedAt = Math.min(...known);
+    }
+    if (all.length === 0) {
+        const state = deploy.pipeline ? pipelineState(deploy.pipeline) : "merged";
+        if (state === "failed" || state === "stopped") {
+            deploy.state = "failed";
+            deploy.endedAt = pipelineEnd(deploy.pipeline);
+        } else if (state === "success") {
+            deploy.state = clusterActive ? "built" : "done";
+            deploy.endedAt = clusterActive ? null : pipelineEnd(deploy.pipeline);
+        } else {
+            deploy.state = "pipeline";
+            deploy.endedAt = null;
+        }
+        return;
+    }
     if (live.length === 0) {
         deploy.state = "superseded";
         deploy.endedAt = Math.max(...all.map((r) => r.endedAt ?? r.startedAt));
@@ -624,7 +819,7 @@ function refresh(deploy) {
  * The history record of a deploy: what the "Today" list shows and what the database keeps. The
  * rollouts are kept (to join a later rollout of the same commit) but never leave by the snapshot.
  * @param {object} deploy Internal deploy.
- * @param {string} outcome "done", "stuck" or "replaced".
+ * @param {string} outcome "done", "stuck", "replaced", "failed" or "noRollout".
  * @param {number} endedAt When it ended.
  * @returns {object} Record.
  */
@@ -641,6 +836,189 @@ function recordOf(deploy, outcome, endedAt) {
         endedAt,
         releases: rollouts.map((r) => ({ namespace: r.namespace, release: r.release })),
         rollouts,
+        pipeline: deploy.pipeline ? pipelineRecord(deploy.pipeline) : null,
+    };
+}
+
+/**
+ * @param {object} deploy Internal deploy that ended.
+ * @returns {string} Its outcome for the history.
+ */
+function outcomeOf(deploy) {
+    return { superseded: "replaced", failed: "failed", stuck: "stuck" }[deploy.state] || "done";
+}
+
+/**
+ * @param {string} source "bitbucket" or "github".
+ * @returns {object} Pipeline of a deploy, before any event.
+ */
+function newPipeline(source) {
+    return { source, merge: null, runs: new Map(), jobs: new Map() };
+}
+
+/**
+ * Apply one webhook event to the pipeline of a deploy. Each event carries the whole state of its run
+ * or job, so the last one wins.
+ * @param {object} pipeline Pipeline of the deploy.
+ * @param {object} event Merge, run or job.
+ * @returns {boolean} Whether it was taken (a job of an unknown run is not).
+ */
+function applyPipelineEvent(pipeline, event) {
+    if (event.kind === "merge") {
+        pipeline.merge = { at: event.at, message: event.message };
+    } else if (event.kind === "run") {
+        const before = pipeline.runs.get(event.runId);
+        pipeline.runs.set(event.runId, {
+            runId: event.runId,
+            name: event.name,
+            state: event.state,
+            url: event.url ?? before?.url ?? null,
+            // A late "completed" may come without the start the "in_progress" had.
+            startedAt: event.startedAt ?? before?.startedAt ?? null,
+            endedAt: event.endedAt,
+        });
+    } else if (event.kind === "job") {
+        if (!pipeline.runs.has(event.runId)) {
+            return false;
+        }
+        pipeline.jobs.set(event.jobId, {
+            runId: event.runId,
+            name: event.name,
+            state: event.state,
+            startedAt: event.startedAt,
+            endedAt: event.endedAt,
+        });
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * State of a pipeline: running while any run runs; otherwise that of the latest run, so a rerun that
+ * passed counts over the run that failed before it.
+ * @param {object} pipeline Pipeline.
+ * @returns {string} "merged" (no run yet), "queued", "running", "success", "failed" or "stopped".
+ */
+function pipelineState(pipeline) {
+    const runs = [...pipeline.runs.values()];
+    if (runs.length === 0) {
+        return "merged";
+    }
+    if (runs.some((r) => r.state === "running")) {
+        return "running";
+    }
+    if (runs.some((r) => r.state === "queued")) {
+        return "queued";
+    }
+    return runs.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))[0].state;
+}
+
+/**
+ * @param {object} pipeline Pipeline.
+ * @returns {number[]} When its merge and its runs started.
+ */
+function pipelineStarts(pipeline) {
+    return [pipeline.merge?.at, ...[...pipeline.runs.values()].map((r) => r.startedAt)];
+}
+
+/**
+ * @param {object} pipeline Pipeline.
+ * @returns {number|null} When its last run ended, or null while one runs or none did.
+ */
+function pipelineEnd(pipeline) {
+    const runs = [...pipeline.runs.values()];
+    if (runs.length === 0 || runs.some((r) => r.endedAt === null)) {
+        return null;
+    }
+    return Math.max(...runs.map((r) => r.endedAt ?? 0));
+}
+
+/**
+ * Whether a run is the one behind a rollout without a commit in its tag: running when the rollout
+ * began, or green up to GROUP_WINDOW_MS before it.
+ * @param {object} run Run.
+ * @param {number} rolloutStart When the rollout began.
+ * @returns {boolean} Whether it covers it.
+ */
+function runCovers(run, rolloutStart) {
+    if (run.startedAt !== null && run.startedAt > rolloutStart) {
+        return false;
+    }
+    // Still running, or ended after the rollout began (the chat's helm --wait, the Kuma's own deploy
+    // job): it was running then, whatever its result.
+    if (run.endedAt === null || run.endedAt >= rolloutStart) {
+        return true;
+    }
+    return run.state === "success" && rolloutStart - run.endedAt <= GROUP_WINDOW_MS;
+}
+
+/**
+ * @param {object} event Pipeline event.
+ * @returns {number|null} When it happened.
+ */
+function eventTime(event) {
+    return event.at ?? event.startedAt ?? null;
+}
+
+/**
+ * @param {object} event Pipeline event.
+ * @returns {boolean} Whether it is a merge that asks for no pipeline: there will be no deploy.
+ */
+function isSkipCi(event) {
+    return event.kind === "merge" && /\[(skip ci|ci skip)\]/i.test(event.message || "");
+}
+
+/**
+ * What the card shows of a pipeline: no more than the spec lists.
+ * @param {object} pipeline Pipeline.
+ * @returns {object} Public pipeline.
+ */
+function publicPipeline(pipeline) {
+    const runs = [...pipeline.runs.values()].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+    const latest = runs[0] || null;
+    const jobs = latest
+        ? [...pipeline.jobs.values()]
+              .filter((j) => j.runId === latest.runId)
+              .sort((a, b) => (a.startedAt ?? Infinity) - (b.startedAt ?? Infinity))
+              .map((j) => ({ name: j.name, state: j.state, startedAt: j.startedAt, endedAt: j.endedAt }))
+        : [];
+    return {
+        source: pipeline.source,
+        state: pipelineState(pipeline),
+        name: latest?.name || null,
+        url: latest?.url || null,
+        mergedAt: pipeline.merge?.at ?? null,
+        message: pipeline.merge?.message ?? null,
+        startedAt: latest?.startedAt ?? null,
+        endedAt: pipelineEnd(pipeline),
+        jobs,
+    };
+}
+
+/**
+ * @param {object} pipeline Pipeline.
+ * @returns {object} The same, with lists instead of maps, for the database.
+ */
+function pipelineRecord(pipeline) {
+    return {
+        source: pipeline.source,
+        merge: pipeline.merge,
+        runs: [...pipeline.runs.values()],
+        jobs: [...pipeline.jobs.entries()].map(([jobId, j]) => ({ jobId, ...j })),
+    };
+}
+
+/**
+ * @param {object} record Pipeline as saved.
+ * @returns {object} Pipeline of a deploy.
+ */
+function pipelineFromRecord(record) {
+    return {
+        source: record.source,
+        merge: record.merge || null,
+        runs: new Map((record.runs || []).map((r) => [r.runId, { ...r }])),
+        jobs: new Map((record.jobs || []).map(({ jobId, ...j }) => [jobId, j])),
     };
 }
 
@@ -697,6 +1075,9 @@ module.exports = {
     HISTORY_MS,
     HISTORY_MAX,
     GROUP_WINDOW_MS,
+    NO_ROLLOUT_MS,
+    NO_ROLLOUT_LEAVE_MS,
+    MERGE_WAIT_MS,
     deployLabel,
     DeployBoardStore,
 };
