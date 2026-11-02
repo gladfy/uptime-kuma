@@ -476,11 +476,12 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 
 - **Cabeçalho do Bitbucket:** conferir numa entrega real se o Bitbucket Cloud envia
   `X-Hub-Signature` com `sha256=`. Se vier outro formato, só a função de verificação muda.
-- **Origem dos projetos da fase 3:** Status (Bitbucket `winker/status` ou CodeCommit `status`),
-  Site, Jambonz VAD, wk-face-api, land, chat-api, ai-agents, winker-mcp e audit-consumer. Sem
-  confirmação, entram sem origem; acrescentar depois é só configuração.
-- **Monitor "Flow":** se ele confere algo em `api.winker.com.br`, é do gateway e ganha a tag
-  `gateway/gateway-prod`.
+- **Origem dos projetos da fase 3:** resolvida em 02/11/2026 para land (Bitbucket `winker/land`),
+  ai-agents (`winker/ia-agents`) e winker-mcp (`winker/mcp-winker`), que entram com origem na fase
+  4; Status e Site são CodeCommit e wk-face-api não tem deploy por pipeline, então ficam sem origem.
+  Seguem pendentes chat-api e audit-consumer; sem confirmação, ficam sem origem.
+- **Monitor "Flow":** resolvido — `flow.winker.com.br` é domínio do app `pro` do Amplify; tag
+  `amplify/pro` na fase 7.
 - **Ligações que dependem de confirmação:** guest-link → "Convite" e gatekeeper-dashboard →
   "Portaria Web" parecem corresponder, mas não foram confirmadas. Os outros apps do Amplify ficam
   sem monitor até alguém dizer qual é.
