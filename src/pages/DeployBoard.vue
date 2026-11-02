@@ -1,5 +1,5 @@
 <template>
-    <div class="deploy-board" :class="{ 'is-dark': $root.isDark, 'is-wall': wall }">
+    <div class="deploy-board" :class="{ 'is-dark': $root.isDark, 'is-wall': wall, 'is-idle': idle }">
         <div v-if="!$root.loggedIn" class="db-login">
             <Login v-if="$root.allowLoginDialog" />
         </div>
@@ -39,7 +39,7 @@
                     <span v-if="soundOn && soundBlocked" class="db-sound-blocked">{{ $t("deployBoardSoundBlocked") }}</span>
                     <button
                         type="button"
-                        class="db-theme db-sound"
+                        class="db-theme db-sound db-control"
                         :class="{ 'is-on': soundOn, 'is-blocked': soundOn && soundBlocked }"
                         :title="soundToggleTitle"
                         :aria-label="soundToggleLabel"
@@ -50,7 +50,7 @@
                     </button>
                     <button
                         type="button"
-                        class="db-theme"
+                        class="db-theme db-control"
                         :title="themeToggleLabel"
                         :aria-label="themeToggleLabel"
                         @click="toggleTheme"
@@ -127,6 +127,12 @@ const BOARD_RETRY_MS = 2000;
 /** Width from which the board is a one-screen wall layout. Mirrors the media query below. */
 const WALL_QUERY = "(min-width: 1180px)";
 
+/** The buttons fade out this long after the last mouse move, touch or key. */
+const IDLE_MS = 2500;
+
+/** What counts as someone at the screen. */
+const ACTIVITY_EVENTS = ["mousemove", "pointerdown", "touchstart", "keydown"];
+
 /** Where this browser remembers that sound is on. */
 const SOUND_KEY = "deployBoardSound";
 
@@ -168,6 +174,7 @@ export default {
             board: null,
             now: Date.now(),
             wall: window.matchMedia(WALL_QUERY).matches,
+            idle: false,
             soundOn: soundSaved(),
             // After a reload the browser plays nothing until someone clicks the page.
             soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
@@ -415,6 +422,18 @@ export default {
         };
         document.addEventListener("pointerdown", this.onFirstGesture);
         document.addEventListener("keydown", this.onFirstGesture);
+        // Seen from across the room the buttons are noise: they show while someone is at the screen.
+        this.onActivity = () => {
+            this.idle = false;
+            clearTimeout(this.idleTimer);
+            this.idleTimer = setTimeout(() => {
+                this.idle = true;
+            }, IDLE_MS);
+        };
+        for (const name of ACTIVITY_EVENTS) {
+            document.addEventListener(name, this.onActivity, { passive: true });
+        }
+        this.onActivity();
         this.slug = String(this.$route.params.slug || "").toLowerCase();
         this.clockTimer = setInterval(() => {
             this.now = Date.now();
@@ -447,6 +466,10 @@ export default {
         this.wallQuery?.removeEventListener("change", this.onWallChange);
         document.removeEventListener("pointerdown", this.onFirstGesture);
         document.removeEventListener("keydown", this.onFirstGesture);
+        for (const name of ACTIVITY_EVENTS) {
+            document.removeEventListener(name, this.onActivity);
+        }
+        clearTimeout(this.idleTimer);
         this.player.stop();
         this.releaseAwake?.();
         if (this.onBoardUpdate) {
@@ -844,6 +867,22 @@ function names(monitors) {
 /* stylelint-disable-next-line selector-class-pattern -- class name owned by vue-toastification */
 body.deploy-board-body .Vue-Toastification__container {
     display: none;
+}
+
+/* Buttons and links of the whole board, children included, fade out with no one at the screen; a
+   keyboard focus brings its own back. Here, unscoped, because they live in the child components. */
+.deploy-board .db-control {
+    transition: opacity 0.3s ease;
+}
+
+.deploy-board.is-idle .db-control {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.deploy-board.is-idle .db-control:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
 }
 </style>
 

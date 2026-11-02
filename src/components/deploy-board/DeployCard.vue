@@ -36,7 +36,7 @@
         <section v-if="pipeline" class="db-pipeline" :class="'is-' + pipeline.state">
             <div class="db-pipeline-head">
                 <span class="db-pipeline-state">{{ $t(PIPELINE_KEYS[pipeline.state] || PIPELINE_KEYS.running) }}</span>
-                <a v-if="pipeline.url" class="db-pipeline-link" :href="pipeline.url" target="_blank" rel="noopener noreferrer">
+                <a v-if="pipeline.url" class="db-pipeline-link db-control" :href="pipeline.url" target="_blank" rel="noopener noreferrer">
                     {{ $t("deployBoardPipelineOpen") }}
                 </a>
             </div>
