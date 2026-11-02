@@ -83,9 +83,6 @@
                             <span class="db-legend-item is-maintenance">{{ $t("deployBoardStatusMaintenance") }}</span>
                             <span>{{ $t("deployBoardBeatsHint") }}</span>
                         </span>
-                        <span v-if="paging.pages > 1" class="db-page">
-                            {{ $t("deployBoardPage", [paging.page, paging.pages]) }}
-                        </span>
                     </div>
 
                     <p v-if="!kumaConnected" class="db-warning">{{ $t("deployBoardKumaNoReadDetail") }}</p>
@@ -93,7 +90,7 @@
 
                     <div class="db-services-body">
                         <IncidentBlock v-if="promoted.length" :monitors="promoted" />
-                        <MonitorGrid :monitors="gridMonitors" :fill="wall" @paging="paging = $event" />
+                        <MonitorGrid :monitors="gridMonitors" :fill="wall" />
                     </div>
                 </section>
             </main>
@@ -177,7 +174,6 @@ export default {
             board: null,
             now: Date.now(),
             wall: window.matchMedia(WALL_QUERY).matches,
-            paging: { page: 1, pages: 1 },
             soundOn: soundSaved(),
             // After a reload the browser plays nothing until someone clicks the page.
             soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
@@ -1171,14 +1167,6 @@ body.deploy-board-body .Vue-Toastification__container {
     &.is-maintenance::before {
         background: var(--db-maint);
     }
-}
-
-.db-page {
-    margin-left: auto;
-    font-size: 0.82em;
-    font-weight: 700;
-    color: var(--db-ink-2);
-    font-variant-numeric: tabular-nums;
 }
 
 .db-warning {

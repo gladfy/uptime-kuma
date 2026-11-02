@@ -1,73 +1,39 @@
 <template>
-    <div ref="area" class="db-grid-area" :class="{ 'is-fill': fill }">
-        <!-- Natural height of one cell, measured instead of assumed: the capacity follows the font. -->
-        <div ref="probe" class="db-cell db-cell-probe" aria-hidden="true">
-            <span class="db-cell-name">Monitor</span>
-            <span class="db-cell-row">
-                <span class="db-cell-state">Normal</span>
-                <span class="db-beats"><i v-for="n in beatCount" :key="n"></i></span>
-            </span>
-        </div>
-
+    <div class="db-grid-area" :class="{ 'is-fill': fill }">
         <div class="db-grid" :style="gridStyle">
-            <div v-for="monitor in visibleMonitors" :key="monitor.id" class="db-cell" :class="'is-' + monitor.tone">
-                <span class="db-cell-name">{{ monitor.name }}</span>
-                <span class="db-cell-row">
-                    <!-- Text only for the exception: an "up" monitor says so by its colour, not by a word. -->
-                    <span v-if="monitor.tone !== 'up'" class="db-cell-state">{{ monitor.label }}</span>
-                    <span v-else class="db-visually-hidden">{{ monitor.label }}</span>
-                    <span v-if="monitor.mark" class="db-cell-mark" :class="'is-' + monitor.mark">
-                        {{ $t(monitor.mark === "stuck" ? "deployBoardMarkStuck" : "deployBoardMarkRolling") }}
+            <div
+                v-for="(cell, i) in cells"
+                :key="cell ? cell.id : 'empty-' + i"
+                class="db-row"
+                :class="rowClass(cell, i)"
+            >
+                <template v-if="cell">
+                    <span class="db-row-name" :title="cell.name">{{ cell.name }}</span>
+                    <span v-if="cell.tone !== 'up'" class="db-row-state">{{ cell.label }}</span>
+                    <span v-else class="db-visually-hidden">{{ cell.label }}</span>
+                    <span v-if="cell.mark" class="db-row-mark" :class="'is-' + cell.mark">
+                        {{ $t(cell.mark === "stuck" ? "deployBoardMarkStuck" : "deployBoardMarkRolling") }}
                     </span>
                     <span class="db-beats" aria-hidden="true">
-                        <i v-for="(beat, i) in monitor.beats" :key="i" :class="'b-' + beat"></i>
+                        <i v-for="(beat, b) in cell.beats" :key="b" :class="'b-' + beat"></i>
                     </span>
-                </span>
+                </template>
             </div>
         </div>
     </div>
 </template>
 
 <script>
-/** How often the grid turns to the next page when the monitors do not fit. */
-const PAGE_MS = 15000;
+/** Columns of the wall layout, and of the stacked one below it. */
+const WALL_COLUMNS = 3;
+const STACKED_COLUMNS = 2;
 
-/** Narrowest cell, in em of the board font: below this the name and the bars collide. */
-const MIN_CELL_EM = 14;
-
-/** A cell never grows past this many times its natural height, so few monitors do not balloon. */
-const MAX_STRETCH = 1.7;
-
-/** Heartbeat bars drawn per cell. */
-const BEATS = 24;
-
-/** Re-measures allowed after a layout change made a cell taller than its row. */
-const MAX_PASSES = 3;
-
-/**
- * Height a cell needs for its content, whatever row height it was given. `scrollHeight` would not
- * do: it never drops below the stretched height, so it would only ever grow.
- * @param {HTMLElement} cell A grid cell (or the probe).
- * @returns {number} Pixels.
- */
-function contentHeight(cell) {
-    const style = getComputedStyle(cell);
-    let total =
-        parseFloat(style.paddingTop) +
-        parseFloat(style.paddingBottom) +
-        parseFloat(style.borderTopWidth) +
-        parseFloat(style.borderBottomWidth);
-    const children = [...cell.children];
-    for (const child of children) {
-        total += child.offsetHeight;
-    }
-    total += (parseFloat(style.rowGap) || 0) * Math.max(0, children.length - 1);
-    return Math.ceil(total);
-}
+/** Below this width two columns no longer fit a name and its bars: one column. */
+const NARROW_QUERY = "(max-width: 640px)";
 
 export default {
     props: {
-        /** Monitors to draw: { id, name, label, tone, beats } */
+        /** Monitors to draw, in the order of the status page: { id, name, label, tone, beats, mark } */
         monitors: {
             type: Array,
             required: true,
@@ -79,174 +45,70 @@ export default {
         },
     },
 
-    emits: ["paging"],
-
     data() {
         return {
-            beatCount: BEATS,
-            cols: 0,
-            rowHeight: 0,
-            perPage: Infinity,
-            page: 0,
+            narrow: window.matchMedia(NARROW_QUERY).matches,
         };
     },
 
     computed: {
-        /** @returns {number} Number of pages */
-        pageCount() {
-            if (!Number.isFinite(this.perPage)) {
-                return 1;
+        /** @returns {number} Columns of the grid */
+        cols() {
+            if (this.fill) {
+                return WALL_COLUMNS;
             }
-            return Math.max(1, Math.ceil(this.monitors.length / this.perPage));
+            return this.narrow ? 1 : STACKED_COLUMNS;
         },
 
-        /** @returns {object[]} Monitors on the current page */
-        visibleMonitors() {
-            if (this.pageCount === 1) {
-                return this.monitors;
-            }
-            const index = this.page % this.pageCount;
-            return this.monitors.slice(index * this.perPage, (index + 1) * this.perPage);
+        /** @returns {number} Rows of every column */
+        rows() {
+            return Math.max(1, Math.ceil(this.monitors.length / this.cols));
         },
 
-        /** @returns {object} Inline grid geometry, only in the wall layout */
+        /**
+         * The monitors filled top to bottom, column by column, and the last column completed with
+         * empty cells, so the rows line up across columns and the grid has no hole at the end.
+         * A monitor keeps its place whatever its state: the team knows where each one is.
+         * @returns {Array<object|null>} Cells, column-major; null is an empty cell.
+         */
+        cells() {
+            const cells = [...this.monitors];
+            while (cells.length < this.rows * this.cols) {
+                cells.push(null);
+            }
+            return cells;
+        },
+
+        /** @returns {object} Grid geometry */
         gridStyle() {
-            if (!this.fill || !this.cols) {
-                return {};
-            }
-            return {
-                gridTemplateColumns: `repeat(${this.cols}, minmax(0, 1fr))`,
-                gridAutoRows: `${this.rowHeight}px`,
-            };
-        },
-    },
-
-    watch: {
-        "monitors.length"() {
-            this.$nextTick(this.measure);
-        },
-        fill() {
-            this.$nextTick(this.measure);
-        },
-        pageCount: {
-            handler(count) {
-                this.$emit("paging", { page: (this.page % count) + 1, pages: count });
-                this.schedulePaging();
-            },
-            immediate: true,
-        },
-        page() {
-            this.$emit("paging", { page: (this.page % this.pageCount) + 1, pages: this.pageCount });
+            return { "--db-cols": this.cols, "--db-rows": this.rows };
         },
     },
 
     mounted() {
-        this.observer = new ResizeObserver(() => this.measure());
-        this.observer.observe(this.$refs.area);
-        this.measure();
+        this.narrowQuery = window.matchMedia(NARROW_QUERY);
+        this.onNarrow = (e) => {
+            this.narrow = e.matches;
+        };
+        this.narrowQuery.addEventListener("change", this.onNarrow);
     },
 
     beforeUnmount() {
-        this.observer?.disconnect();
-        clearInterval(this.pageTimer);
+        this.narrowQuery?.removeEventListener("change", this.onNarrow);
     },
 
     methods: {
         /**
-         * Pick the fewest columns in which every monitor fits at its natural height; when even the
-         * widest arrangement does not fit, keep that arrangement and page through it.
-         * @param {number} pass Re-measure count within one layout change, starting at 0.
-         * @returns {void}
+         * @param {object|null} cell Monitor, or null for an empty cell.
+         * @param {number} i Position, column-major.
+         * @returns {object} Classes: the state, and which separators the cell draws.
          */
-        measure(pass = 0) {
-            if (!this.fill) {
-                this.cols = 0;
-                this.perPage = Infinity;
-                return;
-            }
-
-            const area = this.$refs.area;
-            const probe = this.$refs.probe;
-            if (!area || !probe) {
-                return;
-            }
-
-            const width = area.clientWidth;
-            const height = area.clientHeight;
-            // The probe has a one-line name; a long name that wraps makes its cell taller. Taking
-            // the tallest drawn cell as the floor keeps a fixed row height from clipping it.
-            const natural = Math.max(contentHeight(probe), this.tallestCell());
-            const fontSize = parseFloat(getComputedStyle(area).fontSize) || 16;
-            const gap = parseFloat(getComputedStyle(area).getPropertyValue("--db-gap")) || 8;
-            if (!width || !height || !natural) {
-                return;
-            }
-
-            const n = Math.max(1, this.monitors.length);
-            const minWidth = MIN_CELL_EM * fontSize;
-            const maxCols = Math.max(1, Math.floor((width + gap) / (minWidth + gap)));
-            const rowsThatFit = Math.max(1, Math.floor((height + gap) / (natural + gap)));
-
-            let cols = 0;
-            for (let c = 1; c <= maxCols; c++) {
-                if (Math.ceil(n / c) <= rowsThatFit) {
-                    cols = c;
-                    break;
-                }
-            }
-
-            let perPage = Infinity;
-            if (!cols) {
-                cols = maxCols;
-                perPage = cols * rowsThatFit;
-            }
-
-            const rows = Math.ceil(Math.min(n, perPage) / cols);
-            const stretched = (height - gap * (rows - 1)) / rows;
-
-            this.cols = cols;
-            this.perPage = perPage;
-            this.rowHeight = Math.floor(Math.max(natural, Math.min(stretched, natural * MAX_STRETCH)));
-
-            // The new column width changes how names wrap: check the drawn cells once more and,
-            // if one no longer fits its row, measure again. The pass limit keeps it from looping.
-            this.$nextTick(() => {
-                if (pass < MAX_PASSES && this.tallestCell() > this.rowHeight + 1) {
-                    this.measure(pass + 1);
-                }
-            });
-        },
-
-        /**
-         * Content height of the tallest cell on screen (0 when none is drawn).
-         * @returns {number} Pixels.
-         */
-        tallestCell() {
-            const grid = this.$refs.area?.querySelector(".db-grid");
-            if (!grid) {
-                return 0;
-            }
-            let tallest = 0;
-            for (const cell of grid.children) {
-                tallest = Math.max(tallest, contentHeight(cell));
-            }
-            return tallest;
-        },
-
-        /**
-         * Turn pages only while there is more than one.
-         * @returns {void}
-         */
-        schedulePaging() {
-            clearInterval(this.pageTimer);
-            this.pageTimer = null;
-            if (this.pageCount > 1) {
-                this.pageTimer = setInterval(() => {
-                    this.page = (this.page + 1) % this.pageCount;
-                }, PAGE_MS);
-            } else {
-                this.page = 0;
-            }
+        rowClass(cell, i) {
+            return {
+                ["is-" + (cell ? cell.tone : "empty")]: true,
+                "is-last-row": i % this.rows === this.rows - 1,
+                "is-last-col": i >= (this.cols - 1) * this.rows,
+            };
         },
     },
 };
@@ -255,43 +117,68 @@ export default {
 <style lang="scss" scoped>
 .db-grid-area {
     position: relative;
+    min-width: 0;
 
     // Only the wall layout has a fixed height to share out; stacked, the grid takes what it needs.
     &.is-fill {
         flex: 1 1 0;
         min-height: 0;
-        overflow: hidden;
     }
 }
 
+/* One surface split in columns: a row per monitor, with hairlines and no box around each one. */
 .db-grid {
     display: grid;
-    gap: var(--db-gap);
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 14em), 1fr));
-    align-content: start;
-}
-
-.db-cell {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.35em;
-    min-width: 0;
+    grid-auto-flow: column;
+    grid-template-columns: repeat(var(--db-cols), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--db-rows), minmax(52px, auto));
     overflow: hidden;
-    padding: 0.5em 0.8em;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
-    border-left: 3px solid var(--db-line-2);
-    border-radius: 8px;
+    border-radius: 14px;
 
-    &.is-up {
-        border-left-color: var(--db-ok);
+    .is-fill & {
+        height: 100%;
+        grid-template-rows: repeat(var(--db-rows), minmax(0, 1fr));
+    }
+}
+
+.db-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 16px;
+    border-right: 1px solid var(--db-line);
+    border-bottom: 1px solid var(--db-line);
+
+    &.is-last-row {
+        border-bottom: 0;
     }
 
-    &.is-maintenance {
-        border-left-color: var(--db-maint);
+    &.is-last-col {
+        border-right: 0;
     }
+}
+
+.db-row-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1.05em;
+    font-weight: 600;
+}
+
+.db-row-state {
+    flex-shrink: 0;
+    font-size: 0.82em;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--db-ink-3);
 }
 
 .db-visually-hidden {
@@ -303,38 +190,7 @@ export default {
     white-space: nowrap;
 }
 
-.db-cell-probe {
-    position: absolute;
-    visibility: hidden;
-    pointer-events: none;
-    width: 14em;
-    left: 0;
-    top: 0;
-}
-
-.db-cell-name {
-    font-size: 1.05em;
-    font-weight: 600;
-    line-height: 1.2;
-    overflow-wrap: anywhere;
-}
-
-.db-cell-row {
-    display: flex;
-    align-items: center;
-    gap: 0.6em;
-    min-width: 0;
-}
-
-.db-cell-state {
-    font-size: 0.82em;
-    font-weight: 700;
-    white-space: nowrap;
-    color: var(--db-ok);
-}
-
-/* A deploy mark sits beside the state and never recolours it: health is Kuma's alone. */
-.db-cell-mark {
+.db-row-mark {
     flex-shrink: 0;
     padding: 0.05em 0.45em;
     border-radius: 0.6em;
@@ -343,28 +199,25 @@ export default {
     white-space: nowrap;
     color: var(--db-deploy);
     background: var(--db-deploy-soft);
-    border: 1px solid color-mix(in srgb, var(--db-deploy) 45%, transparent);
 
     &.is-stuck {
         color: var(--db-bad);
         background: var(--db-bad-soft);
-        border-color: color-mix(in srgb, var(--db-bad) 45%, transparent);
     }
 }
 
-/* Right-aligned and clipped: when a mark takes room, the oldest bars give way, the newest stay. */
+/* Right-aligned and clipped: when the row is short of room, the oldest bars give way. */
 .db-beats {
     display: flex;
     justify-content: flex-end;
     gap: 2px;
-    flex: 1;
-    min-width: 0;
-    height: 0.9em;
+    flex: 0 1 calc(24 * 6px);
+    min-width: 48px;
+    height: 16px;
     overflow: hidden;
 
     i {
-        flex: 0 1 5px;
-        min-width: 2px;
+        flex: 0 0 4px;
         border-radius: 2px;
         background: var(--db-panel-2);
     }
@@ -383,21 +236,6 @@ export default {
 
     .b-maintenance {
         background: var(--db-maint);
-    }
-}
-
-.is-maintenance {
-    background: var(--db-maint-soft);
-
-    .db-cell-state {
-        color: var(--db-maint);
-    }
-}
-
-.is-paused,
-.is-unknown {
-    .db-cell-state {
-        color: var(--db-ink-3);
     }
 }
 </style>
