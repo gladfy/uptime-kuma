@@ -227,7 +227,7 @@ export default {
         },
 
         /**
-         * Failed and stuck deploys nobody dismissed: the ones on screen with their whole card, and the
+         * Failed and stuck deploys nobody dismissed nor fixed: the ones on screen with their whole card, and the
          * ones the server already moved to the history with what the history keeps. The column draws
          * them and the header counts them, so dismissing one quiets both.
          * @returns {object[]} Deploys, as DeployCard takes them
@@ -256,7 +256,13 @@ export default {
                     pipeline: null,
                     steps: null,
                 }));
-            return [...live, ...past].filter((d) => !this.dismissed.includes(d.id));
+            // A failure a later deploy of the same project fixed leaves by itself; one nobody fixed
+            // stays until someone dismisses it.
+            const fixed = (f) =>
+                [...this.board.deploys.filter((d) => d.state === "done"), ...this.board.history.filter((h) => h.outcome === "done")].some(
+                    (d) => d.project === f.project && d.startedAt > f.startedAt
+                );
+            return [...live, ...past].filter((d) => !this.dismissed.includes(d.id) && !fixed(d));
         },
 
         /** @returns {object[]} Every monitor in its place, with its deploy mark: none leaves the grid */
