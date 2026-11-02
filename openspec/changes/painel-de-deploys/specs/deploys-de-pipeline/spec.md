@@ -118,7 +118,10 @@ As regras de correlação com a pipeline:
    começou, SHALL juntar-se a essa virada (o `helm --wait` do chat; o deploy do próprio Kuma, que
    derruba o painel e só é visto depois). Virada que aconteceu com o painel fora do ar SHALL NOT
    receber "Sem pipeline": os eventos da pipeline podem ter chegado sem ninguém ouvindo.
-6. Pipeline que falha SHALL marcar o deploy como "Falhou" e ir para o histórico "com falha". Merge
+6. Pipeline que falha SHALL marcar o deploy como "Falhou" e ir para o histórico "com falha".
+   Pipeline cancelada, parada à mão ou pulada SHALL aparecer como "Cancelada", fora da taxa de
+   sucesso. Evento que chega depois de outro mais novo da mesma execução SHALL ser ignorado. Execução
+   sem notícia por 2 horas SHALL ser dada como perdida. Merge
    com `[skip ci]` SHALL NOT abrir deploy, e merge cuja pipeline não informa nada em 15 minutos SHALL
    sair da tela sem ir ao histórico.
 
@@ -135,6 +138,14 @@ O projeto de uma release SHALL vir da configuração (lista de releases por proj
 #### Scenario: Deploy que não chegou ao cluster
 - **WHEN** a pipeline do api_gateway termina com sucesso, o cluster está sendo lido e nenhuma release do projeto muda de revisão em 10 minutos
 - **THEN** o cartão mostra "pipeline verde, nenhuma virada vista"
+
+#### Scenario: Execução cancelada pela fila
+- **WHEN** três pushes seguidos na master do `gladfy/uptime-kuma` fazem o GitHub cancelar a execução do meio
+- **THEN** o cartão daquele commit mostra "Cancelada", não toca o som de falha e não conta na taxa de sucesso
+
+#### Scenario: Evento fora de ordem
+- **WHEN** o `workflow_run` concluído com falha chega antes do `in_progress` da mesma execução
+- **THEN** o cartão continua "Falhou"
 
 #### Scenario: O deploy do Kuma
 - **WHEN** o workflow do `gladfy/uptime-kuma` faz o deploy, o Kuma reinicia e vê a própria virada no boot, e o workflow termina um minuto depois

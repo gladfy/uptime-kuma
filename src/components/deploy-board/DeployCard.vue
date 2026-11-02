@@ -18,7 +18,7 @@
             <p v-if="pipeline.message" class="db-pipeline-commit">{{ pipeline.message }}</p>
             <p v-for="line in pipelineLines" :key="line" class="db-pipeline-note">{{ line }}</p>
             <ul v-if="pipeline.jobs.length" class="db-jobs">
-                <li v-for="job in pipeline.jobs" :key="job.name" class="db-job" :class="'is-' + job.state">
+                <li v-for="job in pipeline.jobs" :key="job.id || job.name" class="db-job" :class="'is-' + job.state">
                     <span class="db-job-name">{{ job.name }}</span>
                     <span class="db-job-state">{{ jobText(job) }}</span>
                 </li>
@@ -82,6 +82,7 @@ const LABEL_KEYS = {
     built: "deployBoardLabelBuilt",
     failed: "deployBoardLabelFailed",
     noRollout: "deployBoardLabelNoRollout",
+    cancelled: "deployBoardLabelCancelled",
 };
 
 /** Pipeline state → i18n key. */
@@ -125,6 +126,7 @@ const TONES = {
     pipeline: "rolling",
     built: "rolling",
     failed: "bad",
+    cancelled: "warn",
 };
 
 export default {

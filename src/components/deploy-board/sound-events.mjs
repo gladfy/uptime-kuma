@@ -19,8 +19,8 @@ function stageOf(deploy) {
         .join(",");
 }
 
-/** Pipeline states that are a failure. */
-const PIPELINE_FAILED = ["failed", "stopped"];
+/** Pipeline states that are a failure. A cancelled one (stopped) is not: nothing failed. */
+const PIPELINE_FAILED = ["failed"];
 
 /**
  * Sounds for what changed from one snapshot to the next.

@@ -19,8 +19,13 @@ const EVENT_HEADERS = {
 /** Body limit: a push of a big merge is a few hundred KB. */
 const BODY_LIMIT = "1mb";
 
-/** Requests per minute per IP, before the signature is even computed. */
-const PER_IP_PER_MINUTE = 60;
+/**
+ * Requests per minute per IP, before the signature is even computed. Generous on purpose: one push to
+ * a repository with test matrices sends ~50 deliveries in a minute (a workflow_job per job and state),
+ * GitHub does not resend a refused one, and behind a proxy Kuma does not trust every sender may share
+ * one address. The ingress already lets only the senders' ranges reach this path.
+ */
+const PER_IP_PER_MINUTE = 600;
 
 /** The table of limiters is cleared past this many IPs, so a scan cannot grow it without end. */
 const MAX_TRACKED_IPS = 1000;

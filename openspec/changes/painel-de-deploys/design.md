@@ -212,7 +212,28 @@ do deploy é `projeto + SHA` quando há SHA, e `projeto + id da execução` ou
   pipeline verde sem virada mostra o aviso aos 10 min e vai para o histórico como "sem virada" com
   1 h, fora da taxa de sucesso (pode ser a reexecução de um commit já no ar). Merge com `[skip ci]`
   não abre deploy, e merge sem pipeline em 15 min some sem ir ao histórico.
-- *O cartão conta do merge.* O deploy começa no merge, então "levou N" vai do merge ao "No ar".
+- *O cartão conta do merge.* O deploy começa no merge, então "levou N" vai do merge ao "No ar". A
+  hora do merge é a de chegada do push, não a data do commit (um commit de uma hora antes faria o
+  cartão nascer vencido).
+- *Revisão independente (02/11/2026), antes do primeiro webhook real:*
+  - Webhook chega fora de ordem e pode se perder (o GitHub não reenvia). Evento mais velho que o que
+    o painel já tem da mesma execução é ignorado: tentativa (`run_attempt`) mais nova vence, e dentro
+    dela a hora do remetente; um fim nunca é desfeito por um não-fim. O rerun de passos do Bitbucket
+    reusa a chave com hora mais nova, e vale.
+  - Toda conclusão tem estado final: só `failure`, `timed_out` e `startup_failure` são falha;
+    `cancelled`, `skipped`, `neutral`, `stale` e `action_required` são "Cancelada" — fora da taxa de
+    sucesso e sem som de falha (o próprio workflow do Kuma cancela a execução da fila com três pushes
+    seguidos).
+  - Execução sem notícia por 2 h é dada como perdida: não captura mais virada sem SHA, e o deploy só
+    dela sai da tela como "sem notícia da pipeline", fora da taxa.
+  - Com o cluster sem leitura (um namespace negado), pipeline verde espera a virada em vez de virar
+    "No ar"; só sem cluster nenhum ela termina ali.
+  - O limite por IP subiu de 60 para 600 por minuto: um push num repositório com matriz de testes
+    manda umas 50 entregas num minuto, e o GitHub não reenvia a recusada.
+  - Re-run limpa os jobs da tentativa anterior; marcadores de pular a pipeline do GitHub (`[no ci]`,
+    `[skip actions]`, `skip-checks: true`) também não abrem deploy.
+  - A conferir na primeira entrega real (20.3): o `refname` do status de pipeline de pull request do
+    Bitbucket e se o `key` muda por execução.
 
 O estado do deploy é derivado, nunca gravado: a cada evento o store recalcula o rótulo
 (`Na pipeline`, `Virando no cluster`, `Sem progresso`, `Virada travada`, `Falhou`, `No ar`,

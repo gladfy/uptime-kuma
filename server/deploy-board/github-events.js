@@ -4,16 +4,20 @@
  * Only the fields of the spec leave: SHA, branch, the first line of the commit message, and the
  * state, name, times and link of a workflow run and of its jobs.
  */
-const { MESSAGE_MAX, firstLine, timeOf } = require("./bitbucket-events");
+const { MESSAGE_MAX, asksNoPipeline, firstLine, timeOf } = require("./bitbucket-events");
 
 /** A full commit hash. */
 const HASH_RE = /^[0-9a-f]{40}$/;
 
 /**
  * State of a run or a job, from its status and conclusion.
+ *
+ * Every completed one has a final state: one dropped here would leave the run "running" for good.
+ * Only a real failure is "failed"; cancelled, skipped, neutral, stale and waiting for approval end
+ * without deploying and without failing ("stopped").
  * @param {string} status "queued", "in_progress", "completed", "waiting", "requested", "pending".
  * @param {string|null} conclusion Of a completed one.
- * @returns {string|null} Board state, or null for what is not a result (skipped, neutral).
+ * @returns {string} Board state.
  */
 function stateOf(status, conclusion) {
     if (status !== "completed") {
@@ -22,13 +26,10 @@ function stateOf(status, conclusion) {
     if (conclusion === "success") {
         return "success";
     }
-    if (conclusion === "cancelled") {
-        return "stopped";
-    }
-    if (["failure", "timed_out", "startup_failure", "action_required"].includes(conclusion)) {
+    if (["failure", "timed_out", "startup_failure"].includes(conclusion)) {
         return "failed";
     }
-    return null;
+    return "stopped";
 }
 
 /**
@@ -69,6 +70,7 @@ function parseGithub(eventName, payload, projects) {
                 kind: "merge",
                 sha: commit.id,
                 message: firstLine(commit.message),
+                skipCi: asksNoPipeline(commit.message),
                 at: timeOf(commit.timestamp),
             });
         }
@@ -83,6 +85,9 @@ function parseGithub(eventName, payload, projects) {
                 sha: run.head_sha,
                 branchKnown: true,
                 runId: String(run.id),
+                // A re-run keeps the run id; the attempt tells its events apart.
+                attempt: Number(run.run_attempt) || 1,
+                updatedAt: timeOf(run.updated_at),
                 name: String(run.name || "").slice(0, MESSAGE_MAX),
                 state,
                 url: githubLink(run.html_url),
@@ -101,6 +106,8 @@ function parseGithub(eventName, payload, projects) {
                 sha: job.head_sha,
                 runId: String(job.run_id),
                 jobId: String(job.id),
+                attempt: Number(job.run_attempt) || 1,
+                updatedAt: timeOf(job.completed_at || job.started_at),
                 name: String(job.name || "").slice(0, MESSAGE_MAX),
                 state,
                 startedAt: timeOf(job.started_at),
