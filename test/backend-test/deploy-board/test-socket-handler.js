@@ -57,7 +57,7 @@ describe("Socket do painel de deploys", () => {
         deployBoardSocketHandler(socket, board);
         const answer = await socket.call("getDeployBoard");
         assert.strictEqual(answer.ok, true);
-        assert.deepStrictEqual(Object.keys(answer.board).sort(), ["deploys", "generatedAt", "history", "sources"]);
+        assert.deepStrictEqual(Object.keys(answer.board).sort(), ["deploys", "generatedAt", "history", "sources", "stats"]);
     });
 
     test("pedido sem callback não derruba o handler", () => {

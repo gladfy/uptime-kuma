@@ -11,6 +11,7 @@ const {
     HISTORY_MAX,
     GROUP_WINDOW_MS,
     ROLLOUT_RECORD_FIELDS,
+    STATS_FIELDS,
 } = require("../../../server/deploy-board/store");
 
 const SHA = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0";
@@ -429,6 +430,69 @@ describe("Estado do painel de deploys", () => {
             } finally {
                 next.close();
             }
+        });
+    });
+
+    describe("indicadores das últimas 24 h", () => {
+        /**
+         * @param {string} id Deploy id.
+         * @param {string} outcome Outcome.
+         * @param {number} ago How long ago it ended.
+         * @returns {object} History record.
+         */
+        function ended(id, outcome, ago) {
+            return { id, project: "condominio", version: "x", sha: null, outcome, startedAt: clock - ago - 1000, endedAt: clock - ago, releases: [], rollouts: [] };
+        }
+
+        beforeEach(() => {
+            store.setProjects(PROJECTS);
+            store.setSource("cluster", "active");
+        });
+
+        test("o cenário da spec: 11 concluídos, 1 travado, 2 substituídos e 1 em andamento", () => {
+            const records = [];
+            for (let i = 0; i < 11; i++) {
+                records.push(ended(`d${i}`, "done", (i + 1) * 60 * 1000));
+            }
+            records.push(ended("s", "stuck", 30 * 60 * 1000), ended("r1", "replaced", 40 * 60 * 1000), ended("r2", "replaced", 50 * 60 * 1000));
+            store.restore(records);
+            store.upsertRollout(rollout());
+            assert.deepStrictEqual(store.snapshot().stats, { total: 15, done: 11, stuck: 1, failed: 0, replaced: 2, inProgress: 1, successRate: 92 });
+            assert.deepStrictEqual(Object.keys(store.snapshot().stats).sort(), [...STATS_FIELDS].sort());
+        });
+
+        test("conta por deploy: integration e prod do mesmo commit são um, e o reaberto conta uma vez", () => {
+            const integration = rollout({ id: "condominio/winker-integration:1", release: "winker-integration", state: "done", endedAt: clock });
+            store.upsertRollout(integration);
+            advance(DONE_VISIBLE_MS);
+            store.tick();
+            assert.strictEqual(store.snapshot().stats.total, 1);
+
+            store.upsertRollout(rollout({ startedAt: clock }));
+            assert.deepStrictEqual(
+                (({ total, done, inProgress }) => ({ total, done, inProgress }))(store.snapshot().stats),
+                { total: 1, done: 0, inProgress: 1 },
+                "reaberto: um deploy, em andamento"
+            );
+            store.upsertRollout(rollout({ startedAt: clock, state: "done", endedAt: clock + 1000 }));
+            assert.strictEqual(store.snapshot().stats.total, 1);
+            assert.strictEqual(store.snapshot().stats.done, 1);
+        });
+
+        test("sem nenhum encerrado a taxa é null, e não 0 nem 100", () => {
+            assert.strictEqual(store.snapshot().stats.successRate, null);
+            store.upsertRollout(rollout());
+            assert.strictEqual(store.snapshot().stats.successRate, null, "em andamento não entra na taxa");
+            store.restore([ended("r", "replaced", 1000)]);
+            assert.strictEqual(store.snapshot().stats.successRate, null, "substituído também não");
+        });
+
+        test("passadas 24 h o deploy sai da conta", () => {
+            store.restore([ended("d", "done", 1000)]);
+            assert.strictEqual(store.snapshot().stats.total, 1);
+            advance(HISTORY_MS);
+            store.tick();
+            assert.deepStrictEqual(store.snapshot().stats, { total: 0, done: 0, stuck: 0, failed: 0, replaced: 0, inProgress: 0, successRate: null });
         });
     });
 });

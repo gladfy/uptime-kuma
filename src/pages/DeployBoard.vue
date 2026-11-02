@@ -30,10 +30,27 @@
                     <span class="db-verdict-sub">{{ deploysVerdict.sub }}</span>
                 </div>
 
+                <div v-if="stats" class="db-verdict db-stats" data-tone="muted" :title="statsDetail">
+                    <span class="db-verdict-dot"></span>
+                    <span class="db-verdict-key">{{ $t("deployBoardStatsKey") }}</span>
+                    <span class="db-verdict-title">{{ $t("deployBoardStatsTotal", stats.total) }}</span>
+                    <span class="db-verdict-sub">{{ statsSuccess }}</span>
+                </div>
+
                 <div class="db-clock">
                     <span class="db-clock-time">{{ clockTime }}</span>
                     <span class="db-clock-date">{{ clockDate }}</span>
                 </div>
+
+                <button
+                    type="button"
+                    class="db-theme"
+                    :title="themeToggleLabel"
+                    :aria-label="themeToggleLabel"
+                    @click="toggleTheme"
+                >
+                    <font-awesome-icon :icon="$root.isDark ? 'sun' : 'moon'" />
+                </button>
             </header>
 
             <main class="db-main">
@@ -200,6 +217,31 @@ export default {
             return { tone: "ok", title: this.$t("deployBoardServicesAllUp"), sub };
         },
 
+        /** @returns {object|null} Counters of the last 24 hours, from the server */
+        stats() {
+            return this.board ? this.board.stats : null;
+        },
+
+        /** @returns {string} "Success: 92% (11 of 12)", or a dash with nothing ended */
+        statsSuccess() {
+            const s = this.stats;
+            if (s.successRate === null) {
+                return this.$t("deployBoardStatsSuccessNone");
+            }
+            return this.$t("deployBoardStatsSuccess", [s.successRate, s.done, s.done + s.stuck + s.failed]);
+        },
+
+        /** @returns {string} Every counter, for the tooltip */
+        statsDetail() {
+            const s = this.stats;
+            return this.$t("deployBoardStatsDetail", [s.done, s.stuck, s.failed, s.replaced, s.inProgress]);
+        },
+
+        /** @returns {string} What the theme button does */
+        themeToggleLabel() {
+            return this.$t(this.$root.isDark ? "deployBoardThemeToLight" : "deployBoardThemeToDark");
+        },
+
         /** @returns {{tone: string, title: string, sub: string}} Deploys verdict of the top bar */
         deploysVerdict() {
             if (!this.board) {
@@ -309,6 +351,15 @@ export default {
     },
 
     methods: {
+        /**
+         * Switch between light and dark through Kuma's own theme setting (Settings → Appearance), so
+         * the choice is remembered in this browser like the rest of Kuma.
+         * @returns {void}
+         */
+        toggleTheme() {
+            this.$root.userTheme = this.$root.isDark ? "light" : "dark";
+        },
+
         /**
          * Start reading once logged in. Nothing about deploys or monitors is fetched before.
          * @returns {void}
@@ -823,6 +874,30 @@ body.deploy-board-body .Vue-Toastification__container {
 .db-clock-date {
     font-size: 0.85em;
     color: var(--db-ink-3);
+}
+
+.db-theme {
+    align-self: center;
+    display: grid;
+    place-items: center;
+    width: 2.2em;
+    height: 2.2em;
+    padding: 0;
+    border: 1px solid var(--db-line);
+    border-radius: 50%;
+    background: var(--db-panel);
+    color: var(--db-ink-2);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--db-brand);
+        border-color: var(--db-line-2);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--db-brand);
+        outline-offset: 2px;
+    }
 }
 
 .db-main {

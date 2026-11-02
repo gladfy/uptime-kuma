@@ -109,6 +109,7 @@ Fora desta fase, para a conferência da fase 8 decidir: as variantes de estágio
 ## 10. Infraestrutura e entrega da fase 3
 
 - [ ] 10.1 (não bloqueia a fase 3; precisa estar resolvida antes do cadastro de webhooks da fase 4) Confirmar com o Erik as origens marcadas "a confirmar" na tabela acima. Origem desconhecida entra sem origem; ela pode ser acrescentada depois sem mudar código.
+  - 02/11/2026, pelos clones locais: `land` tem pipeline no Bitbucket (`winker/land`, `master`, `helm upgrade` no `bitbucket-pipelines.yml`) e ganha origem no chart da fase 4; Status e Site fazem deploy pelo CodeCommit (`buildspec.yml`) e ficam sem origem; `wk-face-api` está no GitHub (`gladfy/wk-face-api`), mas o workflow só roda testes, sem deploy, e fica sem origem. Faltam chat-api, ai-agents, winker-mcp e audit-consumer (sem clone local) e o endereço do monitor "Flow".
   - No chart 0.3.0 entraram com origem só as confirmadas por clone local: `observer` (Bitbucket `winker/observer`, `master`) e `jambonz-worker` (GitHub `gladfy/jambonz-worker`, branch **`main`**). O `jambonz-vad` virou projeto próprio, sem origem, para a fase 4 não esperar pipeline do repositório do worker na virada dele. Os demais entraram sem origem.
 - [x] 10.2 Chart `uptimekuma` 0.3.0: os namespaces `microservices-prod`, `observer`, `site-prod`, `jambonz-prod`, `facial`, `land`, `chat-api`, `ai-agents-prod`, `mcp-prod`, `audit-platform`, `temporal` e `big-data` em `deployBoard.namespaces` (RoleBinding e configuração da mesma lista) e os projetos da tabela em `deployBoard.projects`. `helm lint`, `helm template` e o `config.json` renderizado passando no validador da 9.1. Publicar no S3 só com o pedido do Erik.
   - Branch `feat/uptimekuma-painel-de-deploys-fase-3` do `infrastructure` (19a1140f). `helm lint` ok; `helm template` com 17 RoleBindings; `config.json` renderizado com 17 namespaces, 21 projetos e 30 releases, aceito pelo validador novo e **recusado** pelo do master (`projects[7].source`), o que confirma a ordem; as 30 releases existem no cluster. Pacote `uptimekuma-0.3.0.tgz` (sha256 `04058c8b…733fec26`) pronto, ainda não publicado. `CHART_VERSION` da pipeline do fork em 0.3.0, no mesmo PR do código.
@@ -151,15 +152,16 @@ Pedido do Erik em 02/11/2026. Usa o histórico que a fase 3.1 já grava; nenhuma
 
 ## 13. Indicadores das últimas 24 horas
 
-- [ ] 13.1 Store: `stats` no `snapshot()` com a contagem das últimas 24 h por desfecho — concluídos, travados, com falha (a partir da fase 4), substituídos e em andamento — e `successRate` = concluídos ÷ (concluídos + travados + com falha), em inteiro de 0 a 100, ou `null` sem nenhum encerrado. Conta por deploy (um commit com integration e prod é um), e o deploy reaberto conta uma vez. Substituído fica fora da taxa: não deu certo nem errado, outro tomou o lugar.
-- [ ] 13.2 Cabeçalho do painel: "Deploys 24 h: N" e "Sucesso: 92% (11 de 12)", com o detalhe por desfecho no `title`. Sem encerrados, "Sucesso: —". O número não muda cor de nada: é contagem, não alarme.
-- [ ] 13.3 Testes em `test-store.js`: contagem por deploy e não por release, reaberto contado uma vez, substituído fora da taxa, janela de 24 h, `null` sem encerrados, e `stats` só com os campos permitidos.
+- [x] 13.1 Store: `stats` no `snapshot()` com a contagem das últimas 24 h por desfecho — concluídos, travados, com falha (a partir da fase 4), substituídos e em andamento — e `successRate` = concluídos ÷ (concluídos + travados + com falha), em inteiro de 0 a 100, ou `null` sem nenhum encerrado. Conta por deploy (um commit com integration e prod é um), e o deploy reaberto conta uma vez. Substituído fica fora da taxa: não deu certo nem errado, outro tomou o lugar.
+- [x] 13.2 Cabeçalho do painel: "Deploys 24 h: N" e "Sucesso: 92% (11 de 12)", com o detalhe por desfecho no `title`. Sem encerrados, "Sucesso: —". O número não muda cor de nada: é contagem, não alarme.
+- [x] 13.3 Testes em `test-store.js`: contagem por deploy e não por release, reaberto contado uma vez, substituído fora da taxa, janela de 24 h, `null` sem encerrados, e `stats` só com os campos permitidos.
 
 ## 14. Tema e entrega da fase 3.2
 
-- [ ] 14.1 Botão pequeno no canto do cabeçalho que alterna claro e escuro, gravando na mesma preferência do Kuma (`$root.userTheme`, a de Configurações → Aparência), então a escolha vale para aquele navegador. Rótulo acessível que diz o tema de destino; ícone de sol/lua; funciona no modo de parede.
-- [ ] 14.2 Chaves de i18n novas no meio dos dois json.
+- [x] 14.1 Botão pequeno no canto do cabeçalho que alterna claro e escuro, gravando na mesma preferência do Kuma (`$root.userTheme`, a de Configurações → Aparência), então a escolha vale para aquele navegador. Rótulo acessível que diz o tema de destino; ícone de sol/lua; funciona no modo de parede.
+- [x] 14.2 Chaves de i18n novas no meio dos dois json.
 - [ ] 14.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador nos dois temas em 1920 × 1080 e em 400 px; merge e deploy.
+  - 02/11/2026, local: test-backend 371/371, lint 0 erros, langs ok, build ok. Navegador (Kuma descartável com 14 deploys plantados no banco e carregados no boot): "Últimas 24 h · 14 deploys · Sucesso: 92% (11 de 12)", detalhe por desfecho no `title`, o botão alterna escuro → claro, a escolha fica em `localStorage.theme` e sobrevive ao recarregar, 400 px sem rolagem horizontal. Falta merge e deploy.
 
 # Fase 4 — Pipelines
 
