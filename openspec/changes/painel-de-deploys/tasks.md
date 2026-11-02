@@ -211,9 +211,9 @@ Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 
 
 ## 20. Infraestrutura e entrega da fase 4
 
-- [ ] 20.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart. Chart 0.4.0 na branch `feat/uptimekuma-painel-de-deploys-fase-4` do infrastructure: o Secret `uptime-kuma-deploy-board-webhooks` é referenciado com `optional: true` e criado à mão pelo Erik (o chart não o cria); um Ingress próprio para os dois caminhos exatos do webhook, com a lista de faixas de saída do Bitbucket e do GitHub (o Ingress principal só aceita o connector e a sede); `workflow` do chat, do Kuma e do jambonz; origem do land, ai-agents, winker-mcp e audit-consumer. Falta: merge, publicação no S3 e o Secret.
-- [ ] 20.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
-- [ ] 20.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket.
+- [x] 20.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart. Chart 0.4.0 na branch `feat/uptimekuma-painel-de-deploys-fase-4` do infrastructure: o Secret `uptime-kuma-deploy-board-webhooks` é referenciado com `optional: true` e criado à mão pelo Erik (o chart não o cria); um Ingress próprio para os dois caminhos exatos do webhook, com a lista de faixas de saída do Bitbucket e do GitHub (o Ingress principal só aceita o connector e a sede); `workflow` do chat, do Kuma e do jambonz; origem do land, ai-agents, winker-mcp e audit-consumer. Feito em 02/11/2026: Secret criado pelo Erik, chart 0.4.0 na `main` do infrastructure e publicado no S3, no ar com a `2.5.3-winker.25`; o caminho do webhook responde 403 da sede e o resto do Kuma continua com a lista de antes.
+- [x] 20.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
+- [ ] 20.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket. Cadastrados em 02/11/2026 (8 no Bitbucket, 3 no GitHub). O `ping` dos 3 do GitHub chegou com assinatura válida; falta a primeira entrega do Bitbucket (o Bitbucket não manda teste ao criar) e conferir o `refname` do status de pipeline de pull request do condominio.
 - [ ] 20.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
 
 # Fase 5 — Sons
@@ -289,3 +289,27 @@ Objetivo: tudo o que roda no EKS e no Amplify está no monitoramento, ou está d
 - [ ] 28.1 Rodar contra produção e registrar a tabela neste change, com data.
 - [ ] 28.2 Para cada lacuna, uma de quatro saídas, decidida com o Erik: criar o monitor no Kuma, pôr a tag `deploy`, acrescentar a release à configuração (chart novo) ou registrar a exclusão com motivo. Tags órfãs são corrigidas ou removidas.
 - [ ] 28.3 Rodar de novo: zero lacunas. Registrar a data e o resultado.
+
+# Fase 9 — Projetos da OCI
+
+Pedido do Erik em 02/11/2026. O `ia-rag` e o `ia-process-document` fazem o deploy num cluster OKE da Oracle Cloud, e não no EKS; o painel passa a ler o OKE também (design, decisão 19). Vem por último por ser o único caminho com credencial e rede de outra nuvem.
+
+## 29. Inventário e acesso
+
+- [ ] 29.1 Inventário do OKE, feito por quem tem acesso a ele (esta máquina só tem o contexto do EKS): namespaces, Deployments, StatefulSets e CronJobs por release, e a tag de imagem de cada um. Registrar neste change quais releases são de projetos com pipeline (por ora `ia-rag` e `ia-process-document`, Bitbucket, branch `main`) e quais ficam sem origem.
+- [ ] 29.2 Responder as perguntas abertas da decisão 19: a API do OKE é pública com lista de IPs ou privada, e onde o RBAC do OKE é versionado. Sem caminho de rede do EKS até a API, a fase para aqui.
+
+## 30. Segundo cluster no painel
+
+- [ ] 30.1 `clusters` opcional na configuração (`name`, `namespaces`), com validação nomeando o campo; release `oci:<namespace>/<release>` (sem prefixo continua sendo do EKS, e a configuração de hoje vale sem mudança). Ampliar `test-config.js`.
+- [ ] 30.2 Um `KubernetesSource` por cluster, com endereço, token e CA lidos de arquivos montados do Secret; fonte "Cluster OCI" no store e no rodapé, com estado próprio; o cluster na chave da release, do objeto (inclusive na tabela `deploy_board_object`) e da virada.
+- [ ] 30.3 Cartão: o cluster ao lado da release de fora do EKS; "Como voltar" com o comentário de que o comando é no cluster da OCI. Tag `deploy` dos monitores aceitando `oci:<namespace>/<release>`.
+- [ ] 30.4 Testes: OCI sem resposta não mexe no EKS e deixa só as releases dela sem confirmação; release de mesmo nome nos dois clusters não se confunde (nem no boot, pela tabela de objetos); um merge do `ia-rag` junta pipeline e virada do OKE pelo SHA.
+
+## 31. Infraestrutura e entrega da fase 9
+
+- [ ] 31.1 No OKE: ServiceAccount só de leitura (get/list/watch em `apps/deployments` e `batch/cronjobs`) com RoleBinding só nos namespaces observados, e o Secret de token dela. Onde isso fica versionado depende da 29.2.
+- [ ] 31.2 No EKS: Secret criado à mão com o endereço da API, a CA e o token (o chart só referencia e monta); `clusters` no ConfigMap; a origem do `ia-rag` e do `ia-process-document` nos projetos. Publicar a versão nova do chart.
+- [ ] 31.3 Cadastrar os webhooks do `winker/ia-rag` e do `winker/ia-process-document` no Bitbucket (mesmo segredo e gatilhos dos outros).
+- [ ] 31.4 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; acompanhar um merge do `ia-rag` do merge à virada concluída no OKE.
+- [ ] 31.5 Rodar a conferência de cobertura da fase 8 com o OKE incluído (o relatório recebe o contexto do OKE) e fechar as lacunas novas como na 28.2.

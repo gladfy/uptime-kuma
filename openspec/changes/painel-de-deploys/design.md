@@ -457,6 +457,41 @@ apareceu. *Descartado:* ler os ReplicaSets para saber quando a revisão nasceu (
 para só um horário); estimar a duração (o início não foi visto, e um número inventado é pior que
 nenhum).
 
+### 19. Projetos da OCI: o painel lê também o OKE
+
+**Contexto (02/11/2026):** o `ia-rag` e o `ia-process-document` não rodam no EKS. A pipeline deles
+(Bitbucket, branch `main`, tag da imagem = SHA do commit) autentica na OCI pela CLI e faz
+`helm upgrade` num cluster OKE (`oci ce cluster create-kubeconfig`), sem `--wait`. Hosts:
+`ia-rag.winker.com.br` e `ia-process-doc.winker.com.br`. Decisão do Erik: ler o OKE, e não só
+mostrar a pipeline deles.
+
+**Decisão:** um segundo `KubernetesSource`, igual ao do EKS, apontado para a API do OKE. O
+`KubernetesSource` já recebe endereço, token e CA por opção; só a origem deles muda.
+- *Credencial:* uma ServiceAccount no OKE com a mesma ClusterRole de leitura (get/list/watch em
+  `apps/deployments` e `batch/cronjobs`) ligada por RoleBinding só nos namespaces observados, e o
+  token dela (Secret do tipo `kubernetes.io/service-account-token`) mais a CA e o endereço da API num
+  Secret do EKS, criado à mão como o dos webhooks e montado no pod. O token é lido a cada pedido, como
+  o do EKS, então trocá-lo é trocar o Secret.
+- *Configuração:* `clusters` opcional no arquivo, `[{ "name": "oci", "namespaces": [...] }]`, além
+  do EKS, que continua sendo o padrão. Release de outro cluster se escreve `oci:<namespace>/<release>`;
+  sem prefixo, é do EKS (nada muda no que já existe). A mesma forma vale para a tag `deploy` dos
+  monitores.
+- *Identidade:* o cluster entra na chave da release, do objeto (inclusive na tabela
+  `deploy_board_object`, para o boot não confundir um objeto do OKE com um do EKS de mesmo nome) e no
+  cartão, que mostra "OCI" ao lado da release.
+- *Fonte própria:* "Cluster OCI" no rodapé, com estado próprio. OCI sem resposta deixa só as
+  releases dela sem confirmação, e não muda nada do EKS.
+- *Como voltar:* o comando do cartão para release do OKE diz em comentário que é no cluster da OCI
+  (o nome do contexto `kubectl` de cada pessoa o painel não sabe).
+- *Pipeline:* os dois repositórios entram com origem `bitbucket` e branch `main`, e o cartão junta
+  merge, pipeline e virada pelo SHA, como no EKS.
+
+*Alternativas descartadas:* chave de API da OCI no Kuma, gerando o token do OKE como a pipeline faz
+(precisa do `oci-cli` na imagem ou de reimplementar a assinatura de pedidos da OCI, e uma chave de
+API vale para o que a política IAM do usuário permitir no tenancy, muito além de ler dois tipos de
+objeto); e mostrar só a pipeline deles (a opção menor, recusada: a pipeline fica verde antes de os
+pods trocarem, que é justamente o que o painel existe para mostrar).
+
 ## Risks / Trade-offs
 
 - [O watch do Kubernetes cai em silêncio (conexão viva sem eventos)] → o servidor pede o watch com
@@ -582,7 +617,24 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
   zerar.
 - Rollback: não se aplica; o relatório não escreve em lugar nenhum.
 
+**Fase 9 — Projetos da OCI.**
+- Antes do código: inventário do OKE (namespaces e releases, feito por quem tem acesso a ele) e o
+  caminho de rede do EKS até a API do OKE.
+- Código: decisão 19 (segundo coletor, `clusters` na configuração, cluster na chave e no cartão).
+- Infraestrutura: ServiceAccount e RBAC de leitura no OKE; Secret no EKS com token, CA e endereço;
+  montagem no chart; os webhooks dos repositórios da OCI.
+- Conferência: um merge do `ia-rag` aparece do merge à virada concluída no OKE; a conferência de
+  cobertura roda de novo com o OKE incluído.
+- Rollback: tirar `clusters` da configuração; o EKS não é afetado.
+
 ## Open Questions
+
+- **Rede até o OKE (fase 9):** a API do OKE é pública com lista de IPs ou privada? Se for pública, a
+  lista precisa dos IPs de saída do EKS; se for privada, falta rota (VPN ou peering) entre as nuvens.
+- **Onde fica o RBAC do lado da OCI:** o repositório `infrastructure` tem charts dos apps da OCI, mas
+  não está claro se o RBAC do OKE é versionado em algum lugar ou aplicado à mão.
+- **O que mais roda no OKE:** só o `ia-rag` e o `ia-process-document` são conhecidos daqui (a máquina
+  só tem o contexto do EKS); o inventário da fase 9 responde.
 
 - **Cabeçalho do Bitbucket:** conferir numa entrega real se o Bitbucket Cloud envia
   `X-Hub-Signature` com `sha256=`. Se vier outro formato, só a função de verificação muda.
