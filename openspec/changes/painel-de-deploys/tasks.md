@@ -164,6 +164,7 @@ Pedido do Erik em 02/11/2026. Usa o histórico que a fase 3.1 já grava; nenhuma
 - [x] 14.1 Botão pequeno no canto do cabeçalho que alterna claro e escuro, gravando na mesma preferência do Kuma (`$root.userTheme`, a de Configurações → Aparência), então a escolha vale para aquele navegador. Rótulo acessível que diz o tema de destino; ícone de sol/lua; funciona no modo de parede.
 - [x] 14.2 Chaves de i18n novas no meio dos dois json.
 - [x] 14.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; conferência no navegador nos dois temas em 1920 × 1080 e em 400 px; merge e deploy.
+- [x] 14.4 Revisão de wallboard (pedido do Erik em 02/11/2026): monitor no ar sem a palavra "Normal"; azul próprio para deploy em andamento nos dois lados (o magenta fica para a marca); "Sem pipeline" como etiqueta neutra ao lado do estado; triângulo além da cor no que é falha; pontos do rodapé com um significado só; "Últimas 24 horas" com ✓/✕ e os tempos numa coluna; um título no cabeçalho. Conferido no navegador nos dois temas e em 400 px.
   - 02/11/2026, local: test-backend 371/371, lint 0 erros, langs ok, build ok. Navegador (Kuma descartável com 14 deploys plantados no banco e carregados no boot): "Últimas 24 h · 14 deploys · Sucesso: 92% (11 de 12)", detalhe por desfecho no `title`, o botão alterna escuro → claro, a escolha fica em `localStorage.theme` e sobrevive ao recarregar, 400 px sem rolagem horizontal. Falta merge e deploy.
 
 # Fase 3.3 — Deploy com o painel fora do ar
@@ -240,6 +241,7 @@ Pedido do Erik em 02/11/2026: o contêiner no navio, com sons realistas, nada el
 
 - [x] 22.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado. Merge e deploy feitos em 02/11/2026 (`2.5.3-winker.24`); falta ouvir um deploy real. Ouvido pelo Erik no merge do condominio de 02/11/2026.
 - [x] 22.2 Som ligado por padrão (pedido do Erik em 02/11/2026): só fica desligado no navegador em que alguém silenciou. Até o primeiro clique na página, o navegador não deixa tocar, e o painel avisa ao lado do botão.
+- [x] 22.3 Som que não para (relato do Erik em 02/11/2026: às vezes o som parava). As gravações ficam na memória da página, porque o nome dos arquivos muda a cada build e uma aba aberta antes de um deploy do Kuma recebia 404. Um som pausado de fora, com erro ou que passa do tempo-limite libera a fila, e o mesmo som duas vezes seguidas não se atropela. A página segura um Web Lock compartilhado para o Chrome não congelar a aba. Reproduzido no navegador antes da correção: uma pausa de fora deixou a fila parada, e nada tocou nos 50 s seguintes. Testes em `test-sound-player.js`, com um `Audio` falso que manda os eventos na ordem do navegador; cada guarda conferida desfazendo-a. Falta acompanhar a TV por alguns dias com a aba em segundo plano.
 
 # Fase 6 — Como voltar à versão anterior
 

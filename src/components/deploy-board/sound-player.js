@@ -161,11 +161,25 @@ export class SoundPlayer {
                 a.removeEventListener(name, finish);
             }
         };
-        const finish = () => {
+        const finish = (ev) => {
             if (this.current?.finish !== finish) {
                 return;
             }
+            // At the end the browser sends "pause" and then "ended". Moving on at the "pause" would
+            // start the next sound before the "ended", and if it is the same recording that late
+            // "ended" would end it at once.
+            if (ev?.type === "pause" && a.ended) {
+                return;
+            }
             release();
+            if (!ev) {
+                // Given up by the guard: it must not go on playing under the next one.
+                a.pause();
+            } else if (ev.type === "error") {
+                // The file failed (gone from the server, the browser dropped it): fetched again.
+                this.kept[event] = null;
+                this.keep(event);
+            }
             this.current = null;
             this.playing = false;
             this.next();
@@ -180,7 +194,7 @@ export class SoundPlayer {
                 this.onBlocked(false);
                 if (this.current?.finish === finish) {
                     const length = Number.isFinite(a.duration) ? a.duration * 1000 + GUARD_MS : GUARD_UNKNOWN_MS;
-                    guard = setTimeout(finish, length);
+                    guard = setTimeout(() => finish(), length);
                 }
             },
             (e) => {

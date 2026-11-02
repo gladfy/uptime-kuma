@@ -410,10 +410,12 @@ export default {
         };
         this.wallQuery.addEventListener("change", this.onWallChange);
         // Chrome does not freeze a background tab that holds a Web Lock: the socket goes on
-        // receiving and the sounds go on playing in a tab that is not in front.
+        // receiving and the sounds go on playing in a tab that is not in front. Shared, so a second
+        // tab with the board (the TV and a desk) holds it too instead of waiting for the first.
         navigator.locks
             ?.request(
                 "deploy-board-awake",
+                { mode: "shared" },
                 () =>
                     new Promise((resolve) => {
                         this.releaseAwake = resolve;
