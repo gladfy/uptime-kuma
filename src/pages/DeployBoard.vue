@@ -13,7 +13,6 @@
                 <div class="db-ident">
                     <span class="db-eyebrow">{{ $t("deployBoardEyebrow") }}</span>
                     <h1 class="db-title">{{ $t("deployBoardTitle") }}</h1>
-                    <span v-if="pageTitle" class="db-page-name">{{ pageTitle }}</span>
                 </div>
 
                 <div class="db-verdict" :data-tone="servicesVerdict.tone">
@@ -171,7 +170,6 @@ export default {
     data() {
         return {
             slug: "",
-            pageTitle: "",
             curated: [],
             curationLoaded: false,
             curationFailed: false,
@@ -411,6 +409,17 @@ export default {
             this.wall = e.matches;
         };
         this.wallQuery.addEventListener("change", this.onWallChange);
+        // Chrome does not freeze a background tab that holds a Web Lock: the socket goes on
+        // receiving and the sounds go on playing in a tab that is not in front.
+        navigator.locks
+            ?.request(
+                "deploy-board-awake",
+                () =>
+                    new Promise((resolve) => {
+                        this.releaseAwake = resolve;
+                    })
+            )
+            .catch(() => {});
     },
 
     beforeUnmount() {
@@ -422,6 +431,7 @@ export default {
         document.removeEventListener("pointerdown", this.onFirstGesture);
         document.removeEventListener("keydown", this.onFirstGesture);
         this.player.stop();
+        this.releaseAwake?.();
         if (this.onBoardUpdate) {
             this.$root.getSocket()?.off("deployBoardUpdate", this.onBoardUpdate);
         }
@@ -528,7 +538,6 @@ export default {
                         this.notFound = true;
                         return;
                     }
-                    this.pageTitle = res.data.config.title || "";
                     this.curated = curatedMonitors(res.data.publicGroupList || []);
                     this.curationLoaded = true;
                     this.curationFailed = false;
@@ -809,6 +818,9 @@ body.deploy-board-body .Vue-Toastification__container {
     --db-bad-soft: #fbe3e3;
     --db-maint: #535e8d;
     --db-maint-soft: #e8eaf4;
+    // "Deploy em andamento", on both columns. Brand magenta is only identity.
+    --db-deploy: #1765c4;
+    --db-deploy-soft: #e2edfa;
     --db-gap: 8px;
 
     position: fixed;
@@ -848,6 +860,8 @@ body.deploy-board-body .Vue-Toastification__container {
         --db-bad-soft: #3b1a1c;
         --db-maint: #959ec7;
         --db-maint-soft: #23263a;
+        --db-deploy: #5aa7ff;
+        --db-deploy-soft: #13263b;
 
         color-scheme: dark;
     }
@@ -901,11 +915,6 @@ body.deploy-board-body .Vue-Toastification__container {
     font-weight: 800;
     letter-spacing: -0.02em;
     line-height: 1.05;
-}
-
-.db-page-name {
-    font-size: 0.85em;
-    color: var(--db-ink-3);
 }
 
 .db-verdict {
@@ -964,9 +973,14 @@ body.deploy-board-body .Vue-Toastification__container {
 }
 
 .db-verdict[data-tone="bad"] {
+    // A triangle, not a dot: the critical state is told apart by shape too, not only by colour.
     .db-verdict-dot {
+        width: 1.1em;
+        height: 1em;
+        border-radius: 0;
         background: var(--db-bad);
-        box-shadow: 0 0 0 0.3em var(--db-bad-soft);
+        box-shadow: none;
+        clip-path: polygon(50% 0, 100% 100%, 0 100%);
     }
 
     .db-verdict-title {
@@ -976,12 +990,12 @@ body.deploy-board-body .Vue-Toastification__container {
 
 .db-verdict[data-tone="rolling"] {
     .db-verdict-dot {
-        background: var(--db-brand);
-        box-shadow: 0 0 0 0.3em color-mix(in srgb, var(--db-brand) 18%, transparent);
+        background: var(--db-deploy);
+        box-shadow: 0 0 0 0.3em var(--db-deploy-soft);
     }
 
     .db-verdict-title {
-        color: var(--db-brand);
+        color: var(--db-deploy);
     }
 }
 
@@ -1146,7 +1160,10 @@ body.deploy-board-body .Vue-Toastification__container {
     }
 
     &.is-down::before {
+        width: 0.75em;
+        border-radius: 0;
         background: var(--db-bad);
+        clip-path: polygon(50% 0, 100% 100%, 0 100%);
     }
 
     &.is-maintenance::before {

@@ -3,7 +3,10 @@
         <div v-for="monitor in monitors" :key="monitor.id" class="db-incident" :class="'is-' + monitor.tone">
             <div class="db-incident-top">
                 <span class="db-incident-name">{{ monitor.name }}</span>
-                <span class="db-incident-state">{{ monitor.stateText }}</span>
+                <span class="db-incident-state">
+                    <font-awesome-icon v-if="monitor.tone === 'down'" icon="exclamation-triangle" class="db-incident-icon" />
+                    {{ monitor.stateText }}
+                </span>
             </div>
             <span v-if="monitor.deployLine" class="db-incident-deploy">{{ monitor.deployLine }}</span>
             <span v-if="!compact" class="db-beats" aria-hidden="true">
@@ -91,6 +94,11 @@ export default {
 .db-incident-state {
     font-weight: 700;
     color: var(--db-bad);
+}
+
+// The critical state has a shape too, for whoever does not tell red from green.
+.db-incident-icon {
+    margin-right: 0.25em;
 }
 
 .is-pending .db-incident-state {

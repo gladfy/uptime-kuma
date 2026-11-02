@@ -330,6 +330,7 @@
     "deployBoardLabelStuck": "Rollout stuck",
     "deployBoardLabelLive": "Live",
     "deployBoardLabelNoPipeline": "No pipeline",
+    "deployBoardNoPipelineHint": "No pipeline for this commit: the rollout was made outside the pipeline.",
     "deployBoardLabelInPipeline": "In the pipeline",
     "deployBoardLabelBuilt": "Pipeline green",
     "deployBoardLabelFailed": "Failed",

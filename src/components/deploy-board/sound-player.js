@@ -12,6 +12,16 @@ const FILES = { started, built, rolling, done, failed };
 const QUEUE_MAX = 4;
 
 /**
+ * What ends a sound. "pause" too: paused from outside (a media key, the OS taking the audio) it
+ * never reaches "ended", and the queue would wait for it forever.
+ */
+const END_EVENTS = ["ended", "pause", "error"];
+
+/** A sound that neither ends nor fails is given up this long after its length. */
+const GUARD_MS = 3000;
+const GUARD_UNKNOWN_MS = 20000;
+
+/**
  * Plays the board's sounds one at a time. The files are only fetched once sound is turned on.
  */
 export class SoundPlayer {
@@ -22,6 +32,7 @@ export class SoundPlayer {
     constructor(onBlocked = () => {}) {
         this.onBlocked = onBlocked;
         this.audio = null;
+        this.kept = {};
         this.queue = [];
         this.playing = false;
         this.played = new Set();
@@ -41,7 +52,41 @@ export class SoundPlayer {
             const a = new Audio(url);
             a.preload = "auto";
             this.audio[event] = a;
+            this.keep(event);
         }
+    }
+
+    /**
+     * Keep a recording in the page's memory. The file names carry the hash of the build: after a
+     * deploy of the Kuma the old names are gone, and a page open since before would get a 404 the
+     * next time the browser read the file again. Until the copy is in, the file plays from the server.
+     * @param {string} event Sound.
+     * @returns {void}
+     */
+    keep(event) {
+        if (this.kept[event] || typeof fetch !== "function" || typeof URL.createObjectURL !== "function") {
+            return;
+        }
+        this.kept[event] = "fetching";
+        fetch(FILES[event])
+            .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`))))
+            .then((blob) => {
+                const a = this.audio[event];
+                // Swapped only while it does not play, so a sound is never cut.
+                const swap = () => {
+                    if (this.current?.audio === a) {
+                        setTimeout(swap, 1000);
+                        return;
+                    }
+                    a.src = URL.createObjectURL(blob);
+                    this.kept[event] = "kept";
+                };
+                swap();
+            })
+            .catch(() => {
+                // Tried again when the sound next fails.
+                this.kept[event] = null;
+            });
     }
 
     /**
@@ -86,46 +131,78 @@ export class SoundPlayer {
     stop() {
         this.queue = [];
         if (this.current) {
-            // Without this, the stopped sound's handler would fire on the next play of the same
+            // Without this, the stopped sound's handlers would fire on the next play of the same
             // recording and start a second sound on top of it.
-            this.current.audio.removeEventListener("ended", this.current.finish);
-            this.current.audio.pause();
+            const { audio, release } = this.current;
             this.current = null;
+            release();
+            audio.pause();
         }
         this.playing = false;
     }
 
     /**
+     * Play the next sound of the queue. Whatever ends it (the end, a pause from outside, an error or,
+     * failing all, the guard time) moves the queue on: one sound that never ends must not silence
+     * the board for good.
      * @returns {void}
      */
     next() {
         if (this.playing || this.queue.length === 0) {
             return;
         }
-        const a = this.audio[this.queue.shift()];
+        const event = this.queue.shift();
+        const a = this.audio[event];
         this.playing = true;
+        let guard = null;
+        const release = () => {
+            clearTimeout(guard);
+            for (const name of END_EVENTS) {
+                a.removeEventListener(name, finish);
+            }
+        };
         const finish = () => {
-            a.removeEventListener("ended", finish);
+            if (this.current?.finish !== finish) {
+                return;
+            }
+            release();
             this.current = null;
             this.playing = false;
             this.next();
         };
-        a.addEventListener("ended", finish);
-        this.current = { audio: a, finish };
+        for (const name of END_EVENTS) {
+            a.addEventListener(name, finish);
+        }
+        this.current = { audio: a, finish, release };
         a.currentTime = 0;
         a.play().then(
-            () => this.onBlocked(false),
+            () => {
+                this.onBlocked(false);
+                if (this.current?.finish === finish) {
+                    const length = Number.isFinite(a.duration) ? a.duration * 1000 + GUARD_MS : GUARD_UNKNOWN_MS;
+                    guard = setTimeout(finish, length);
+                }
+            },
             (e) => {
                 if (this.current?.finish !== finish) {
                     // Stopped while starting (stop() paused it): an AbortError, not a refusal.
                     return;
                 }
-                a.removeEventListener("ended", finish);
+                release();
                 this.current = null;
-                this.queue = [];
                 this.playing = false;
-                // Autoplay refused: nothing will play until someone clicks the page.
-                this.onBlocked(e?.name === "NotAllowedError");
+                if (e?.name === "NotAllowedError") {
+                    // Autoplay refused: nothing will play until someone clicks the page.
+                    this.queue = [];
+                    this.onBlocked(true);
+                    return;
+                }
+                // The file failed (gone from the server, the browser dropped it): fetched again
+                // for the next time, and the queue goes on.
+                this.onBlocked(false);
+                this.kept[event] = null;
+                this.keep(event);
+                this.next();
             }
         );
     }

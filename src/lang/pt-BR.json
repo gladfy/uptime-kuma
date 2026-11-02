@@ -512,6 +512,7 @@
     "deployBoardLabelStuck": "Virada travada",
     "deployBoardLabelLive": "No ar",
     "deployBoardLabelNoPipeline": "Sem pipeline",
+    "deployBoardNoPipelineHint": "Nenhuma pipeline deste commit: virada feita fora da pipeline.",
     "deployBoardLabelInPipeline": "Na pipeline",
     "deployBoardLabelBuilt": "Pipeline verde",
     "deployBoardLabelFailed": "Falhou",
