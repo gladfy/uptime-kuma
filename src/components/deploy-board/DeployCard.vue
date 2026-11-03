@@ -433,7 +433,7 @@ export default {
     border-radius: 14px;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
-    border-left: 4px solid var(--db-deploy);
+    border-left: 3px solid var(--db-deploy);
     min-width: 0;
 
     &.is-ok {

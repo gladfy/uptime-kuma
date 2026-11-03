@@ -4,11 +4,11 @@
         <p v-else-if="noSourceOn" class="db-empty">{{ $t("deployBoardNoSources") }}</p>
 
         <!-- A failure stays until someone dismisses it; a deploy that went live becomes a line below. -->
-        <template v-if="failures.length">
+        <template v-if="failureCards.length">
             <h2 class="db-section-title">{{ $t("deployBoardFailures") }}</h2>
             <div class="db-cards">
                 <DeployCard
-                    v-for="deploy in failures"
+                    v-for="deploy in failureCards"
                     :key="deploy.id"
                     :data-id="deploy.id"
                     :hidden="hiddenIds.includes(deploy.id)"
@@ -128,6 +128,15 @@ const OUTCOME_KEYS = {
     lost: "deployBoardOutcomeLost",
 };
 
+/**
+ * @param {object} a Deploy.
+ * @param {object} b Deploy.
+ * @returns {number} The one that started first goes first; the same start, by id.
+ */
+function byStart(a, b) {
+    return a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id));
+}
+
 export default {
     components: {
         DeployCard,
@@ -171,7 +180,12 @@ export default {
 
         /** @returns {object[]} Every card, in the order of the screen: the failures first */
         cards() {
-            return [...this.failures, ...this.running];
+            return [...this.failureCards, ...this.running];
+        },
+
+        /** @returns {object[]} The failures, the oldest first */
+        failureCards() {
+            return [...this.failures].sort(byStart);
         },
 
         /**
@@ -197,9 +211,13 @@ export default {
             );
         },
 
-        /** @returns {object[]} Deploys still moving */
+        /**
+         * Deploys still moving, the oldest first: a card keeps its place as its deploy goes from one
+         * step to the next (the server sends them by state).
+         * @returns {object[]} Deploys.
+         */
         running() {
-            return this.board ? this.board.deploys.filter((d) => RUNNING_STATES.includes(d.state)) : [];
+            return this.board ? this.board.deploys.filter((d) => RUNNING_STATES.includes(d.state)).sort(byStart) : [];
         },
 
         /**
@@ -303,7 +321,7 @@ export default {
                 }
                 cards.forEach((c) => setLevel(c, "compact"));
                 if (!overflows()) {
-                    const failed = cards.filter((c) => this.failures.includes(c.deploy));
+                    const failed = cards.filter((c) => this.failureCards.includes(c.deploy));
                     const rolling = cards.filter((c) => !failed.includes(c) && ROLLOUT_STATES.includes(c.deploy.state));
                     for (const card of [...failed, ...rolling]) {
                         setLevel(card, "medium");
