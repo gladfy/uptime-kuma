@@ -264,7 +264,7 @@ Pedido do Erik em 03/11/2026: um som quando um serviço cai, alerta de ambulânc
 
 - [x] 22a.1 Função pura `servicesGoneDown(anterior, monitores)` em `src/components/deploy-board/service-alert.mjs`: toca quando um monitor passa de no ar, pendente ou manutenção para fora do ar. Sem estado anterior (carga, reconexão, novo login), de "sem batida" (o Kuma esvazia as batidas ao reconectar) e de pausado: não toca. Vários de uma vez: uma sirene. Testes em `test-service-alert.js`.
 - [x] 22a.2 `service-down.mp3` (Freesound 465700, Breviceps, CC0), com o volume dos outros sons; crédito em `CREDITS.md`. O tocador ganhou `alert()`: a sirene passa na frente da fila, não corta o som que toca, entra uma vez só e não é a descartada quando a fila enche (testes em `test-sound-player.js`, conferidos por mutação).
-- [ ] 22a.3 Deploy e ouvir a sirene numa queda real, ou num monitor de teste apontado para um endereço que não responde, com a TV.
+- [x] 22a.3 Deploy e ouvir a sirene numa queda real, ou num monitor de teste apontado para um endereço que não responde, com a TV. 03/11/2026: no ar com o merge do #24; a sirene tocou na TV numa queda real do "Winker Pro" (relato do Erik).
 
 # Fase 6 — Como voltar à versão anterior
 
