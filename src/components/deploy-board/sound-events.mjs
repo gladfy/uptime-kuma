@@ -5,6 +5,8 @@
  * Kept as .mjs so the backend tests (CommonJS, Node 20) can import it as it is.
  */
 
+import { releaseRef } from "./release-ref.mjs";
+
 /** The sounds, in the order a deploy goes through them. */
 export const SOUND_EVENTS = ["started", "built", "rolling", "done", "failed"];
 
@@ -13,10 +15,7 @@ export const SOUND_EVENTS = ["started", "built", "rolling", "done", "failed"];
  * @returns {string} Its releases, sorted: a deploy that takes in one more release is at a new stage.
  */
 function stageOf(deploy) {
-    return deploy.releases
-        .map((r) => `${r.cluster ? `${r.cluster}:` : ""}${r.namespace}/${r.release}`)
-        .sort()
-        .join(",");
+    return deploy.releases.map(releaseRef).sort().join(",");
 }
 
 /** Pipeline states that are a failure. A cancelled one (stopped) is not: nothing failed. */

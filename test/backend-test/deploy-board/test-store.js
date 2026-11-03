@@ -277,7 +277,7 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(snap.history[0].outcome, "done");
             assert.strictEqual(snap.history[0].endedAt - snap.history[0].startedAt, 12 * 60 * 1000);
             assert.deepStrictEqual(snap.history[0].releases, [
-                { cluster: null, namespace: "condominio", release: "winker-prod" },
+                { cluster: null, clusterLabel: null, namespace: "condominio", release: "winker-prod" },
             ]);
         });
 

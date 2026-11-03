@@ -348,7 +348,9 @@ class KubernetesSource {
      */
     request(path, onResponse) {
         const token = fs.readFileSync(this.tokenFile, "utf8").trim();
-        const url = new URL(path, this.baseUrl);
+        // Kept under the path of the API address, as kubectl does (a proxied API lives below one).
+        const base = new URL(this.baseUrl);
+        const url = new URL(`${base.pathname.replace(/\/+$/, "")}${path}`, base);
         const transport = url.protocol === "https:" ? https : http;
         const req = transport.get(
             url,

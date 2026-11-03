@@ -29,6 +29,12 @@ const REGION_RE = /^[a-z]{2}(-[a-z]+)+-\d$/;
 const LABEL_MAX = 20;
 
 /**
+ * A cluster name prefixes the volume of its credential in the chart ("deploy-board-cluster-<name>",
+ * at most 63 characters) and the object keys of the database (a column of 160): kept short.
+ */
+const CLUSTER_NAME_MAX = 20;
+
+/**
  * Validate the parsed configuration file of the deploy board.
  *
  * Every error names the field, because whoever reads it is looking at a ConfigMap and needs to know
@@ -63,8 +69,8 @@ function validateDeployBoardConfig(raw) {
         if (!c || typeof c !== "object" || Array.isArray(c)) {
             return fail(`${at}: expected an object`);
         }
-        if (typeof c.name !== "string" || !NAMESPACE_RE.test(c.name)) {
-            return fail(`${at}.name: expected a lowercase name, e.g. "oci"`);
+        if (typeof c.name !== "string" || !NAMESPACE_RE.test(c.name) || c.name.length > CLUSTER_NAME_MAX) {
+            return fail(`${at}.name: expected a lowercase name of up to ${CLUSTER_NAME_MAX} characters, e.g. "oci"`);
         }
         if (clusters.some((other) => other.name === c.name)) {
             return fail(`${at}.name: "${c.name}" is repeated`);

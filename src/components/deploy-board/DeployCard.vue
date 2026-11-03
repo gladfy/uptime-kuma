@@ -77,7 +77,7 @@
         <ul class="db-card-releases">
             <li
                 v-for="r in deploy.releases"
-                :key="(r.cluster ? r.cluster + ':' : '') + r.namespace + '/' + r.release"
+                :key="releaseRef(r)"
                 class="db-release"
                 :class="['is-' + stateClass(r.state), { 'is-complete': r.desired > 0 && r.updated >= r.desired }]"
             >
@@ -110,6 +110,7 @@
 
 <script>
 import RollbackPanel from "./RollbackPanel.vue";
+import { releaseRef } from "./release-ref.mjs";
 
 /** Card label → i18n key. */
 const LABEL_KEYS = {
@@ -228,6 +229,7 @@ export default {
         return {
             PIPELINE_KEYS,
             STEP_KEYS,
+            releaseRef,
         };
     },
 

@@ -589,7 +589,12 @@ class DeployBoardStore {
             deploys,
             history: this.history.map((h) =>
                 pickPublic(
-                    { ...h, links: linksOf(h.releases || [], h.pipeline?.source === "amplify" ? h.project : null) },
+                    {
+                        ...h,
+                        // The label is the configuration's, not the record's: it may change.
+                        releases: (h.releases || []).map((r) => ({ ...r, clusterLabel: this.clusterLabel(r.cluster) })),
+                        links: linksOf(h.releases || [], h.pipeline?.source === "amplify" ? h.project : null),
+                    },
                     HISTORY_PUBLIC_FIELDS
                 )
             ),

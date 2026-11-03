@@ -129,6 +129,7 @@ import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 import { soundEvents } from "../components/deploy-board/sound-events.mjs";
 import { SoundPlayer } from "../components/deploy-board/sound-player.js";
 import { servicesGoneDown } from "../components/deploy-board/service-alert.mjs";
+import { releaseRef, sourceOfTag, isClusterSource } from "../components/deploy-board/release-ref.mjs";
 import { mockCount, withMockDeploys } from "../components/deploy-board/mock-deploys.js";
 
 /**
@@ -428,17 +429,16 @@ export default {
             if (this.failures.length) {
                 return { tone: "bad", title: this.$t("deployBoardVerdictFailures", this.failures.length), sub };
             }
-            const unread = Object.entries(this.board.sources).find(
+            // Every cluster without a reading, so one does not hide another.
+            const unread = Object.entries(this.board.sources).filter(
                 ([id, s]) => isClusterSource(id) && s.state === "stale"
             );
-            if (unread) {
-                const [id, source] = unread;
-                const name = id === "cluster" ? "" : `${source.label} · `;
-                return {
-                    tone: "muted",
-                    title: this.$t("deployBoardClusterNoRead"),
-                    sub: `${name}${source.detail || ""}`,
-                };
+            if (unread.length) {
+                const sub = unread
+                    .map(([id, s]) => [id === "cluster" ? null : s.label, s.detail].filter(Boolean).join(" · "))
+                    .filter(Boolean)
+                    .join("; ");
+                return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub };
             }
             // Nothing running is not news: grey, with no dot.
             return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), sub };
@@ -864,26 +864,6 @@ function sourcesRead(tags, sources) {
     return tags.every((t) => sources[sourceOfTag(t)]?.state === "active");
 }
 
-/**
- * @param {string} tag Value of a "deploy" tag.
- * @returns {string} The board source that reads what it points to.
- */
-function sourceOfTag(tag) {
-    if (tag.startsWith("amplify/")) {
-        return "amplify";
-    }
-    const cluster = /^([^:/]+):/.exec(tag);
-    return cluster ? `cluster:${cluster[1]}` : "cluster";
-}
-
-/**
- * @param {string} id Source id of the board.
- * @returns {boolean} Whether it reads a cluster (the pod's own, or another of the configuration).
- */
-function isClusterSource(id) {
-    return id === "cluster" || id.startsWith("cluster:");
-}
-
 /** States of a deploy rolling out in the cluster: the service is being changed. */
 const ROLLOUT_STATES = ["updating", "noProgress", "stuck"];
 
@@ -908,7 +888,7 @@ function reachedService(deploy) {
  * @returns {string[]} The tag values it answers to (older servers send only the releases).
  */
 function linksOf(deploy) {
-    return deploy.links || deploy.releases.map((r) => `${r.cluster ? `${r.cluster}:` : ""}${r.namespace}/${r.release}`);
+    return deploy.links || deploy.releases.map(releaseRef);
 }
 
 /**

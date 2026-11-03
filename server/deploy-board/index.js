@@ -21,13 +21,6 @@ const PARSERS = {
     github: parseGithub,
 };
 
-/**
- * Where the credential of each other cluster is mounted, one directory per cluster name with `server`
- * (the API URL), `token` and `ca.crt`: a Secret created by hand, like the one of the webhooks. Not
- * under the directory of the configuration, which is a read-only ConfigMap volume.
- */
-const CLUSTERS_DIR = "/etc/deploy-board-clusters";
-
 /** The database keeps a week of deploys; the screen shows the last HISTORY_MS of them. */
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 60 * 60 * 1000;
@@ -231,7 +224,7 @@ class DeployBoard {
             const releases = config.projects
                 .flatMap((p) => p.releases)
                 .filter((r) => r.cluster === cluster.name)
-                .map((r) => `${r.namespace}/${r.release}`);
+                .map((r) => releaseRef({ ...r, cluster: null }));
             const tracker = new ClusterTracker({
                 releases,
                 cluster: cluster.name,
@@ -241,7 +234,18 @@ class DeployBoard {
                 onSeen: (key, signature) => this.history.saveObject(key, signature, this.store.now()),
             });
             trackers.set(cluster.name, tracker);
-            const dir = `${this.env.DEPLOY_BOARD_CLUSTERS_DIR || CLUSTERS_DIR}/${cluster.name}`;
+            // The credential of each other cluster: one directory per name under DEPLOY_BOARD_CLUSTERS_DIR,
+            // with `server` (the API URL), `token` and `ca.crt`, mounted from a Secret by the chart, which
+            // owns the path. Without the variable there is nowhere to read it from.
+            const base = this.env.DEPLOY_BOARD_CLUSTERS_DIR;
+            if (cluster.name && !base && !perCluster[cluster.name]) {
+                log.info(
+                    "deploy-board",
+                    `DEPLOY_BOARD_CLUSTERS_DIR is not set; the source of cluster ${cluster.name} is off.`
+                );
+                continue;
+            }
+            const dir = `${base}/${cluster.name}`;
             const source = new KubernetesSource({
                 namespaces: cluster.namespaces,
                 tracker,
@@ -297,7 +301,6 @@ class DeployBoard {
 const deployBoard = new DeployBoard();
 
 module.exports = {
-    CLUSTERS_DIR,
     WEBHOOK_SECRET_ENVS,
     HISTORY_RETENTION_MS,
     DeployBoard,

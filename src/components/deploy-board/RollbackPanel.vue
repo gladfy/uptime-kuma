@@ -19,8 +19,8 @@
             </template>
 
             <ul class="db-rollback-notes">
-                <li v-for="r in rollbackGaps" :key="(r.cluster ? r.cluster + ':' : '') + r.namespace + '/' + r.release">
-                    {{ $t(GAP_KEYS[r.status], [r.release]) }}
+                <li v-for="r in rollbackGaps" :key="releaseRef(r)">
+                    {{ $t(GAP_KEYS[r.status], [releaseName(r)]) }}
                 </li>
                 <li v-if="rollbackText">{{ $t("deployBoardRollbackRunYourself") }}</li>
                 <li v-if="rollbackCronJobs > 0">{{ $t("deployBoardRollbackCronJobs", [rollbackCronJobs]) }}</li>
@@ -32,6 +32,8 @@
 </template>
 
 <script>
+import { releaseRef, releaseName } from "./release-ref.mjs";
+
 /** Why a release has no command → i18n key. */
 const GAP_KEYS = {
     unknown: "deployBoardRollbackUnknown",
@@ -66,6 +68,8 @@ export default {
     data() {
         return {
             GAP_KEYS,
+            releaseRef,
+            releaseName,
             rollbackOpen: !this.toggle,
             copied: false,
         };
@@ -96,12 +100,13 @@ export default {
             return this.rollbackKnown
                 .map((r) => {
                     const previous = SHA_RE.test(r.previous) ? r.previous.slice(0, 7) : r.previous;
-                    const head = `# ${this.$t("deployBoardRollbackComment", [`${r.namespace}/${r.release}`, previous])}`;
+                    const where = r.clusterLabel ? `${r.clusterLabel} · ` : "";
+                    const head = `# ${this.$t("deployBoardRollbackComment", [`${where}${r.namespace}/${r.release}`, previous])}`;
                     // The board does not know the kubectl context of whoever copies: it says which cluster.
-                    const where = r.clusterLabel
+                    const context = r.clusterLabel
                         ? [`# ${this.$t("deployBoardRollbackCluster", [r.clusterLabel])}`]
                         : [];
-                    return [head, ...where, ...r.setImage, ...r.rolloutStatus].join("\n");
+                    return [head, ...context, ...r.setImage, ...r.rolloutStatus].join("\n");
                 })
                 .join("\n\n");
         },

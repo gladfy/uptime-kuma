@@ -203,7 +203,7 @@ describe("Configuração do painel de deploys", () => {
             [{ clusters: {} }, "clusters: expected a list"],
             [
                 { clusters: [{ name: "OCI", namespaces: ["a"] }] },
-                'clusters[0].name: expected a lowercase name, e.g. "oci"',
+                'clusters[0].name: expected a lowercase name of up to 20 characters, e.g. "oci"',
             ],
             [
                 {
@@ -215,6 +215,10 @@ describe("Configuração do painel de deploys", () => {
                 'clusters[1].name: "oci" is repeated',
             ],
             [{ clusters: [{ name: "oci", namespaces: [] }] }, "clusters[0].namespaces: expected a non-empty list"],
+            [
+                { clusters: [{ name: "a".repeat(21), namespaces: ["a"] }] },
+                'clusters[0].name: expected a lowercase name of up to 20 characters, e.g. "oci"',
+            ],
             [
                 { clusters: [{ name: "oci", label: "", namespaces: ["a"] }] },
                 "clusters[0].label: expected a text of up to 20 characters",

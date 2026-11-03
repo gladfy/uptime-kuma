@@ -496,9 +496,12 @@ mostrar a pipeline deles.
   (o nome do contexto `kubectl` de cada pessoa o painel não sabe).
 - *Pipeline:* os dois repositórios entram com origem `bitbucket` e branch `main`, e o cartão junta
   merge, pipeline e virada pelo SHA, como no EKS.
-- *Montagem (03/11/2026):* um diretório por cluster em `/etc/deploy-board-clusters/<nome>`, com
-  `server`, `token` e `ca.crt`, de um Secret opcional (fora de `/etc/deploy-board`, que é o volume
-  só leitura do ConfigMap). Sem os arquivos, a fonte fica "não configurada" e os projetos dela se
+- *Montagem (03/11/2026):* um diretório por cluster em `$DEPLOY_BOARD_CLUSTERS_DIR/<nome>`, com
+  `server`, `token` e `ca.crt`, de um Secret opcional. O caminho é do chart
+  (`/etc/deploy-board-clusters`, fora de `/etc/deploy-board`, que é o volume só leitura do
+  ConfigMap); sem a variável, os outros clusters ficam "não configurados". O endereço pode ter
+  caminho (API atrás de proxy), e os pedidos saem abaixo dele, como no kubectl. O nome do cluster vai
+  a até 20 caracteres, porque prefixa o volume do chart (63) e a chave dos objetos no banco (160). Sem os arquivos, a fonte fica "não configurada" e os projetos dela se
   comportam como sem cluster (a pipeline verde fecha o deploy), então o chart pode subir antes da
   credencial sem alarme falso. O endereço e a CA são lidos no boot; o token, a cada pedido.
 - *Rede (03/11/2026):* a API do OKE da conta Winker é pública e a lista de segurança aceita a porta

@@ -208,6 +208,37 @@ describe("Outro cluster (OKE) ao lado do EKS", () => {
         assert.strictEqual(plan.cluster, "oci");
         assert.strictEqual(plan.clusterLabel, "OCI");
     });
+
+    test("falha que já foi para o histórico continua com a marca do cluster", () => {
+        store.upsertRollout(ociRollout({ state: "stuck" }));
+        // Um deploy posterior do mesmo projeto concluído tira o travado da tela para o histórico.
+        clock += 60 * 1000;
+        store.upsertRollout(
+            ociRollout({
+                id: "oci:ia-rag-prod/rag-prod:2",
+                startedAt: clock,
+                state: "done",
+                endedAt: clock,
+                images: ["0f9e8d7c6b5a"],
+            })
+        );
+        const stuck = store.snapshot().history.find((h) => h.outcome === "stuck");
+        assert.deepStrictEqual(stuck.releases, [{ ...OCI_RELEASE, clusterLabel: "OCI" }]);
+    });
+});
+
+describe("Referência de release igual no servidor e na tela", () => {
+    test("o helper da tela escreve e lê como o validador da configuração", async () => {
+        const { releaseRef, parseReleaseRef } = require("../../../server/deploy-board/config");
+        const page = await import("../../../src/components/deploy-board/release-ref.mjs");
+        for (const ref of ["condominio/winker-prod", "oci:ia-rag-prod/rag-prod", "pro:backend/api"]) {
+            const parsed = parseReleaseRef(ref);
+            assert.strictEqual(page.releaseRef(parsed), ref);
+            assert.strictEqual(page.releaseRef(parsed), releaseRef(parsed));
+            assert.strictEqual(page.sourceOfTag(ref), parsed.cluster ? `cluster:${parsed.cluster}` : "cluster");
+        }
+        assert.strictEqual(page.sourceOfTag("amplify/pro"), "amplify");
+    });
 });
 
 describe("Rastreador de outro cluster", () => {
@@ -360,9 +391,10 @@ describe("Painel com dois clusters", () => {
 
     /**
      * @param {object} kubernetes Options of the cluster sources.
+     * @param {object} env Environment besides DEPLOY_BOARD_CONFIG.
      * @returns {DeployBoard} Started board, with the EKS and the OKE of the configuration.
      */
-    function startBoard(kubernetes) {
+    function startBoard(kubernetes, env = { DEPLOY_BOARD_CLUSTERS_DIR: path.join(dir, "nada") }) {
         const file = path.join(dir, "config.json");
         fs.writeFileSync(
             file,
@@ -376,7 +408,7 @@ describe("Painel com dois clusters", () => {
             })
         );
         board = new DeployBoard({
-            env: { DEPLOY_BOARD_CONFIG: file, DEPLOY_BOARD_CLUSTERS_DIR: path.join(dir, "nada") },
+            env: { DEPLOY_BOARD_CONFIG: file, ...env },
             history: HISTORY,
             kubernetes,
         });
@@ -412,6 +444,14 @@ describe("Painel com dois clusters", () => {
             requests.every((r) => r.path.includes("/condominio/")),
             "nada pedido em nome do OKE"
         );
+    });
+
+    test("sem DEPLOY_BOARD_CLUSTERS_DIR: o OKE fica não configurado e nunca cai na API do próprio pod", async () => {
+        startBoard({ baseUrl, serviceAccountDir: path.join(dir, "eks"), tickMs: 60 * 60 * 1000 }, {});
+        assert.strictEqual(board.getSnapshot().sources["cluster:oci"].state, "unconfigured");
+        await until(() => requests.length > 0, "leitura do EKS");
+        await new Promise((r) => setTimeout(r, 50));
+        assert.ok(!requests.some((r) => r.path.includes("/ia-rag-prod/")), "o namespace do OKE não é pedido ao EKS");
     });
 
     test("virada no OKE chega ao cartão do ia-rag, lida com o token do OKE", async () => {
