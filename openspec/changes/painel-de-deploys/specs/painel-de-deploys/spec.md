@@ -443,6 +443,10 @@ esperam na fila, sem cortar o que já toca, e SHALL NOT ser descartada quando a 
 - **WHEN** a página é recarregada e ninguém clicou nela ainda
 - **THEN** o navegador não deixa tocar, e o painel avisa ao lado do botão que é preciso um clique
 
+#### Scenario: Recarregada pelo Kuma, com reprodução automática permitida
+- **WHEN** o Kuma é atualizado, a página recarrega sozinha (versão nova do servidor) e o navegador da TV tem a reprodução automática de áudio permitida para o site
+- **THEN** o painel não mostra o aviso de clique e os sons tocam sem ninguém clicar
+
 #### Scenario: Som silenciado
 - **WHEN** alguém silenciou o som naquele navegador e uma virada começa
 - **THEN** nada toca, e continua silenciado ao recarregar

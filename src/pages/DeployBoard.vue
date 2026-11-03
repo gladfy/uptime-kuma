@@ -52,7 +52,7 @@
                 </div>
 
                 <div class="db-controls">
-                    <span v-if="soundOn && soundBlocked" class="db-sound-blocked">{{ $t("deployBoardSoundBlocked") }}</span>
+                    <span v-if="soundOn && soundBlocked" class="db-sound-blocked" :title="$t('deployBoardSoundBlockedHint')">{{ $t("deployBoardSoundBlocked") }}</span>
                     <button
                         type="button"
                         class="db-theme db-sound db-control"
@@ -176,6 +176,18 @@ function dismissedSaved() {
 const SOUND_KEY = "deployBoardSound";
 
 /**
+ * @returns {boolean} Whether the browser would refuse to play a sound now.
+ */
+function autoplayBlocked() {
+    // The Kuma reloads the page when its version changes, and after a reload the browser plays nothing
+    // until someone clicks it, unless the site may autoplay (Firefox tells; other browsers do not).
+    if (typeof navigator.getAutoplayPolicy === "function") {
+        return navigator.getAutoplayPolicy("mediaelement") !== "allowed";
+    }
+    return !navigator.userActivation?.hasBeenActive;
+}
+
+/**
  * @returns {boolean} Whether sound is on in this browser: on unless someone muted it here.
  */
 function soundSaved() {
@@ -216,8 +228,7 @@ export default {
             idle: false,
             dismissed: dismissedSaved(),
             soundOn: soundSaved(),
-            // After a reload the browser plays nothing until someone clicks the page.
-            soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
+            soundBlocked: soundSaved() && autoplayBlocked(),
             // ?mock=deploys&n=N: the column drawn with N made-up deploys (see mock-deploys.js).
             mock: mockCount(this.$route.query),
         };
