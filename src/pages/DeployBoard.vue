@@ -716,7 +716,9 @@ export default {
         },
 
         /**
-         * Mark of a monitor in the grid. Only the deploy changes it; the colour stays Kuma's.
+         * Mark of a monitor in the grid. Only the deploy changes it; the colour stays Kuma's. Only a
+         * deploy that reached the service marks it: the rollout in the cluster, or the publication in
+         * the Amplify. In the merge and the pipeline the service has not been touched yet.
          * @param {object} monitor Live monitor.
          * @returns {string|null} "rolling", "stuck" or null.
          */
@@ -725,7 +727,7 @@ export default {
             if (!deploys || !monitor.releases.length || !sourcesRead(monitor.releases, deploys.sources)) {
                 return null;
             }
-            const touching = deploys.active.filter((d) => touches(d, monitor.releases));
+            const touching = deploys.active.filter((d) => reachedService(d) && touches(d, monitor.releases));
             if (touching.some((d) => d.state === "stuck")) {
                 return "stuck";
             }
@@ -826,6 +828,25 @@ function deployTags(monitor) {
  */
 function sourcesRead(tags, sources) {
     return tags.every((t) => sources[t.startsWith("amplify/") ? "amplify" : "cluster"]?.state === "active");
+}
+
+/** States of a deploy rolling out in the cluster: the service is being changed. */
+const ROLLOUT_STATES = ["updating", "noProgress", "stuck"];
+
+/** Amplify step that puts the new build out, and the states in which it has started. */
+const AMPLIFY_PUBLISH_JOB = "deploy";
+const STARTED_JOB_STATES = ["running", "success"];
+
+/**
+ * @param {object} deploy Deploy on screen.
+ * @returns {boolean} Whether it reached the service: rolling out in the cluster, or past the start
+ * of the Amplify "deploy" step.
+ */
+function reachedService(deploy) {
+    if (deploy.pipeline?.source === "amplify") {
+        return (deploy.pipeline.jobs || []).some((j) => j.name === AMPLIFY_PUBLISH_JOB && STARTED_JOB_STATES.includes(j.state));
+    }
+    return ROLLOUT_STATES.includes(deploy.state);
 }
 
 /**
@@ -1374,7 +1395,7 @@ body.deploy-board-body .Vue-Toastification__container {
 
     .db-main {
         display: grid;
-        grid-template-columns: minmax(26em, 30%) minmax(0, 1fr);
+        grid-template-columns: minmax(340px, 29%) minmax(0, 1fr);
         gap: 20px;
         min-height: 0;
     }
