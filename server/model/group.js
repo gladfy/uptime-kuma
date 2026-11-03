@@ -1,6 +1,8 @@
 const { BeanModel } = require("redbean-node/dist/bean-model");
 const { R } = require("redbean-node");
 
+const BY_NAME = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
+
 class Group extends BeanModel {
     /**
      * Return an object that ready to parse to JSON for public Only show
@@ -26,10 +28,11 @@ class Group extends BeanModel {
                     SELECT id, name, type FROM monitor
                     WHERE parent = ?
                     AND active = 1
-                    ORDER BY name
                 `,
                     [bean.id]
                 );
+                // By name as people read it: SQLite's ORDER BY compares bytes, which puts "Água" after "Zabbix".
+                monitorObj.childrenList.sort((a, b) => BY_NAME.compare(a.name, b.name));
             }
 
             monitorList.push(monitorObj);
