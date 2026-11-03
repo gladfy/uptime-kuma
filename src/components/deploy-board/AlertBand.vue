@@ -1,7 +1,8 @@
 <template>
-    <div class="db-alert" role="alert">
+    <!-- The alert is the text: the timer, outside it, changes every second and would be read out each time. -->
+    <div class="db-alert">
         <span class="db-alert-icon" aria-hidden="true">▲</span>
-        <div class="db-alert-text">
+        <div class="db-alert-text" role="alert">
             <p class="db-alert-title">
                 {{ $t("deployBoardAlertDown", [shownNames]) }}
                 <span v-if="rest > 0" class="db-alert-more">+{{ rest }}</span>

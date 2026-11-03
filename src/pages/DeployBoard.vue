@@ -236,7 +236,11 @@ export default {
             if (!this.board) {
                 return [];
             }
-            const live = this.board.deploys.filter((d) => FAILED.includes(d.state));
+            // A stuck rollout still on the server's screen is still happening: it leaves when the
+            // server moves it to the history, not when someone dismisses it.
+            const live = this.board.deploys
+                .filter((d) => FAILED.includes(d.state))
+                .map((d) => ({ ...d, dismissible: d.state !== "stuck" }));
             const seen = new Set(live.map((d) => d.id));
             const past = this.board.history
                 .filter((h) => FAILED.includes(h.outcome) && !seen.has(h.id))
@@ -255,6 +259,7 @@ export default {
                     rollback: null,
                     pipeline: null,
                     steps: null,
+                    dismissible: true,
                 }));
             // A failure a later deploy of the same project fixed leaves by itself; one nobody fixed
             // stays until someone dismisses it.
@@ -262,7 +267,7 @@ export default {
                 [...this.board.deploys.filter((d) => d.state === "done"), ...this.board.history.filter((h) => h.outcome === "done")].some(
                     (d) => d.project === f.project && d.startedAt > f.startedAt
                 );
-            return [...live, ...past].filter((d) => !this.dismissed.includes(d.id) && !fixed(d));
+            return [...live, ...past].filter((d) => !(d.dismissible && this.dismissed.includes(d.id)) && !fixed(d));
         },
 
         /** @returns {object[]} Every monitor in its place, with its deploy mark: none leaves the grid */
@@ -702,7 +707,7 @@ export default {
         },
 
         /**
-         * Line about deploys in the highlight of a monitor that is down or pending. Omitted when a
+         * Line about deploys in the alert band of a monitor that is down. Omitted when a
          * source of its tags is not being read: "no related deploy" can only be said by who reads it.
          * @param {object} monitor Live monitor.
          * @returns {string|null} The line, or null.

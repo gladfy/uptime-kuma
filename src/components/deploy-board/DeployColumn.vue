@@ -13,7 +13,7 @@
                     :deploy="deploy"
                     :now="now"
                     :format-duration="formatDuration"
-                    dismissible
+                    :dismissible="deploy.dismissible"
                     @dismiss="$emit('dismiss', $event)"
                 />
             </div>
@@ -26,7 +26,7 @@
             </div>
         </template>
 
-        <div class="db-history">
+        <div ref="history" class="db-history">
             <h2 class="db-section-title">
                 {{ $t("deployBoardHistory") }}
                 <span class="db-section-count">{{ $t("deployBoardStatsTotal", historyRows.length) }}</span>
@@ -178,11 +178,17 @@ export default {
         "historyRows.length"() {
             this.$nextTick(this.measure);
         },
+        // The way back opens inside the list: it grows without anything changing size.
+        backOpen() {
+            this.$nextTick(this.measure);
+        },
     },
 
     mounted() {
+        // The history, not the column: on a wall screen the column keeps its height, and what changes
+        // is the room the cards above leave to the history.
         this.observer = new ResizeObserver(() => this.measure());
-        this.observer.observe(this.$el);
+        this.observer.observe(this.$refs.history);
         this.measure();
     },
 
