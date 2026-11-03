@@ -90,7 +90,7 @@ Leva ao painel as outras aplicações que rodam no EKS. Inventário de 31/10/202
 | jambonz | `jambonz-prod/jambonz-worker`, `jambonz-prod/jambonz-vad` | GitHub `gladfy/jambonz-worker` (o do vad a confirmar) | Jambonz Worker |
 | wk-face-api | `facial/wk-face-api` | a confirmar | — |
 | land | `land/land` | a confirmar | — |
-| chat-api | `chat-api/chat-api` | a confirmar | — |
+| chat-api | `chat-api/chat-api` | Bitbucket `winker/chat-winker`, branch `master` (02/11/2026, chart 0.5.1) | — |
 | ai-agents | `ai-agents-prod/ai-agents-prod` | a confirmar | — |
 | winker-mcp | `mcp-prod/winker-mcp-prod` | a confirmar | — |
 | audit-consumer | `audit-platform/audit-consumer` | a confirmar | — |
