@@ -34,7 +34,7 @@
                             {{ seg.title }}
                         </span>
                         <span class="db-seg-sub">
-                            <b v-if="seg.rate !== undefined" class="db-seg-rate" :class="{ 'is-ok': seg.rate === 100 }">{{ seg.rate }}%</b>
+                            <b v-if="seg.rate !== undefined" class="db-seg-rate" :class="{ 'is-ok': seg.rate === 100, 'is-warn': seg.rate < 100 }">{{ seg.rate }}%</b>
                             <template v-if="seg.parts">
                                 <template v-for="(part, i) in seg.parts" :key="i">
                                     <template v-if="i">, </template>
@@ -348,7 +348,7 @@ export default {
                     title: this.$t("deployBoardStatsTotal", this.stats.total),
                     sub: rate === null ? this.$t("deployBoardStatsSuccessNone") : this.$t("deployBoardStatsSuccessWord"),
                     rate: rate === null ? undefined : rate,
-                    tone: "idle",
+                    tone: rate !== null && rate < 100 ? "warn" : "idle",
                     dot: false,
                     hint: this.statsDetail,
                 });
@@ -416,7 +416,9 @@ export default {
                 parts.push({ text: this.$t("deployBoardSummaryFailed", this.failures.length), bad: true });
             }
             if (running > 0) {
-                return { tone: "rolling", title: this.$t("deployBoardVerdictRolling", [running]), parts };
+                // A card in amber (rollout without progress, green pipeline that no rollout followed) turns it amber.
+                const held = this.board.deploys.some((d) => d.state === "noProgress" || d.label === "noRollout");
+                return { tone: held ? "warn" : "rolling", title: this.$t("deployBoardVerdictRolling", [running]), parts };
             }
             const last = [...this.board.deploys, ...this.board.history]
                 .filter((d) => d.endedAt)
@@ -773,7 +775,8 @@ export default {
             if (!sourcesRead(monitor.releases, deploys.sources)) {
                 return null;
             }
-            const running = deploys.active.find((d) => touches(d, monitor.releases));
+            // Same rule as the "em deploy" mark: only what is already touching the service.
+            const running = deploys.active.find((d) => reachedService(d) && touches(d, monitor.releases));
             if (running) {
                 return this.$t("deployBoardIncidentDeploying", [running.project]);
             }
@@ -1223,6 +1226,10 @@ body.deploy-board-body .Vue-Toastification__container {
 
     &.is-ok {
         color: var(--db-ok);
+    }
+
+    &.is-warn {
+        color: var(--db-warn);
     }
 }
 

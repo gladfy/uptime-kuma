@@ -260,6 +260,15 @@ Pedido do Erik em 02/11/2026: o contêiner no navio, com sons realistas, nada el
 - [x] 22.2 Som ligado por padrão (pedido do Erik em 02/11/2026): só fica desligado no navegador em que alguém silenciou. Até o primeiro clique na página, o navegador não deixa tocar, e o painel avisa ao lado do botão.
 - [x] 22.3 Som que não para (relato do Erik em 02/11/2026: às vezes o som parava). As gravações ficam na memória da página, porque o nome dos arquivos muda a cada build e uma aba aberta antes de um deploy do Kuma recebia 404. Um som pausado de fora, com erro ou que passa do tempo-limite libera a fila, e o mesmo som duas vezes seguidas não se atropela. A página segura um Web Lock compartilhado para o Chrome não congelar a aba. Reproduzido no navegador antes da correção: uma pausa de fora deixou a fila parada, e nada tocou nos 50 s seguintes. Testes em `test-sound-player.js`, com um `Audio` falso que manda os eventos na ordem do navegador; cada guarda conferida desfazendo-a. Falta acompanhar a TV por alguns dias com a aba em segundo plano.
 
+## 22b. Pipeline rodada de novo e cores do cabeçalho
+
+Pedido do Erik em 03/11/2026, ao ver no painel o observer "levou 198 h", o audit-consumer "começou há 263 h" e em "Nenhuma virada", e o ai-agents com 26 h 39 min: as pipelines desses commits antigos foram rodadas de novo para conferir os webhooks.
+
+- [x] 22b.1 Início da pipeline rodada de novo: o status em andamento do Bitbucket começa no `updated_on` (o `created_on` é o da primeira execução); dentro de uma execução o início não muda com o fim tardio; uma pipeline que começa depois de o deploy do commit ir ao ar é um deploy próprio (não reabre o antigo, na tela ou no histórico), e a rodada de novo depois de falha segue no cartão da falha.
+- [x] 22b.2 Commit já no ar: pipeline verde de um commit que todas as releases do projeto já rodam (`ClusterTracker.commitsOf`, com o cluster ativo) conclui "No ar" na hora, sem "Nenhuma virada". Release com um objeto noutro commit, ou sem objeto lido, continua esperando a virada.
+- [x] 22b.3 Decisões do Erik (03/11): a linha "Deploy de <projeto> em andamento" da faixa de queda usa a mesma regra da marca "em deploy" (só virada ou publicação do Amplify); "N em andamento" fica âmbar quando algum cartão em andamento está em âmbar; virada travada continua contando como falha na taxa. E, pedido dele, o total e a taxa das 24 h ficam âmbar abaixo de 100%.
+- [ ] 22b.4 Deploy e conferir na TV: a próxima pipeline rodada de novo num commit em produção entra como concluída com a duração da execução, e o cabeçalho segue as cores acima.
+
 ## 22a. Sirene de serviço fora
 
 Pedido do Erik em 03/11/2026: um som quando um serviço cai, alerta de ambulância ou bombeiro, gravação real. Das três sirenes ouvidas (ambulância, bombeiro com buzina, bombeiro alemão de dois tons), ele escolheu a terceira.

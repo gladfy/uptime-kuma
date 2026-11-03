@@ -132,7 +132,9 @@ function parseBitbucket(eventKey, payload, projects) {
                 name: String(status.name || "").slice(0, MESSAGE_MAX),
                 state,
                 url: bitbucketLink(status.url),
-                startedAt: timeOf(status.created_on),
+                // A rerun keeps the status of the first run, created days before: a running status
+                // started when it last changed.
+                startedAt: timeOf(state === "running" ? status.updated_on : status.created_on),
                 endedAt: ended ? timeOf(status.updated_on) : null,
                 attempt: 1,
                 // A rerun of failed steps reuses the key with a later updated_on.
