@@ -284,7 +284,7 @@
     "deployBoardNotFound": "Status page \"{0}\" not found.",
     "deployBoardServicesAllUp": "All normal",
     "deployBoardServicesDown": "{0} down",
-    "deployBoardServicesPending": "{0} pending",
+    "deployBoardServicesPending": "{n} pending",
     "deployBoardServicesSummary": "{0} of {1} services",
     "deployBoardServicesSummaryMaintenance": "{0} of {1} services, {2} in maintenance",
     "deployBoardKumaNoRead": "No reading from Kuma",

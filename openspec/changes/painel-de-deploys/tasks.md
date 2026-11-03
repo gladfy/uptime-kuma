@@ -70,10 +70,11 @@ Exige a ServiceAccount do Kuma com leitura em 5 namespaces e o ConfigMap com nam
 - [x] 8.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes.
   - Rodada local de 31/10/2026: build ok, lint 0 erros (72 avisos, nenhum em arquivo do painel), langs ok, test-backend 347/348. O vermelho foi `monitors/test-rabbitmq.js` (o container não subiu em 60 s com a máquina carregada); isolado, 9/9.
   - Conferência no navegador com o estado gerado pelos módulos reais (rastreador + store) a partir de Deployments de exemplo: ordem dos cartões, rótulos sem "Sem pipeline", `9/17`, marcas "em deploy"/"virada travada" sem mudar a cor, linha do destaque ("Começou 45 min depois da virada de gateway-prod · 4c1d9e0" e "não tem deploy associado"), cluster sem leitura apagando marcas e linhas, 1920 × 1080 sem corte e 400 px sem rolagem horizontal.
-- [ ] 8.2 Deploy, marcar os monitores com a tag `deploy` e acompanhar o próximo merge de um projeto do Bitbucket no painel: a virada aparece por release, sem o rótulo "Sem pipeline", e conclui junto com o `kubectl rollout status`.
+- [x] 8.2 Deploy, marcar os monitores com a tag `deploy` e acompanhar o próximo merge de um projeto do Bitbucket no painel: a virada aparece por release, sem o rótulo "Sem pipeline", e conclui junto com o `kubectl rollout status`.
   - 31/10/2026: deploy feito (chart 0.2.0, imagem `2.5.3-winker.18`). Tag `deploy` posta pela API do Kuma em 8 monitores da status page `winker`: Web → `condominio/winker-prod`, Web integração → `condominio/winker-integration`, Gateway (API Geral) → `gateway/gateway-prod`, Gateway Integration → `gateway/gateway-integration`, Chat → `chat/chatwoot`, Connector Access/Consumer/Queue → `connector/connector-*`. Convite e Portaria Web ficam para a fase 7 (Amplify); os outros monitores da página dependem da fase 3; Connector Geral ficou sem tag até confirmar se aponta para o EB. Falta acompanhar o próximo merge.
   - 31/10/2026 20:18 UTC: virada do `winker-prod` (commit `9ee108f`) vista no painel pelo Erik, sem "Sem pipeline". O `winker-integration` do mesmo commit (19:50) se perdeu no reinício do Kuma das 20:04 — origem da fase 3.1. Falta só comparar o fim de uma virada com o `kubectl rollout status`.
   - Botão "Deploys" no cabeçalho do Kuma (branch `feat/botao-painel-de-deploys`), abre `/deploys/winker`.
+  - 03/11/2026: conferido com o merge `e1763cc` do condominio, o primeiro depois de o Kuma subir com o chart 0.5.2. O histórico do painel (print do Erik, ~14:34 UTC) mostra o deploy com 15 min, terminado "há 3 h 02 min", ou seja ~11:32 UTC. No cluster, a condição `Progressing`/`NewReplicaSetAvailable` do `winker-prod` foi às 11:32:38 UTC: o "No ar" do painel coincide com o fim da virada dentro do minuto que a tela mostra.
 
 # Fase 3 — Cobertura do EKS
 
@@ -83,17 +84,17 @@ Leva ao painel as outras aplicações que rodam no EKS. Inventário de 31/10/202
 |---|---|---|---|
 | agua-gas | `microservices-prod/agua-gas` | nenhuma (CodeCommit `agua_gas_server`) | Água/Gás |
 | superlogica | `microservices-prod/ms` | nenhuma (CodeCommit `microservice_superlogica`) | Superlógica |
-| status | `microservices-prod/status` | a confirmar (Bitbucket `winker/status` ou CodeCommit `status`) | Status |
+| status | `microservices-prod/status` | nenhuma (CodeCommit `status`, `buildspec.yml`) | Status |
 | integration | `microservices-prod/integration-prod`, `microservices-prod/integration-worker` | nenhuma (CodeCommit `integration`) | — |
 | observer | `observer/observer-prod`, `observer/observer-worker` | Bitbucket `winker/observer` | Observer |
-| site | `site-prod/site-prod` | a confirmar (CodeCommit `site`) | Site |
-| jambonz | `jambonz-prod/jambonz-worker`, `jambonz-prod/jambonz-vad` | GitHub `gladfy/jambonz-worker` (o do vad a confirmar) | Jambonz Worker |
-| wk-face-api | `facial/wk-face-api` | a confirmar | — |
-| land | `land/land` | a confirmar | — |
+| site | `site-prod/site-prod` | nenhuma (CodeCommit `site`, `buildspec.yml`) | Site |
+| jambonz | `jambonz-prod/jambonz-worker`, `jambonz-prod/jambonz-vad` | GitHub `gladfy/jambonz-worker`, branch `main`; o `jambonz-vad` é projeto próprio, sem origem (a imagem `tiwinker/jambonz-vad` não sai desse repositório; a confirmar) | Jambonz Worker |
+| wk-face-api | `facial/wk-face-api` | nenhuma (GitHub `gladfy/wk-face-api`, workflow só de testes) | — |
+| land | `land/land` | Bitbucket `winker/land`, branch `master` | — |
 | chat-api | `chat-api/chat-api` | Bitbucket `winker/chat-winker`, branch `main` (02/11/2026; chart 0.5.2 corrige o `master` do 0.5.1) | — |
-| ai-agents | `ai-agents-prod/ai-agents-prod` | a confirmar | — |
-| winker-mcp | `mcp-prod/winker-mcp-prod` | a confirmar | — |
-| audit-consumer | `audit-platform/audit-consumer` | a confirmar | — |
+| ai-agents | `ai-agents-prod/ai-agents-prod` | Bitbucket `winker/ia-agents`, branch `master` | — |
+| winker-mcp | `mcp-prod/winker-mcp-prod` | Bitbucket `winker/mcp-winker`, branch `master` | — |
+| audit-consumer | `audit-platform/audit-consumer` | Bitbucket `winker/audit-consumer`, branch `master` | — |
 | temporal | `temporal/temporal` | nenhuma (chart de infraestrutura) | Temporal |
 | prefect | `big-data/prefect-server` | nenhuma (chart de infraestrutura) | Prefect |
 
@@ -112,6 +113,7 @@ Fora desta fase, para a conferência da fase 8 decidir: as variantes de estágio
   - 02/11/2026, pelos clones locais: `land` tem pipeline no Bitbucket (`winker/land`, `master`, `helm upgrade` no `bitbucket-pipelines.yml`) e ganha origem no chart da fase 4; Status e Site fazem deploy pelo CodeCommit (`buildspec.yml`) e ficam sem origem; `wk-face-api` está no GitHub (`gladfy/wk-face-api`), mas o workflow só roda testes, sem deploy, e fica sem origem. Faltam chat-api, ai-agents, winker-mcp e audit-consumer (sem clone local) e o endereço do monitor "Flow".
   - 02/11/2026, com o Erik: `ai-agents` é Bitbucket `winker/ia-agents` e `winker-mcp` é Bitbucket `winker/mcp-winker`, os dois com deploy a partir do `master` (o `ci-scripts/build-deploy.sh` publica `ai-agents-prod` e `winker-mcp-prod`); entram com origem no chart da fase 4, junto com o `land`. O monitor "Flow" checa `https://flow.winker.com.br`, domínio do app `pro` do Amplify (`d1ymgc35qf7bzb`): tag `amplify/pro` na fase 7, não do gateway. **Pendente:** `chat-api`.
   - 02/11/2026: `audit-consumer` é Bitbucket `winker/audit-consumer`, deploy a partir do `master` (`helm upgrade --install audit-consumer -n audit-platform`); entra com origem no chart da fase 4.
+  - 03/11/2026: `chat-api` é Bitbucket `winker/chat-winker`, deploy a partir da `main` (o step `main` do `bitbucket-pipelines.yml`; a `master` é outra branch), no chart 0.5.2. Resta só o `jambonz-vad`: a imagem dele não sai do `gladfy/jambonz-worker`, e ele segue sem origem até alguém dizer de onde vem.
   - No chart 0.3.0 entraram com origem só as confirmadas por clone local: `observer` (Bitbucket `winker/observer`, `master`) e `jambonz-worker` (GitHub `gladfy/jambonz-worker`, branch **`main`**). O `jambonz-vad` virou projeto próprio, sem origem, para a fase 4 não esperar pipeline do repositório do worker na virada dele. Os demais entraram sem origem.
 - [x] 10.2 Chart `uptimekuma` 0.3.0: os namespaces `microservices-prod`, `observer`, `site-prod`, `jambonz-prod`, `facial`, `land`, `chat-api`, `ai-agents-prod`, `mcp-prod`, `audit-platform`, `temporal` e `big-data` em `deployBoard.namespaces` (RoleBinding e configuração da mesma lista) e os projetos da tabela em `deployBoard.projects`. `helm lint`, `helm template` e o `config.json` renderizado passando no validador da 9.1. Publicar no S3 só com o pedido do Erik.
   - Branch `feat/uptimekuma-painel-de-deploys-fase-3` do `infrastructure` (19a1140f). `helm lint` ok; `helm template` com 17 RoleBindings; `config.json` renderizado com 17 namespaces, 21 projetos e 30 releases, aceito pelo validador novo e **recusado** pelo do master (`projects[7].source`), o que confirma a ordem; as 30 releases existem no cluster. Pacote `uptimekuma-0.3.0.tgz` (sha256 `04058c8b…733fec26`) pronto, ainda não publicado. `CHART_VERSION` da pipeline do fork em 0.3.0, no mesmo PR do código.
@@ -218,7 +220,18 @@ Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 
 - [x] 20.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart. Chart 0.4.0 na branch `feat/uptimekuma-painel-de-deploys-fase-4` do infrastructure: o Secret `uptime-kuma-deploy-board-webhooks` é referenciado com `optional: true` e criado à mão pelo Erik (o chart não o cria); um Ingress próprio para os dois caminhos exatos do webhook, com a lista de faixas de saída do Bitbucket e do GitHub (o Ingress principal só aceita o connector e a sede); `workflow` do chat, do Kuma e do jambonz; origem do land, ai-agents, winker-mcp e audit-consumer. Feito em 02/11/2026: Secret criado pelo Erik, chart 0.4.0 na `main` do infrastructure e publicado no S3, no ar com a `2.5.3-winker.25`; o caminho do webhook responde 403 da sede e o resto do Kuma continua com a lista de antes.
 - [x] 20.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
 - [ ] 20.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket. Cadastrados em 02/11/2026 (8 no Bitbucket, 3 no GitHub). O `ping` dos 3 do GitHub chegou com assinatura válida; a primeira entrega do Bitbucket chegou com o merge do condominio de 02/11 (push e status da pipeline, cartão "Na pipeline" com a mensagem do merge), o que confirma o cabeçalho de assinatura do Bitbucket. Falta a primeira entrega dos outros 7 repositórios do Bitbucket e conferir o `refname` do status de pipeline de pull request do condominio.
-- [ ] 20.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
+  - 03/11/2026: o webhook do `winker/chat-winker` (o nono do Bitbucket, cadastrado pelo Erik) entregou o merge de `e45dd76` às 10:17 UTC, com assinatura válida, e o painel o descartou: a configuração esperava `master`, e a produção sai da `main`. Corrigido no chart 0.5.2, no ar desde 11:20 UTC. Ainda sem entrega: connector-server, observer, land, ia-agents, mcp-winker e audit-consumer. Só o `ia-agents` teve merge na branch de deploy depois do dia do cadastro (02/11 16:02 UTC, `9ed13cf`); os outros cinco não tiveram nenhum, então esperam o próximo merge. A entrega do `ia-agents` se confere no "View requests" do webhook, porque o log do Kuma recomeça a cada deploy dele.
+- [x] 20.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
+  - 03/11/2026, merge `e1763cc` ("Merged develop into master"), horários do cluster e do histórico do painel:
+
+    | Etapa | Hora (UTC) | Desde o merge |
+    |---|---|---|
+    | Merge na master | 11:16:57 | — |
+    | Virada começa (ReplicaSet novo do `winker-prod`; `winker-integration` 3 s depois) | 11:23:53 | 6 min 56 s |
+    | `winker-integration` concluído | 11:25:43 | 8 min 46 s |
+    | `winker-prod` concluído ("No ar" no painel, ~11:32) | 11:32:38 | 15 min 41 s |
+
+    O painel registrou 15 min de duração. A divisão entre pipeline e envio da imagem, dentro dos 6 min 56 s, fica no cartão do painel e não aparece no histórico. Os outros quatro merges do dia (`d274677` 27 min, `cd3f0ce` 17 min; `dc680b9` e `c4a465a` substituídos pelo seguinte) também estão no histórico.
 
 # Fase 5 — Sons
 
@@ -244,6 +257,14 @@ Pedido do Erik em 02/11/2026: o contêiner no navio, com sons realistas, nada el
 - [x] 22.1 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; merge e deploy; acompanhar um deploy real com o som ligado. Merge e deploy feitos em 02/11/2026 (`2.5.3-winker.24`); falta ouvir um deploy real. Ouvido pelo Erik no merge do condominio de 02/11/2026.
 - [x] 22.2 Som ligado por padrão (pedido do Erik em 02/11/2026): só fica desligado no navegador em que alguém silenciou. Até o primeiro clique na página, o navegador não deixa tocar, e o painel avisa ao lado do botão.
 - [x] 22.3 Som que não para (relato do Erik em 02/11/2026: às vezes o som parava). As gravações ficam na memória da página, porque o nome dos arquivos muda a cada build e uma aba aberta antes de um deploy do Kuma recebia 404. Um som pausado de fora, com erro ou que passa do tempo-limite libera a fila, e o mesmo som duas vezes seguidas não se atropela. A página segura um Web Lock compartilhado para o Chrome não congelar a aba. Reproduzido no navegador antes da correção: uma pausa de fora deixou a fila parada, e nada tocou nos 50 s seguintes. Testes em `test-sound-player.js`, com um `Audio` falso que manda os eventos na ordem do navegador; cada guarda conferida desfazendo-a. Falta acompanhar a TV por alguns dias com a aba em segundo plano.
+
+## 22a. Sirene de serviço fora
+
+Pedido do Erik em 03/11/2026: um som quando um serviço cai, alerta de ambulância ou bombeiro, gravação real. Das três sirenes ouvidas (ambulância, bombeiro com buzina, bombeiro alemão de dois tons), ele escolheu a terceira.
+
+- [x] 22a.1 Função pura `servicesGoneDown(anterior, monitores)` em `src/components/deploy-board/service-alert.mjs`: toca quando um monitor passa de no ar, pendente ou manutenção para fora do ar. Sem estado anterior (carga, reconexão, novo login), de "sem batida" (o Kuma esvazia as batidas ao reconectar) e de pausado: não toca. Vários de uma vez: uma sirene. Testes em `test-service-alert.js`.
+- [x] 22a.2 `service-down.mp3` (Freesound 465700, Breviceps, CC0), com o volume dos outros sons; crédito em `CREDITS.md`. O tocador ganhou `alert()`: a sirene passa na frente da fila, não corta o som que toca, entra uma vez só e não é a descartada quando a fila enche (testes em `test-sound-player.js`, conferidos por mutação).
+- [ ] 22a.3 Deploy e ouvir a sirene numa queda real, ou num monitor de teste apontado para um endereço que não responde, com a TV.
 
 # Fase 6 — Como voltar à versão anterior
 
@@ -277,7 +298,7 @@ Exige a role IAM por IRSA e a dependência nova. Apps com branch de produção e
 
 - [x] 26.1 Role IAM em `terraform/` (padrão de `terraform/iam-cost-exporter`) com `amplify:ListApps`, `amplify:ListBranches`, `amplify:ListJobs` e `amplify:GetJob`, confiando no OIDC do cluster para `monitor-infra:uptime-kuma`. Escrita em `terraform/iam-uptime-kuma/main.tf` (role `uptime-kuma-irsa-role`; `ListApps` em `*`, que não aceita recurso, e as outras três só em `apps/*` de us-east-1), na branch `feat/uptimekuma-painel-de-deploys-fase-7` do infrastructure; `fmt` e `validate` verdes. Aplicada pelo Erik em 02/11/2026 (2 recursos criados, state em `s3://winker-terraform/iam-uptime-kuma`).
 - [x] 26.2 Anotação `eks.amazonaws.com/role-arn` na ServiceAccount e `amplify.region` no ConfigMap. Publicar a versão nova do chart. Chart 0.5.0 na mesma branch (`helm lint`, render comparado com o 0.4.0 e o `config.json` aceito pelo validador do Kuma) e `CHART_VERSION: "0.5.0"` no workflow do Kuma. Na `main` do infrastructure (`f2ccd418`) e publicado no S3 em 02/11/2026, empacotado a partir da `origin/main`; o pacote baixado do S3 renderiza igual à `main`.
-- [ ] 26.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; conferir um build da branch de produção do `pro` no painel em até 60 s e ligar os monitores dos apps do Amplify (confirmar guest-link → "Convite" e gatekeeper-dashboard → "Portaria Web"; "Flow" → `amplify/pro`, confirmado: `flow.winker.com.br` é domínio do app `pro`). No ar em 02/11/2026 com a `2.5.3-winker.30`: o pod recebeu `AWS_ROLE_ARN` e `AWS_WEB_IDENTITY_TOKEN_FILE`, e o CloudTrail mostra `ListBranches` e `ListJobs` dos 8 apps a cada minuto pela `uptime-kuma-irsa-role`, sem nenhum erro. Monitores ligados em 03/11/2026 pelo script de tags (20 de 20 com a tag `deploy`): "Flow" → `amplify/pro`, "Convite" → `amplify/guest-link`, "Portaria Web" → `amplify/gatekeeper-dashboard` e "Phone (Frontend)" → `amplify/intercom-ui`, cada um pelo domínio cadastrado no app. Falta acompanhar um build real do `pro` no painel (e conferir o link "abrir" do console).
+- [ ] 26.3 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy; conferir um build da branch de produção do `pro` no painel em até 60 s e ligar os monitores dos apps do Amplify (confirmar guest-link → "Convite" e gatekeeper-dashboard → "Portaria Web"; "Flow" → `amplify/pro`, confirmado: `flow.winker.com.br` é domínio do app `pro`). No ar em 02/11/2026 com a `2.5.3-winker.30`: o pod recebeu `AWS_ROLE_ARN` e `AWS_WEB_IDENTITY_TOKEN_FILE`, e o CloudTrail mostra `ListBranches` e `ListJobs` dos 8 apps a cada minuto pela `uptime-kuma-irsa-role`, sem nenhum erro. Monitores ligados em 03/11/2026 pelo script de tags (20 de 20 com a tag `deploy`): "Flow" → `amplify/pro`, "Convite" → `amplify/guest-link`, "Portaria Web" → `amplify/gatekeeper-dashboard` e "Phone (Frontend)" → `amplify/intercom-ui`, cada um pelo domínio cadastrado no app. Falta acompanhar um build real do `pro` no painel (e conferir o link "abrir" do console). 03/11/2026: o build 380 da `main` do `pro` (commit `bdb4169`, 10:22–10:28 UTC no Amplify) está no histórico do painel com 6 min, terminado ~10:28 — mesma duração e mesmo fim do Amplify; o `gatekeeper-dashboard` (`234bc92`, 1 min) também. Faltam os 60 s, que só se veem com o painel aberto durante um build, e o clique no "abrir".
 
 # Fase 8 — Conferência de cobertura
 

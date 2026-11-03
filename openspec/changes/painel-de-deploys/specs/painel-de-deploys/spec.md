@@ -358,7 +358,7 @@ preferência de tema do próprio Kuma, para que valha nas próximas aberturas na
 - **WHEN** o painel está escuro e a pessoa clica no botão de tema
 - **THEN** o painel fica claro, e continua claro ao recarregar a página
 
-### Requirement: Sons dos eventos do deploy
+### Requirement: Sons dos eventos do deploy e da queda de serviço
 
 Com o som ativado, o painel SHALL tocar, uma vez por deploy, por evento e por etapa (a produção
 depois da integração é outra etapa): um toque longo de buzina de navio quando o deploy começa (a
@@ -376,6 +376,25 @@ carregar o histórico SHALL NOT tocar nada. Um som SHALL tocar por vez.
 O som SHALL continuar tocando com a página aberta por dias e em segundo plano: as gravações ficam na
 memória da página (um deploy do Kuma não as tira), um som pausado de fora ou que falha não trava os
 seguintes, e a página pede ao navegador para não congelar a aba.
+
+Com o som ativado, o painel SHALL tocar a sirene de dois tons dos bombeiros (gravação real) quando
+um monitor da lista passa de no ar, pendente ou em manutenção para fora do ar, visto ao vivo. Abrir a
+página, reconectar o socket, um monitor religado que já volta fora e um monitor que entra na lista já
+fora SHALL NOT tocar. Enquanto o monitor continua fora, a sirene SHALL NOT repetir; vários monitores
+caindo juntos SHALL tocar uma sirene só. A sirene SHALL passar na frente dos sons de deploy que
+esperam na fila, sem cortar o que já toca, e SHALL NOT ser descartada quando a fila enche.
+
+#### Scenario: Serviço cai com a página aberta
+- **WHEN** o som está ativado e o monitor "Gateway (API Geral)" passa de no ar para fora do ar
+- **THEN** a sirene toca uma vez, e não toca de novo enquanto ele continuar fora
+
+#### Scenario: Serviço cai durante um deploy
+- **WHEN** há sons de deploy esperando na fila e um serviço cai
+- **THEN** o som que toca termina, a sirene toca em seguida, e depois os sons de deploy
+
+#### Scenario: Página aberta com serviço fora
+- **WHEN** a pessoa abre o painel, ou o socket reconecta, e um serviço já está fora do ar
+- **THEN** a sirene não toca
 
 #### Scenario: Som pausado de fora
 - **WHEN** o sistema pausa o som que tocava (uma tecla de mídia, outra aba tomando o áudio) e chega o evento seguinte

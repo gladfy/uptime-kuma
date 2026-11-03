@@ -144,6 +144,39 @@ describe("Tocador dos sons", () => {
         assert.strictEqual(el("done").plays, 1);
     });
 
+    test("sirene de serviço fora passa na frente dos sons de deploy, sem cortar o que toca", async () => {
+        player.enqueue([sound("started", "a"), sound("built", "b"), sound("rolling", "c")]);
+        await settle();
+        player.alert("serviceDown");
+        player.alert("serviceDown");
+        assert.strictEqual(el("started").paused, false, "o que toca não é cortado");
+        assert.deepStrictEqual(player.queue, ["serviceDown", "built", "rolling"], "uma sirene só, na frente");
+        el("started").finishPlaying();
+        await settle();
+        assert.strictEqual(el("serviceDown").plays, 1);
+    });
+
+    test("fila cheia de sons de deploy não derruba a sirene", async () => {
+        player.enqueue([sound("started", "a")]);
+        await settle();
+        player.alert("serviceDown");
+        player.enqueue([
+            sound("built", "b"),
+            sound("rolling", "c"),
+            sound("done", "d"),
+            sound("failed", "e"),
+            sound("built", "f"),
+        ]);
+        assert.strictEqual(player.queue[0], "serviceDown");
+        assert.strictEqual(player.queue.length, 4);
+    });
+
+    test("sirene com o som desligado (gravações não carregadas) não toca", () => {
+        const off = new SoundPlayer();
+        off.alert("serviceDown");
+        assert.deepStrictEqual(off.queue, []);
+    });
+
     test("som pausado de fora libera a fila", async () => {
         player.enqueue([sound("started", "a"), sound("built", "b")]);
         await settle();

@@ -3,10 +3,14 @@ import built from "../../assets/deploy-board-sounds/built.mp3";
 import rolling from "../../assets/deploy-board-sounds/rolling.mp3";
 import done from "../../assets/deploy-board-sounds/done.mp3";
 import failed from "../../assets/deploy-board-sounds/failed.mp3";
+import serviceDown from "../../assets/deploy-board-sounds/service-down.mp3";
 import { freshEvents } from "./sound-events.mjs";
 
 /** Recording of each sound (see src/assets/deploy-board-sounds/CREDITS.md). */
-const FILES = { started, built, rolling, done, failed };
+const FILES = { started, built, rolling, done, failed, serviceDown };
+
+/** Sounds that go ahead of the deploy sounds waiting, and are never the ones dropped. */
+const URGENT = ["serviceDown"];
 
 /** More than this many waiting and the oldest are dropped: a burst must not play for a minute. */
 const QUEUE_MAX = 4;
@@ -100,8 +104,35 @@ export class SoundPlayer {
             return;
         }
         this.queue.push(...fresh.map((e) => e.event));
-        this.queue = this.queue.slice(-QUEUE_MAX);
+        this.trim();
         this.next();
+    }
+
+    /**
+     * Play an urgent sound ahead of the ones waiting. The one playing is not cut: it ends first.
+     * @param {string} event Sound, one of URGENT.
+     * @returns {void}
+     */
+    alert(event) {
+        if (!this.audio) {
+            return;
+        }
+        // Once in the queue is enough: a second outage while the first siren waits says nothing new.
+        if (!this.queue.includes(event)) {
+            this.queue.push(event);
+        }
+        this.trim();
+        this.next();
+    }
+
+    /**
+     * Put the urgent sounds first and drop the oldest deploy sounds past QUEUE_MAX. The urgent ones stay.
+     * @returns {void}
+     */
+    trim() {
+        const urgent = this.queue.filter((e) => URGENT.includes(e));
+        const rest = this.queue.filter((e) => !URGENT.includes(e));
+        this.queue = [...urgent, ...rest.slice(-Math.max(0, QUEUE_MAX - urgent.length))];
     }
 
     /**
