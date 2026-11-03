@@ -258,6 +258,14 @@ Pedido do Erik em 02/11/2026: o contêiner no navio, com sons realistas, nada el
 - [x] 22.2 Som ligado por padrão (pedido do Erik em 02/11/2026): só fica desligado no navegador em que alguém silenciou. Até o primeiro clique na página, o navegador não deixa tocar, e o painel avisa ao lado do botão.
 - [x] 22.3 Som que não para (relato do Erik em 02/11/2026: às vezes o som parava). As gravações ficam na memória da página, porque o nome dos arquivos muda a cada build e uma aba aberta antes de um deploy do Kuma recebia 404. Um som pausado de fora, com erro ou que passa do tempo-limite libera a fila, e o mesmo som duas vezes seguidas não se atropela. A página segura um Web Lock compartilhado para o Chrome não congelar a aba. Reproduzido no navegador antes da correção: uma pausa de fora deixou a fila parada, e nada tocou nos 50 s seguintes. Testes em `test-sound-player.js`, com um `Audio` falso que manda os eventos na ordem do navegador; cada guarda conferida desfazendo-a. Falta acompanhar a TV por alguns dias com a aba em segundo plano.
 
+## 22a. Sirene de serviço fora
+
+Pedido do Erik em 03/11/2026: um som quando um serviço cai, alerta de ambulância ou bombeiro, gravação real. Das três sirenes ouvidas (ambulância, bombeiro com buzina, bombeiro alemão de dois tons), ele escolheu a terceira.
+
+- [x] 22a.1 Função pura `servicesGoneDown(anterior, monitores)` em `src/components/deploy-board/service-alert.mjs`: toca quando um monitor passa de no ar, pendente ou manutenção para fora do ar. Sem estado anterior (carga, reconexão, novo login), de "sem batida" (o Kuma esvazia as batidas ao reconectar) e de pausado: não toca. Vários de uma vez: uma sirene. Testes em `test-service-alert.js`.
+- [x] 22a.2 `service-down.mp3` (Freesound 465700, Breviceps, CC0), com o volume dos outros sons; crédito em `CREDITS.md`. O tocador ganhou `alert()`: a sirene passa na frente da fila, não corta o som que toca, entra uma vez só e não é a descartada quando a fila enche (testes em `test-sound-player.js`, conferidos por mutação).
+- [ ] 22a.3 Deploy e ouvir a sirene numa queda real, ou num monitor de teste apontado para um endereço que não responde, com a TV.
+
 # Fase 6 — Como voltar à versão anterior
 
 Pedido do Erik em 02/11/2026. Decisão final (02/11): o painel **não** volta a versão; ele **mostra o comando** para quem tem acesso ao cluster copiar e rodar com a própria credencial. O Kuma continua só leitura, sem permissão nova, sem 2FA e sem ADR de exceção. O comando volta **só a imagem**, também por decisão do Erik: `kubectl set image` para a tag do deploy anterior, e não `kubectl rollout undo`, que volta o template inteiro e pode cair numa revisão que foi só um restart.

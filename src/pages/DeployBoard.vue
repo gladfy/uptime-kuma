@@ -128,6 +128,7 @@ import SourcesFooter from "../components/deploy-board/SourcesFooter.vue";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 import { soundEvents } from "../components/deploy-board/sound-events.mjs";
 import { SoundPlayer } from "../components/deploy-board/sound-player.js";
+import { servicesGoneDown } from "../components/deploy-board/service-alert.mjs";
 import { mockCount, withMockDeploys } from "../components/deploy-board/mock-deploys.js";
 
 /**
@@ -474,6 +475,7 @@ export default {
                 if (this.reading) {
                     // Logged in again on the same page: what was on screen is from the old session.
                     this.soundBaseline = true;
+                    this.monitorTones = null;
                     this.requestBoard();
                     this.fetchCuration();
                 } else {
@@ -483,11 +485,27 @@ export default {
             immediate: true,
         },
 
+        // The siren: a service seen going down while the page is open. Until the list and the socket
+        // are there, nothing to compare with; Kuma empties the beats on a reconnect, so what fell
+        // while the socket was down comes back as found, not as seen.
+        monitors(monitors) {
+            if (!this.curationLoaded || !this.kumaConnected) {
+                this.monitorTones = null;
+                return;
+            }
+            const { tones, down } = servicesGoneDown(this.monitorTones, monitors);
+            this.monitorTones = tones;
+            if (down.length && this.soundOn) {
+                this.player.alert("serviceDown");
+            }
+        },
+
         // After a reconnect the server does not push the board by itself: ask again.
         kumaConnected(connected) {
             if (!connected) {
                 // What changed while the socket was down was not seen happening: no sound for it.
                 this.soundBaseline = true;
+                this.monitorTones = null;
             } else if (this.$root.loggedIn) {
                 this.requestBoard();
             }
@@ -496,6 +514,7 @@ export default {
 
     created() {
         this.soundBaseline = true;
+        this.monitorTones = null;
         this.mockStart = Date.now();
         this.player = new SoundPlayer((blocked) => {
             this.soundBlocked = blocked;
