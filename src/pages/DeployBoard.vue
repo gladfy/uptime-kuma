@@ -12,12 +12,22 @@
             <header class="db-top">
                 <div class="db-ident">
                     <span class="db-eyebrow">{{ $t("deployBoardEyebrow") }}</span>
-                    <h1 class="db-title">{{ $t("deployBoardTitle") }}</h1>
+                    <h1 class="db-title">
+                        {{ $t("deployBoardTitle") }}
+                        <span v-if="mock !== null" class="db-mock">{{ $t("deployBoardMock", mock) }}</span>
+                    </h1>
                 </div>
 
                 <!-- One bar, three readings. A dot only where it says something: never for "no deploy". -->
                 <div class="db-summary">
-                    <div v-for="seg in summary" :key="seg.id" class="db-seg" :data-tone="seg.tone" :title="seg.hint || null">
+                    <div
+                        v-for="seg in summary"
+                        :key="seg.id"
+                        class="db-seg"
+                        :class="'is-' + seg.id"
+                        :data-tone="seg.tone"
+                        :title="seg.hint || null"
+                    >
                         <span class="db-seg-key">{{ seg.key }}</span>
                         <span class="db-seg-value">
                             <span v-if="seg.dot" class="db-dot" :class="'is-' + seg.tone" aria-hidden="true"></span>
@@ -25,7 +35,13 @@
                         </span>
                         <span class="db-seg-sub">
                             <b v-if="seg.rate !== undefined" class="db-seg-rate" :class="{ 'is-ok': seg.rate === 100 }">{{ seg.rate }}%</b>
-                            {{ seg.sub }}
+                            <template v-if="seg.parts">
+                                <template v-for="(part, i) in seg.parts" :key="i">
+                                    <template v-if="i">, </template>
+                                    <span :class="{ 'db-seg-bad': part.bad }">{{ part.text }}</span>
+                                </template>
+                            </template>
+                            <template v-else>{{ seg.sub }}</template>
                         </span>
                     </div>
                 </div>
@@ -112,6 +128,7 @@ import SourcesFooter from "../components/deploy-board/SourcesFooter.vue";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 import { soundEvents } from "../components/deploy-board/sound-events.mjs";
 import { SoundPlayer } from "../components/deploy-board/sound-player.js";
+import { mockCount, withMockDeploys } from "../components/deploy-board/mock-deploys.js";
 
 /**
  * How often the list of monitors is read again from the status page. Matches the 5-minute cache of
@@ -200,6 +217,8 @@ export default {
             soundOn: soundSaved(),
             // After a reload the browser plays nothing until someone clicks the page.
             soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
+            // ?mock=deploys&n=N: the column drawn with N made-up deploys (see mock-deploys.js).
+            mock: mockCount(this.$route.query),
         };
     },
 
@@ -371,7 +390,11 @@ export default {
             return this.$t(this.$root.isDark ? "deployBoardThemeToLight" : "deployBoardThemeToDark");
         },
 
-        /** @returns {{tone: string, title: string, sub: string}} Deploys verdict of the top bar */
+        /**
+         * Deploys verdict of the top bar: how many are running, and below how many are on each step
+         * and how many failed. Never the names of the projects: with a few deploys the line wrapped.
+         * @returns {{tone: string, title: string, sub?: string, parts?: object[]}} Verdict.
+         */
         deploysVerdict() {
             if (!this.board) {
                 return { tone: "muted", title: this.$t("deployBoardReading"), sub: "" };
@@ -380,31 +403,32 @@ export default {
             if (!anyOn) {
                 return { tone: "muted", title: this.$t("deployBoardNoSourcesShort"), sub: "" };
             }
-            const verdicts = [
-                [(d) => d.state === "failed", "bad", "deployBoardVerdictFailed", this.failures],
-                [(d) => d.state === "stuck", "bad", "deployBoardVerdictStuck", this.failures],
-                [(d) => d.state === "noProgress", "warn", "deployBoardVerdictNoProgress"],
-                [(d) => d.label === "noRollout", "warn", "deployBoardVerdictNoRollout"],
-                [(d) => ["updating", "pipeline", "built"].includes(d.state), "rolling", "deployBoardVerdictRolling"],
+            const count = (states) => this.board.deploys.filter((d) => states.includes(d.state)).length;
+            const steps = [
+                ["deployBoardSummaryRollout", count(["updating", "noProgress"])],
+                ["deployBoardSummaryPipeline", count(["pipeline"])],
+                ["deployBoardSummaryBuilt", count(["built"])],
             ];
-            for (const [matches, tone, key, from = this.board.deploys] of verdicts) {
-                const deploys = from.filter(matches);
-                if (deploys.length) {
-                    const sub =
-                        tone === "rolling"
-                            ? deploys.map((d) => [d.project, this.stepName(d)].filter(Boolean).join(" · ")).join(", ")
-                            : projectNames(deploys);
-                    return { tone, title: this.$t(key, [deploys.length]), sub };
-                }
+            const running = steps.reduce((sum, [, n]) => sum + n, 0);
+            const parts = steps.filter(([, n]) => n > 0).map(([key, n]) => ({ text: this.$t(key, n) }));
+            if (this.failures.length) {
+                parts.push({ text: this.$t("deployBoardSummaryFailed", this.failures.length), bad: true });
+            }
+            if (running > 0) {
+                return { tone: "rolling", title: this.$t("deployBoardVerdictRolling", [running]), parts };
+            }
+            const last = [...this.board.deploys, ...this.board.history]
+                .filter((d) => d.endedAt)
+                .sort((a, b) => b.endedAt - a.endedAt)[0];
+            const sub = last ? this.$t("deployBoardLastDeploy", [last.project, this.formatDuration(this.now - last.endedAt)]) : "";
+            // Only failures on screen (a stuck rollout is still happening): red, with the triangle.
+            if (this.failures.length) {
+                return { tone: "bad", title: this.$t("deployBoardVerdictFailures", this.failures.length), sub };
             }
             if (this.board.sources.cluster.state === "stale") {
                 return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
             }
             // Nothing running is not news: grey, with no dot.
-            const last = [...this.board.deploys, ...this.board.history]
-                .filter((d) => d.endedAt)
-                .sort((a, b) => b.endedAt - a.endedAt)[0];
-            const sub = last ? this.$t("deployBoardLastDeploy", [last.project, this.formatDuration(this.now - last.endedAt)]) : "";
             return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), sub };
         },
 
@@ -472,6 +496,7 @@ export default {
 
     created() {
         this.soundBaseline = true;
+        this.mockStart = Date.now();
         this.player = new SoundPlayer((blocked) => {
             this.soundBlocked = blocked;
         });
@@ -579,7 +604,8 @@ export default {
          * @returns {void}
          */
         applyBoard(snapshot) {
-            const previous = this.soundBaseline ? null : this.board;
+            // The sounds compare the server's snapshots, never the made-up deploys of the mock.
+            const previous = this.soundBaseline ? null : this.serverBoard;
             this.soundBaseline = false;
             const events = soundEvents(previous, snapshot);
             if (this.soundOn) {
@@ -588,7 +614,8 @@ export default {
                 // Turning sound on later must not play what already happened.
                 this.player.skip(events);
             }
-            this.board = snapshot;
+            this.serverBoard = snapshot;
+            this.board = this.mock === null ? snapshot : withMockDeploys(snapshot, this.mock, this.mockStart);
         },
 
         /**
@@ -690,7 +717,9 @@ export default {
         },
 
         /**
-         * Mark of a monitor in the grid. Only the deploy changes it; the colour stays Kuma's.
+         * Mark of a monitor in the grid. Only the deploy changes it; the colour stays Kuma's. Only a
+         * deploy that reached the service marks it: the rollout in the cluster, or the publication in
+         * the Amplify. In the merge and the pipeline the service has not been touched yet.
          * @param {object} monitor Live monitor.
          * @returns {string|null} "rolling", "stuck" or null.
          */
@@ -699,7 +728,7 @@ export default {
             if (!deploys || !monitor.releases.length || !sourcesRead(monitor.releases, deploys.sources)) {
                 return null;
             }
-            const touching = deploys.active.filter((d) => touches(d, monitor.releases));
+            const touching = deploys.active.filter((d) => reachedService(d) && touches(d, monitor.releases));
             if (touching.some((d) => d.state === "stuck")) {
                 return "stuck";
             }
@@ -756,16 +785,6 @@ export default {
         },
 
         /**
-         * @param {object} deploy Deploy of the board.
-         * @returns {string} Name of the step it is on ("Virada"), or "" when it has none.
-         */
-        stepName(deploy) {
-            const steps = deploy.steps || [];
-            const at = steps.findLastIndex((s) => s.status !== "pending");
-            return at === -1 ? "" : this.$t(STEP_KEYS[steps[at].key]);
-        },
-
-        /**
          * Short duration: "12 s", "3 min", "1 h 05 min".
          * @param {number} ms Milliseconds.
          * @returns {string} Formatted duration.
@@ -782,15 +801,6 @@ export default {
             return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
         },
     },
-};
-
-/** Step of a deploy → i18n key (the same names as the card's steps). */
-const STEP_KEYS = {
-    merge: "deployBoardStepMerge",
-    pipeline: "deployBoardStepPipeline",
-    built: "deployBoardStepBuilt",
-    rollout: "deployBoardStepRollout",
-    live: "deployBoardStepLive",
 };
 
 /** A rollout that ended this long before an outage is named in its highlight. */
@@ -821,6 +831,25 @@ function sourcesRead(tags, sources) {
     return tags.every((t) => sources[t.startsWith("amplify/") ? "amplify" : "cluster"]?.state === "active");
 }
 
+/** States of a deploy rolling out in the cluster: the service is being changed. */
+const ROLLOUT_STATES = ["updating", "noProgress", "stuck"];
+
+/** Amplify step that puts the new build out, and the states in which it has started. */
+const AMPLIFY_PUBLISH_JOB = "deploy";
+const STARTED_JOB_STATES = ["running", "success"];
+
+/**
+ * @param {object} deploy Deploy on screen.
+ * @returns {boolean} Whether it reached the service: rolling out in the cluster, or past the start
+ * of the Amplify "deploy" step.
+ */
+function reachedService(deploy) {
+    if (deploy.pipeline?.source === "amplify") {
+        return (deploy.pipeline.jobs || []).some((j) => j.name === AMPLIFY_PUBLISH_JOB && STARTED_JOB_STATES.includes(j.state));
+    }
+    return ROLLOUT_STATES.includes(deploy.state);
+}
+
 /**
  * @param {object} deploy Deploy or history entry.
  * @returns {string[]} The tag values it answers to (older servers send only the releases).
@@ -836,14 +865,6 @@ function linksOf(deploy) {
  */
 function touches(deploy, tags) {
     return linksOf(deploy).some((l) => tags.includes(l));
-}
-
-/**
- * @param {object[]} deploys Deploys.
- * @returns {string} Their projects, comma separated, without repetition.
- */
-function projectNames(deploys) {
-    return [...new Set(deploys.map((d) => d.project))].join(", ");
 }
 
 /** Tone → i18n key of its label. */
@@ -1085,12 +1106,25 @@ body.deploy-board-body .Vue-Toastification__container {
     line-height: 1.05;
 }
 
+// A TV left on the mock must not pass for the real thing.
+.db-mock {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border: 1px dashed var(--db-warn);
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+    vertical-align: middle;
+    color: var(--db-warn);
+}
+
 /* The three readings in one bar, split by hairlines. */
 .db-summary {
     display: flex;
     flex: 1 1 36em;
     flex-wrap: wrap;
-    max-width: 56em;
+    max-width: 62em;
     min-width: 0;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
@@ -1107,6 +1141,11 @@ body.deploy-board-body .Vue-Toastification__container {
 
     & + & {
         border-left: 1px solid var(--db-line);
+    }
+
+    // Its line counts every step: "2 na virada, 2 na pipeline, 1 aguardando virada, 1 falhou".
+    &.is-deploys {
+        flex: 1.6 1 16em;
     }
 }
 
@@ -1145,6 +1184,18 @@ body.deploy-board-body .Vue-Toastification__container {
     font-size: 12.5px;
     color: var(--db-ink-3);
     overflow-wrap: anywhere;
+
+    // The deploys line stays one line, whatever happens.
+    .is-deploys > & {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.db-seg-bad {
+    font-weight: 600;
+    color: var(--db-bad);
 }
 
 .db-seg-rate {
@@ -1345,7 +1396,7 @@ body.deploy-board-body .Vue-Toastification__container {
 
     .db-main {
         display: grid;
-        grid-template-columns: minmax(26em, 30%) minmax(0, 1fr);
+        grid-template-columns: minmax(340px, 29%) minmax(0, 1fr);
         gap: 20px;
         min-height: 0;
     }

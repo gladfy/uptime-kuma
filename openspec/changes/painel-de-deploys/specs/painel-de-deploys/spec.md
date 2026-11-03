@@ -33,7 +33,7 @@ hoje. O painel SHALL NOT importar nem alterar `StatusPage.vue` nem `StatusPageTv
 ### Requirement: Duas colunas, com os monitores ocupando a maior parte
 
 Em tela larga, o painel SHALL dividir a tela em duas colunas: deploys numa coluna estreita à
-esquerda (até cerca de 30% da largura) e monitores à direita no restante.
+esquerda (29% da largura, nunca menos de 340 px) e monitores à direita no restante.
 
 Os monitores SHALL ficar numa superfície só, dividida em 3 colunas (2 abaixo de 1180 px, 1 no
 celular), preenchida de cima para baixo e coluna por coluna, com a última coluna completada por
@@ -45,8 +45,8 @@ Em tela estreita, as colunas SHALL empilhar (deploys em cima), com rolagem verti
 nenhuma rolagem horizontal.
 
 #### Scenario: TV 1080p com a status page winker
-- **WHEN** o painel é aberto em 1920 × 1080 com a status page `winker` (34 monitores) e três deploys ativos
-- **THEN** os 34 monitores aparecem na mesma tela, sem indicador de página, e nenhum cartão de deploy fica cortado
+- **WHEN** o painel é aberto em 1920 × 1080 com a status page `winker` (34 monitores) e seis deploys ativos
+- **THEN** os 34 monitores e os seis cartões aparecem na mesma tela, sem indicador de página, sem rolagem e sem cartão cortado
 
 #### Scenario: Monitor cai
 - **WHEN** o monitor "Superlógica" fica fora do ar
@@ -102,9 +102,18 @@ Um monitor SHALL ser ligado a uma release por uma tag do Kuma de nome `deploy`, 
 `<namespace>/<release>` para o cluster ou `amplify/<app>` para o Amplify. Um monitor MAY ter mais
 de uma tag `deploy`. Mudar a tag na tela do monitor SHALL refletir no painel sem deploy.
 
+A marca "em deploy" (pílula e faixa azul da linha) SHALL aparecer só enquanto o deploy ligado
+mexe no serviço: virando no cluster, ou, no Amplify, a partir do início do passo `deploy`. No
+merge, na pipeline e com a pipeline verde aguardando a virada, o serviço ainda não foi tocado e a
+linha fica sem marca.
+
 #### Scenario: Monitor com tag
 - **WHEN** o monitor "Web" tem a tag `deploy` = `condominio/winker-prod` e começa uma virada do `winker-prod`
 - **THEN** o cartão do monitor "Web" mostra a marca "em deploy" enquanto a virada durar
+
+#### Scenario: Pipeline rodando não marca o monitor
+- **WHEN** o monitor "Flow" tem a tag `deploy` = `amplify/pro` e o job do `pro` está no passo `build`, com o `deploy` na fila
+- **THEN** a linha do "Flow" fica sem a marca "em deploy" até o passo `deploy` começar
 
 #### Scenario: Monitor sem tag
 - **WHEN** um monitor não tem tag `deploy`
@@ -187,9 +196,20 @@ o deploy chegou sem ela (virada manual, ou vista com o painel fora do ar), as tr
 SHALL aparecer como puladas, e não como concluídas. A conta é do servidor, que já decide o rótulo:
 o navegador só desenha.
 
+Os segmentos concluídos SHALL ser azuis, os futuros cinza e o da etapa que falhou vermelho. O
+segmento da etapa atual SHALL ser azul-claro, preenchido em azul na proporção do que já andou
+dentro dela, pulsando: na virada, as réplicas na versão nova sobre o total, somando os workloads;
+na pipeline, os jobs concluídos sobre o total, contando 0,35 de job quando algum está rodando; nas
+outras etapas, metade. O preenchimento SHALL ser de pelo menos 6%, para sempre aparecer, e vale nos
+três níveis do cartão (no compacto é a única indicação de progresso).
+
 #### Scenario: Pipeline do condominio rodando
 - **WHEN** o merge chegou e a pipeline do condominio está rodando
 - **THEN** o cartão mostra "etapa 2 de 5", com "Merge" concluída e "Pipeline" destacada
+
+#### Scenario: Progresso dentro da virada
+- **WHEN** o `winker-prod` está com 4 de 7 réplicas na versão nova e o `winker-integration` com 2 de 2
+- **THEN** o segmento "Virada" aparece preenchido em 67% (6 de 9)
 
 #### Scenario: Virada travada
 - **WHEN** a pipeline ficou verde e a virada do `winker-prod` passou do prazo
@@ -206,7 +226,9 @@ o navegador só desenha.
 ### Requirement: Ordem e ciclo de vida dos cartões
 
 Só deploy rodando e deploy com falha SHALL ser cartão: com falha primeiro, sob "Com falha", e os
-rodando sob "Em andamento"; sem nenhum, a coluna mostra só o histórico. Um deploy que fica no ar
+rodando sob "Em andamento", cada grupo do mais antigo para o mais novo pela hora de início; sem
+nenhum, a coluna mostra só o histórico. Um cartão SHALL NOT mudar de lugar quando o deploy passa de
+uma etapa para a outra. Os dois títulos mostram a quantidade ("Em andamento 5"). Um deploy que fica no ar
 SHALL virar a primeira linha das "Últimas 24 horas", destacada em verde por 15 minutos, com o "Como
 voltar" nela. Um cartão de falha ou de virada travada SHALL ficar até alguém dispensar (o ✕ do
 cartão, gravado no navegador; o cabeçalho deixa de contá-lo) ou até um deploy posterior do mesmo
@@ -217,6 +239,10 @@ As "Últimas 24 horas" SHALL mostrar os deploys encerrados nas últimas 24 horas
 desconhecida (virou com o painel fora do ar) SHALL ser "—", com uma nota só abaixo da lista. Um
 deploy da lista SHALL voltar para a coluna de cartões quando uma virada do mesmo projeto e do mesmo
 SHA começar.
+
+#### Scenario: Deploy avança de etapa
+- **WHEN** há três deploys em andamento e o do meio passa da pipeline para a virada
+- **THEN** os três cartões continuam na mesma ordem
 
 #### Scenario: Integration e prod do mesmo commit, 26 minutos depois
 - **WHEN** o `winker-integration` concluiu o commit `9ee108f`, o deploy já saiu para a lista "Hoje", e 26 minutos depois o `winker-prod` começa a virar o mesmo commit
@@ -251,6 +277,61 @@ ainda sem dado; cinza, não configurada; vermelho em triângulo, sem resposta.
 #### Scenario: Rodando fora do cluster
 - **WHEN** o Kuma roda na máquina de um desenvolvedor, sem conta de serviço do Kubernetes
 - **THEN** o cluster aparece como "não configurado" e o resto do painel funciona
+
+### Requirement: A coluna de deploys cabe na tela
+
+Na tela larga, a coluna de deploys SHALL NOT rolar nem cortar cartão. Cada cartão SHALL ter um de
+três níveis, sobre o mesmo conteúdo:
+
+- **completo**: cabeçalho (projeto, SHA, rótulo), "começou há N" e "etapa N de M", a faixa de etapas
+  com os nomes, a caixa da pipeline (estado, mensagem do commit, jobs) e as réplicas de cada
+  workload com barra;
+- **médio**: cabeçalho, "começou há N" e "etapa N de M", a faixa com os nomes e uma linha de detalhe;
+- **compacto** (cerca de 70 px): cabeçalho com o tempo decorrido à direita, a faixa sem os nomes e a
+  linha de detalhe.
+
+Em qualquer nível o cartão SHALL manter o aviso de estado não confirmado e o "Como voltar" da virada
+travada: um diz que o cartão pode estar errado, o outro é o que se precisa no incidente. Abrir o
+"Como voltar" SHALL refazer a escolha dos níveis, como qualquer cartão que muda de altura.
+
+A linha de detalhe SHALL ser uma linha só, cortada com reticências: na virada, as réplicas de cada
+workload ("winker-prod 4/7, winker-integration 2/2"); na pipeline, o job atual e os próximos
+("build rodando há 1 min, depois deploy e verify"); na falha, o job que falhou ("build falhou há 2
+min"); nos outros casos, a mensagem do commit. O nome do workload ou do job vai em negrito e o
+resto em cinza. O nome do projeto SHALL manter o tamanho em todos os níveis.
+
+O nível SHALL ser escolhido medindo a coluna, a cada mudança nos deploys, no redimensionamento e
+depois de a fonte carregar, numa conta só, antes de pintar: todos completos se couberem; senão
+todos médios; senão todos compactos, promovendo para médio, um de cada vez e enquanto couber, a
+falha e depois as viradas; e, se nem compactos couberem, os cartões do fim (nunca o primeiro) saem
+e uma faixa azul-clara diz "+N em andamento". Com cartões na tela, o histórico SHALL guardar
+espaço para pelo menos três linhas e manter o degradê na base quando for cortado.
+
+#### Scenario: Um deploy
+- **WHEN** há um deploy em andamento numa tela de 1920 × 1080
+- **THEN** o cartão aparece completo
+
+#### Scenario: Seis deploys
+- **WHEN** há uma falha, duas viradas, duas pipelines e uma pipeline verde aguardando a virada numa tela de 1920 × 1080
+- **THEN** a falha e as viradas aparecem no nível médio, as outras no compacto, sem rolagem, e o histórico mostra pelo menos três linhas
+
+#### Scenario: Tela baixa
+- **WHEN** os seis deploys não cabem nem compactos
+- **THEN** os do fim saem da coluna, o primeiro continua, e a faixa "+N em andamento" ocupa o lugar deles
+
+### Requirement: Resumo dos deploys no cabeçalho
+
+O segmento "Deploys" do cabeçalho SHALL ter, na linha principal, "N em andamento" (sem contar as
+falhas), com a bolinha azul pulsando; e, embaixo, a contagem por etapa, só das que existem, nesta
+ordem: "X na virada, Y na pipeline, Z aguardando virada" e, se houver, "W falhou" em vermelho. A
+linha de baixo SHALL NOT listar nomes de repositório e SHALL NOT quebrar. Sem deploy em andamento,
+o segmento SHALL ficar sem bolinha, com "Nenhum agora" e, embaixo, o último deploy ("último:
+<projeto>, há N"); com só falhas na tela, SHALL dizer "N com falha" em vermelho, com o triângulo
+(uma virada travada ainda está acontecendo).
+
+#### Scenario: Cinco em andamento e uma falha
+- **WHEN** há duas viradas, duas pipelines, uma pipeline verde aguardando a virada e uma falha
+- **THEN** o segmento mostra "5 em andamento" e, embaixo, "2 na virada, 2 na pipeline, 1 aguardando virada, 1 falhou", numa linha
 
 ### Requirement: Indicadores das últimas 24 horas
 
@@ -331,7 +412,10 @@ seguintes, e a página pede ao navegador para não congelar a aba.
 ### Requirement: Textos traduzidos e sem controles de demonstração
 
 Todo texto da página SHALL vir de chaves novas em `src/lang/en.json` e `src/lang/pt-BR.json`. A
-página SHALL NOT ter botões de simulação nem dado fictício.
+página SHALL NOT ter botões de simulação. Dado fictício SHALL aparecer só com `?mock=deploys&n=N` na
+URL (N de 0 a 6), para conferir o desenho com N deploys: troca os deploys, o histórico e o estado
+das fontes do que se desenha, nunca o que o servidor guarda nem o que toca som, e um selo no título
+diz que é simulação.
 
 #### Scenario: Página em português
 - **WHEN** o Kuma está em pt-BR

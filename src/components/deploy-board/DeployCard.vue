@@ -1,5 +1,6 @@
 <template>
-    <article class="db-card" :class="'is-' + tone">
+    <!-- One markup for the three levels (full, medium, compact): the level only hides parts, in CSS. -->
+    <article class="db-card" :class="'is-' + tone" :data-level="level">
         <header class="db-card-head">
             <span class="db-card-project">{{ deploy.project }}</span>
             <code v-if="deploy.version" class="db-card-version">{{ deploy.version }}</code>
@@ -7,6 +8,8 @@
                 <font-awesome-icon v-if="tone === 'bad'" icon="exclamation-triangle" class="db-card-label-icon" />
                 {{ $t(labelKey) }}
             </span>
+            <!-- In compact, where the line "started N ago" is gone. -->
+            <span class="db-card-elapsed">{{ elapsedText }}</span>
             <button
                 v-if="dismissible"
                 type="button"
@@ -38,10 +41,21 @@
                 :class="'is-' + s.status"
                 :aria-current="s.status === 'current' ? 'step' : null"
             >
-                <i aria-hidden="true"></i>
+                <!-- The step it is on fills with how far it has gone inside it. -->
+                <i aria-hidden="true">
+                    <b v-if="s.status === 'current' || s.status === 'warn'" :style="{ width: stepProgress + '%' }"></b>
+                </i>
                 <span>{{ $t(STEP_KEYS[s.key]) }}</span>
             </li>
         </ol>
+
+        <!-- Medium and compact: one line instead of the pipeline box and the replica bars. -->
+        <p v-if="detail.length" class="db-card-detail">
+            <template v-for="(part, i) in detail" :key="i">
+                <b v-if="part.name">{{ part.text }}</b>
+                <template v-else>{{ part.text }}</template>
+            </template>
+        </p>
 
         <section v-if="pipeline" class="db-pipeline" :class="'is-' + pipeline.state">
             <div class="db-pipeline-head">
@@ -82,7 +96,7 @@
             {{ $t(pipeline?.source === "amplify" ? "deployBoardUnconfirmedAmplify" : "deployBoardUnconfirmed") }}
         </p>
 
-        <RollbackPanel v-if="deploy.rollback" :rollback="deploy.rollback" />
+        <RollbackPanel v-if="deploy.rollback" :rollback="deploy.rollback" class="db-card-rollback" />
     </article>
 </template>
 
@@ -143,6 +157,18 @@ const STEP_KEYS = {
     live: "deployBoardStepLive",
 };
 
+/** Deploy states of a rollout in the cluster: their one line is the replicas of each workload. */
+const ROLLOUT_STATES = ["updating", "noProgress", "stuck"];
+
+/** A running job counts this much of a job in the progress of the pipeline step. */
+const RUNNING_JOB_SHARE = 0.35;
+
+/** The step it is on is never filled less than this, in percent: it must always show. */
+const MIN_PROGRESS = 6;
+
+/** Stands for the name in a translated text, to split it around the name. */
+const NAME_MARK = "\u0000";
+
 /** Deploy state → tone of the card. */
 const TONES = {
     updating: "rolling",
@@ -180,6 +206,11 @@ export default {
         dismissible: {
             type: Boolean,
             default: false,
+        },
+        /** How much of the card shows: "full", "medium" or "compact" (the column picks it by measuring) */
+        level: {
+            type: String,
+            default: "full",
         },
     },
 
@@ -221,9 +252,31 @@ export default {
             return this.deploy.steps?.length ? this.deploy.steps : null;
         },
 
+        /**
+         * How far the deploy is inside the step it is on: the replicas on the new version of every
+         * workload in the rollout, the jobs that ended in the pipeline (a running one counts a
+         * third), and half anywhere else. Never under MIN_PROGRESS, so the step always shows it.
+         * @returns {number} Percent, MIN_PROGRESS to 100.
+         */
+        stepProgress() {
+            const step = this.steps?.[this.stepNumber - 1]?.key;
+            let share = 0.5;
+            if (step === "rollout") {
+                const desired = this.deploy.releases.reduce((sum, r) => sum + r.desired, 0);
+                if (desired > 0) {
+                    share = this.deploy.releases.reduce((sum, r) => sum + Math.min(r.updated, r.desired), 0) / desired;
+                }
+            } else if (step === "pipeline" && this.pipeline?.jobs.length) {
+                const jobs = this.pipeline.jobs;
+                const ended = jobs.filter((j) => j.state === "success").length;
+                share = (ended + (jobs.some((j) => j.state === "running") ? RUNNING_JOB_SHARE : 0)) / jobs.length;
+            }
+            return Math.max(MIN_PROGRESS, Math.min(100, Math.round(share * 100)));
+        },
+
         /** @returns {number} Number of the step it is on, from 1: the last one reached */
         stepNumber() {
-            return this.steps.findLastIndex((s) => s.status !== "pending") + 1;
+            return (this.steps || []).findLastIndex((s) => s.status !== "pending") + 1;
         },
 
         /** @returns {object|null} Pipeline of the deploy (older servers do not send it) */
@@ -253,6 +306,51 @@ export default {
             return lines;
         },
 
+        /**
+         * The one line of the medium and compact levels, as parts; the names of workloads and jobs
+         * are the bold ones.
+         * @returns {{text: string, name: boolean}[]} Parts, none when there is nothing to say.
+         */
+        detail() {
+            const d = this.deploy;
+            const jobs = this.pipeline?.jobs || [];
+            if (ROLLOUT_STATES.includes(d.state) && d.releases.length) {
+                return d.releases.flatMap((r, i) => [
+                    ...(i ? [{ text: ", " }] : []),
+                    { text: r.release, name: true },
+                    ...(r.desired > 0 ? [{ text: ` ${r.updated}/${r.desired}` }] : []),
+                ]);
+            }
+            if (d.state === "failed") {
+                const job = jobs.find((j) => j.state === "failed");
+                const end = job?.endedAt || this.pipeline?.endedAt || d.endedAt;
+                const name = job ? job.name : this.$t(STEP_KEYS.pipeline);
+                return end ? this.named("deployBoardDetailJobFailed", name, this.formatDuration(this.now - end)) : [{ text: name, name: true }];
+            }
+            if (d.state === "pipeline" && jobs.length) {
+                const running = jobs.find((j) => j.state === "running");
+                const queued = jobs.filter((j) => j.state === "queued");
+                if (running) {
+                    const since = running.startedAt ? this.formatDuration(this.now - running.startedAt) : "";
+                    const parts = since ? this.named("deployBoardDetailJobRunning", running.name, since) : [{ text: running.name, name: true }];
+                    return queued.length ? [...parts, ...this.thenJobs(queued)] : parts;
+                }
+                if (queued.length) {
+                    return [...this.named("deployBoardDetailJobQueued", queued[0].name), ...this.thenJobs(queued.slice(1))];
+                }
+            }
+            const message = this.pipeline?.message;
+            return message ? [{ text: message }] : [];
+        },
+
+        /** @returns {string} Time running, or how long it took, alone: "15 min" */
+        elapsedText() {
+            if (this.deploy.missed) {
+                return "—";
+            }
+            return this.formatDuration((this.deploy.endedAt || this.now) - this.deploy.startedAt);
+        },
+
         /** @returns {string} How long it has been running, or how long it took */
         timeText() {
             // Its start was not seen: any duration would be made up.
@@ -267,6 +365,34 @@ export default {
     },
 
     methods: {
+        /**
+         * A translated text whose {0} is a name, in parts, so the name can be bold.
+         * @param {string} key i18n key, with the name as {0}.
+         * @param {string} name Name of the job or workload.
+         * @param {...string} rest The other values, from {1} on.
+         * @returns {{text: string, name: boolean}[]} Parts.
+         */
+        named(key, name, ...rest) {
+            const [before, after = ""] = this.$t(key, [NAME_MARK, ...rest]).split(NAME_MARK);
+            return [{ text: before }, { text: name, name: true }, { text: after }].filter((p) => p.text);
+        },
+
+        /**
+         * ", then deploy and verify", with the names bold.
+         * @param {object[]} jobs Jobs that come next.
+         * @returns {{text: string, name: boolean}[]} Parts, none without jobs.
+         */
+        thenJobs(jobs) {
+            if (!jobs.length) {
+                return [];
+            }
+            const list = new Intl.ListFormat(this.$i18n.locale, { type: "conjunction" })
+                .formatToParts(jobs.map((j) => j.name))
+                .map((p) => ({ text: p.value, name: p.type === "element" }));
+            const [before, after = ""] = this.$t("deployBoardDetailThen", [NAME_MARK]).split(NAME_MARK);
+            return [{ text: before }, ...list, { text: after }].filter((p) => p.text);
+        },
+
         /**
          * @param {object} job Job of the pipeline.
          * @returns {string} Its state, with how long it took or has been running.
@@ -307,7 +433,7 @@ export default {
     border-radius: 14px;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
-    border-left: 4px solid var(--db-deploy);
+    border-left: 3px solid var(--db-deploy);
     min-width: 0;
 
     &.is-ok {
@@ -325,26 +451,106 @@ export default {
     }
 }
 
+/* One line at every level: the column measures the cards, and a header that wraps would make it guess. */
 .db-card-head {
     display: flex;
-    flex-wrap: wrap;
     align-items: baseline;
-    gap: 4px 8px;
+    gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
 }
 
 .db-card-project {
+    flex-shrink: 0;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 17px;
     font-weight: 700;
-    overflow-wrap: anywhere;
 }
 
+// The hash gives way first, then the label.
 .db-card-version {
+    flex-shrink: 10;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 13.5px;
     color: var(--db-ink-2);
 }
 
+.db-card-elapsed {
+    display: none;
+    flex-shrink: 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--db-ink-2);
+}
+
+.db-card-detail {
+    display: none;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13.5px;
+    color: var(--db-ink-3);
+
+    b {
+        font-weight: 700;
+        color: var(--db-ink);
+    }
+}
+
+/* Medium: header, the time line, the track with its labels and one line of detail. */
+.db-card[data-level="medium"] {
+    gap: 6px;
+
+    .db-steps {
+        margin: 0;
+    }
+}
+
+/* The "not confirmed" warning and "Como voltar" stay at every level: one says the card may be wrong,
+   the other is what someone needs when a rollout is stuck. */
+.db-card[data-level="medium"],
+.db-card[data-level="compact"] {
+    .db-pipeline,
+    .db-card-releases,
+    .db-card-note {
+        display: none;
+    }
+
+    .db-card-detail {
+        display: block;
+    }
+}
+
+/* Compact (about 70 px): header with the elapsed time, the track without labels, one line. */
+.db-card[data-level="compact"] {
+    gap: 5px;
+    padding-block: 6px;
+
+    .db-card-time,
+    .db-step span {
+        display: none;
+    }
+
+    .db-card-elapsed {
+        display: inline;
+    }
+
+    .db-steps {
+        margin: 0;
+    }
+}
+
 .db-card-label {
+    min-width: 0;
     margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 13.5px;
     font-weight: 600;
     color: var(--db-deploy);
@@ -402,7 +608,14 @@ export default {
         display: block;
         height: 0.45rem;
         border-radius: 2px;
+        overflow: hidden;
         background: var(--db-panel-2);
+    }
+
+    b {
+        display: block;
+        height: 100%;
+        transition: width 0.6s ease;
     }
 
     span {
@@ -432,19 +645,29 @@ export default {
         font-weight: 700;
     }
 
+    // The step it is on: pale blue, filled in blue as far as it has gone, the filling pulsing.
     &.is-current {
         color: var(--db-deploy);
 
         i {
+            background: var(--db-deploy-soft);
+        }
+
+        b {
             background: var(--db-deploy);
             animation: db-step-pulse 1.6s ease-in-out infinite;
         }
     }
 
+    // Stopped without failing: the same filling in amber, still.
     &.is-warn {
         color: var(--db-warn);
 
         i {
+            background: var(--db-warn-soft);
+        }
+
+        b {
             background: var(--db-warn);
         }
     }
@@ -460,7 +683,7 @@ export default {
 
 @keyframes db-step-pulse {
     50% {
-        opacity: 0.45;
+        opacity: 0.6;
     }
 }
 
@@ -646,7 +869,11 @@ export default {
         transition: none;
     }
 
-    .db-step.is-current i {
+    .db-step b {
+        transition: none;
+    }
+
+    .db-step.is-current b {
         animation: none;
     }
 }

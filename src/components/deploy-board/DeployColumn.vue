@@ -1,30 +1,53 @@
 <template>
-    <section class="db-deploys" :aria-label="$t('deployBoardDeploys')">
+    <section class="db-deploys" :class="{ 'has-cards': cards.length > 0 }" :aria-label="$t('deployBoardDeploys')">
         <p v-if="!board" class="db-empty">{{ $t("deployBoardReading") }}</p>
         <p v-else-if="noSourceOn" class="db-empty">{{ $t("deployBoardNoSources") }}</p>
 
-        <!-- A failure stays until someone dismisses it; a deploy that went live becomes a line below. -->
-        <template v-if="failures.length">
-            <h2 class="db-section-title">{{ $t("deployBoardFailures") }}</h2>
-            <div class="db-cards">
-                <DeployCard
-                    v-for="deploy in failures"
-                    :key="deploy.id"
-                    :deploy="deploy"
-                    :now="now"
-                    :format-duration="formatDuration"
-                    :dismissible="deploy.dismissible"
-                    @dismiss="$emit('dismiss', $event)"
-                />
-            </div>
-        </template>
+        <!-- The cards in one block: it changes size when a card does (its way back opening, say). -->
+        <div v-show="cards.length" ref="stack" class="db-stack">
+            <!-- A failure stays until someone dismisses it; a deploy that went live becomes a line below. -->
+            <template v-if="failureCards.length">
+                <h2 class="db-section-title">
+                    {{ $t("deployBoardFailures") }}
+                    <span class="db-section-count">{{ failureCards.length }}</span>
+                </h2>
+                <div class="db-cards">
+                    <DeployCard
+                        v-for="deploy in failureCards"
+                        :key="deploy.id"
+                        :data-id="deploy.id"
+                        :hidden="hiddenIds.includes(deploy.id)"
+                        :deploy="deploy"
+                        :now="now"
+                        :format-duration="formatDuration"
+                        :dismissible="deploy.dismissible"
+                        :level="levels[deploy.id] || 'full'"
+                        @dismiss="$emit('dismiss', $event)"
+                    />
+                </div>
+            </template>
 
-        <template v-if="running.length">
-            <h2 class="db-section-title">{{ $t("deployBoardRunning") }}</h2>
-            <div class="db-cards">
-                <DeployCard v-for="deploy in running" :key="deploy.id" :deploy="deploy" :now="now" :format-duration="formatDuration" />
-            </div>
-        </template>
+            <template v-if="running.length">
+                <h2 class="db-section-title">
+                    {{ $t("deployBoardRunning") }}
+                    <span class="db-section-count">{{ running.length }}</span>
+                </h2>
+                <div class="db-cards">
+                    <DeployCard
+                        v-for="deploy in running"
+                        :key="deploy.id"
+                        :data-id="deploy.id"
+                        :hidden="hiddenIds.includes(deploy.id)"
+                        :deploy="deploy"
+                        :now="now"
+                        :format-duration="formatDuration"
+                        :level="levels[deploy.id] || 'full'"
+                    />
+                </div>
+            </template>
+            <!-- In place of the cards that did not fit even compact. -->
+            <p class="db-more" :hidden="hiddenIds.length === 0">{{ $t("deployBoardMore", hiddenIds.length) }}</p>
+        </div>
 
         <div ref="history" class="db-history">
             <h2 class="db-section-title">
@@ -39,7 +62,12 @@
                     class="db-history-item"
                     :class="['is-' + outcomeClass(item.outcome), { 'is-fresh': isFresh(item) }]"
                 >
-                    <span class="db-history-outcome" role="img" :aria-label="$t(OUTCOME_KEYS[item.outcome])" :title="$t(OUTCOME_KEYS[item.outcome])">
+                    <span
+                        class="db-history-outcome"
+                        role="img"
+                        :aria-label="$t(OUTCOME_KEYS[item.outcome])"
+                        :title="$t(OUTCOME_KEYS[item.outcome])"
+                    >
                         {{ OUTCOME_MARKS[item.outcome] || "·" }}
                     </span>
                     <span class="db-history-name">
@@ -59,7 +87,9 @@
                     <span class="db-history-took" :class="{ 'is-unknown': item.missed }">
                         {{ item.missed ? "—" : formatDuration(item.endedAt - item.startedAt) }}
                     </span>
-                    <span class="db-history-when">{{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}</span>
+                    <span class="db-history-when">
+                        {{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}
+                    </span>
                     <RollbackPanel
                         v-if="item.rollback && backOpen === item.id"
                         :rollback="item.rollback"
@@ -68,7 +98,9 @@
                     />
                 </li>
             </ol>
-            <p v-if="historyRows.some((item) => item.missed)" class="db-history-note">{{ $t("deployBoardMissedNote") }}</p>
+            <p v-if="historyRows.some((item) => item.missed)" class="db-history-note">
+                {{ $t("deployBoardMissedNote") }}
+            </p>
         </div>
     </section>
 </template>
@@ -76,6 +108,9 @@
 <script>
 import DeployCard from "./DeployCard.vue";
 import RollbackPanel from "./RollbackPanel.vue";
+
+/** States of a rollout in the cluster: after the failures, the first cards promoted to medium. */
+const ROLLOUT_STATES = ["updating", "noProgress"];
 
 /** States of a deploy still moving: it has a card under "Em andamento". */
 const RUNNING_STATES = ["pipeline", "built", "updating", "noProgress"];
@@ -111,6 +146,15 @@ const OUTCOME_KEYS = {
     lost: "deployBoardOutcomeLost",
 };
 
+/**
+ * @param {object} a Deploy.
+ * @param {object} b Deploy.
+ * @returns {number} The one that started first goes first; the same start, by id.
+ */
+function byStart(a, b) {
+    return a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id));
+}
+
 export default {
     components: {
         DeployCard,
@@ -143,7 +187,7 @@ export default {
     emits: ["dismiss"],
 
     data() {
-        return { OUTCOME_KEYS, OUTCOME_MARKS, clipped: false, backOpen: null };
+        return { OUTCOME_KEYS, OUTCOME_MARKS, clipped: false, backOpen: null, levels: {}, hiddenIds: [] };
     },
 
     computed: {
@@ -152,9 +196,46 @@ export default {
             return Object.values(this.board.sources).every((s) => s.state === "unconfigured");
         },
 
-        /** @returns {object[]} Deploys still moving */
+        /** @returns {object[]} Every card, in the order of the screen: the failures first */
+        cards() {
+            return [...this.failureCards, ...this.running];
+        },
+
+        /** @returns {object[]} The failures, the oldest first */
+        failureCards() {
+            return [...this.failures].sort(byStart);
+        },
+
+        /**
+         * What changes the height of the cards: the list, and what each card has inside. The time
+         * text changes every second, but on a line of its own that does not wrap.
+         * @returns {string} Key that changes when the levels must be picked again.
+         */
+        layoutKey() {
+            return JSON.stringify(
+                this.cards.map((d) => [
+                    d.id,
+                    d.state,
+                    d.label,
+                    d.dismissible,
+                    d.releases.length,
+                    d.releases.some((r) => r.atBoot),
+                    d.confirmed,
+                    !!d.rollback,
+                    d.pipeline?.state,
+                    d.pipeline?.jobs.length,
+                    d.pipeline?.message,
+                ])
+            );
+        },
+
+        /**
+         * Deploys still moving, the oldest first: a card keeps its place as its deploy goes from one
+         * step to the next (the server sends them by state).
+         * @returns {object[]} Deploys.
+         */
         running() {
-            return this.board ? this.board.deploys.filter((d) => RUNNING_STATES.includes(d.state)) : [];
+            return this.board ? this.board.deploys.filter((d) => RUNNING_STATES.includes(d.state)).sort(byStart) : [];
         },
 
         /**
@@ -170,11 +251,20 @@ export default {
                 .filter((d) => ENDED_OUTCOMES[d.state])
                 .map((d) => ({ ...d, outcome: ENDED_OUTCOMES[d.state] }));
             const ids = new Set(ended.map((d) => d.id));
-            return [...ended, ...this.board.history.filter((h) => !ids.has(h.id))].sort((a, b) => b.endedAt - a.endedAt);
+            return [...ended, ...this.board.history.filter((h) => !ids.has(h.id))].sort(
+                (a, b) => b.endedAt - a.endedAt
+            );
         },
     },
 
     watch: {
+        // "post": after the cards are in the DOM and before the browser paints them.
+        layoutKey: {
+            handler() {
+                this.fit();
+            },
+            flush: "post",
+        },
         "historyRows.length"() {
             this.$nextTick(this.measure);
         },
@@ -189,14 +279,95 @@ export default {
         // is the room the cards above leave to the history.
         this.observer = new ResizeObserver(() => this.measure());
         this.observer.observe(this.$refs.history);
+        // The column changes size with the window; the block of cards, when a card grows or shrinks
+        // without the list changing. The pick is the same for the same sizes, so it settles in one
+        // more pass.
+        this.columnObserver = new ResizeObserver(() => this.fit());
+        this.columnObserver.observe(this.$el);
+        this.columnObserver.observe(this.$refs.stack);
+        // The web font is wider than the fallback: what fitted before it loads may not fit after.
+        // "ready" may already be resolved when the page has not asked for the font yet.
+        this.onFonts = () => this.fit();
+        document.fonts?.ready.then(this.onFonts);
+        document.fonts?.addEventListener("loadingdone", this.onFonts);
+        this.fit();
         this.measure();
     },
 
     beforeUnmount() {
         this.observer?.disconnect();
+        this.columnObserver?.disconnect();
+        document.fonts?.removeEventListener("loadingdone", this.onFonts);
     },
 
     methods: {
+        /**
+         * Pick the level of each card by measuring the column, all in one go before the browser
+         * paints: every card full; else every card medium; else every card compact, with the
+         * failures and then the rollouts promoted to medium one at a time while they fit; and when
+         * not even compact fits, the cards from the end (never the first) hidden behind "+N".
+         *
+         * The levels and the hidden cards are written to the DOM while measuring, and the same
+         * values are kept in the data at the end: the render that follows changes nothing on screen.
+         * @returns {void}
+         */
+        fit() {
+            const column = this.$el;
+            const more = column?.querySelector?.(".db-more");
+            if (!more) {
+                return;
+            }
+            const cards = this.cards
+                .map((deploy) => ({ deploy, el: column.querySelector(`.db-card[data-id="${CSS.escape(deploy.id)}"]`) }))
+                .filter((c) => c.el);
+            const overflows = () => column.scrollHeight > column.clientHeight + 1;
+            const levels = {};
+            const setLevel = (card, level) => {
+                card.el.dataset.level = level;
+                levels[card.deploy.id] = level;
+            };
+            const setHidden = (card, hidden) => {
+                card.el.hidden = hidden;
+            };
+            for (const card of cards) {
+                setHidden(card, false);
+            }
+            more.hidden = true;
+
+            let hidden = [];
+            const pick = () => {
+                for (const level of ["full", "medium"]) {
+                    cards.forEach((c) => setLevel(c, level));
+                    if (!overflows()) {
+                        return;
+                    }
+                }
+                cards.forEach((c) => setLevel(c, "compact"));
+                if (!overflows()) {
+                    const failed = cards.filter((c) => this.failureCards.includes(c.deploy));
+                    const rolling = cards.filter((c) => !failed.includes(c) && ROLLOUT_STATES.includes(c.deploy.state));
+                    for (const card of [...failed, ...rolling]) {
+                        setLevel(card, "medium");
+                        if (overflows()) {
+                            setLevel(card, "compact");
+                        }
+                    }
+                    return;
+                }
+                more.hidden = false;
+                for (let i = cards.length - 1; i > 0 && overflows(); i--) {
+                    setHidden(cards[i], true);
+                    hidden.push(cards[i].deploy.id);
+                }
+            };
+            pick();
+            if (!hidden.length) {
+                more.hidden = true;
+            }
+            this.levels = levels;
+            this.hiddenIds = hidden;
+        },
+
         /**
          * Fade the bottom of the history only when it does not fit: a list that fits ends clean.
          * @returns {void}
@@ -264,7 +435,8 @@ export default {
     gap: 8px;
 }
 
-/* On a wall screen the history gives way first: cards are never cut, the oldest lines are. */
+/* On a wall screen the history gives way first: cards are never cut, the oldest lines are. With
+   cards on screen it keeps room for three lines; the cards change level to leave it that. */
 .db-history {
     display: flex;
     flex: 1 1 auto;
@@ -272,6 +444,29 @@ export default {
     gap: 8px;
     min-height: 0;
     overflow: hidden;
+
+    // The title and three lines of about 33 px, above the fade of the bottom.
+    .has-cards > & {
+        min-height: 150px;
+    }
+}
+
+.db-stack {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.db-more {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 8px 14px;
+    border-radius: 10px;
+    background: var(--db-deploy-soft);
+    color: var(--db-deploy);
+    font-size: 13.5px;
+    font-weight: 600;
 }
 
 .db-history-list {
@@ -287,7 +482,7 @@ export default {
 
     // Cut softly, without a scrollbar, when it does not fit.
     &.is-clipped {
-        mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+        mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
     }
 }
 
