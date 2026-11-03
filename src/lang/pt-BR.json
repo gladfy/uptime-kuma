@@ -459,6 +459,7 @@
     "deployBoardNavLink": "Deploys",
     "deployBoardEyebrow": "Winker · Deploys",
     "deployBoardTitle": "Deploys e serviços",
+    "deployBoardMock": "Simulação: nenhum deploy fictício | Simulação: {n} deploy fictício | Simulação: {n} deploys fictícios",
     "deployBoardServices": "Serviços",
     "deployBoardDeploys": "Deploys",
     "deployBoardReading": "Lendo…",

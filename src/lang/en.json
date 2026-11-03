@@ -277,6 +277,7 @@
     "deployBoardNavLink": "Deploys",
     "deployBoardEyebrow": "Winker · Deploys",
     "deployBoardTitle": "Deploys and services",
+    "deployBoardMock": "Simulation: no made-up deploy | Simulation: {n} made-up deploy | Simulation: {n} made-up deploys",
     "deployBoardServices": "Services",
     "deployBoardDeploys": "Deploys",
     "deployBoardReading": "Reading…",

@@ -12,7 +12,10 @@
             <header class="db-top">
                 <div class="db-ident">
                     <span class="db-eyebrow">{{ $t("deployBoardEyebrow") }}</span>
-                    <h1 class="db-title">{{ $t("deployBoardTitle") }}</h1>
+                    <h1 class="db-title">
+                        {{ $t("deployBoardTitle") }}
+                        <span v-if="mock !== null" class="db-mock">{{ $t("deployBoardMock", mock) }}</span>
+                    </h1>
                 </div>
 
                 <!-- One bar, three readings. A dot only where it says something: never for "no deploy". -->
@@ -112,6 +115,7 @@ import SourcesFooter from "../components/deploy-board/SourcesFooter.vue";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 import { soundEvents } from "../components/deploy-board/sound-events.mjs";
 import { SoundPlayer } from "../components/deploy-board/sound-player.js";
+import { mockCount, withMockDeploys } from "../components/deploy-board/mock-deploys.js";
 
 /**
  * How often the list of monitors is read again from the status page. Matches the 5-minute cache of
@@ -200,6 +204,8 @@ export default {
             soundOn: soundSaved(),
             // After a reload the browser plays nothing until someone clicks the page.
             soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
+            // ?mock=deploys&n=N: the column drawn with N made-up deploys (see mock-deploys.js).
+            mock: mockCount(this.$route.query),
         };
     },
 
@@ -472,6 +478,7 @@ export default {
 
     created() {
         this.soundBaseline = true;
+        this.mockStart = Date.now();
         this.player = new SoundPlayer((blocked) => {
             this.soundBlocked = blocked;
         });
@@ -579,7 +586,8 @@ export default {
          * @returns {void}
          */
         applyBoard(snapshot) {
-            const previous = this.soundBaseline ? null : this.board;
+            // The sounds compare the server's snapshots, never the made-up deploys of the mock.
+            const previous = this.soundBaseline ? null : this.serverBoard;
             this.soundBaseline = false;
             const events = soundEvents(previous, snapshot);
             if (this.soundOn) {
@@ -588,7 +596,8 @@ export default {
                 // Turning sound on later must not play what already happened.
                 this.player.skip(events);
             }
-            this.board = snapshot;
+            this.serverBoard = snapshot;
+            this.board = this.mock === null ? snapshot : withMockDeploys(snapshot, this.mock, this.mockStart);
         },
 
         /**
@@ -1083,6 +1092,19 @@ body.deploy-board-body .Vue-Toastification__container {
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.05;
+}
+
+// A TV left on the mock must not pass for the real thing.
+.db-mock {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border: 1px dashed var(--db-warn);
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+    vertical-align: middle;
+    color: var(--db-warn);
 }
 
 /* The three readings in one bar, split by hairlines. */
