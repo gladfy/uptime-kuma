@@ -176,7 +176,17 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(d.state, "updating");
             assert.strictEqual(d.confirmed, true);
             assert.deepStrictEqual(d.releases, [
-                { namespace: "condominio", release: "winker-prod", state: "updating", updated: 9, desired: 17, cronJobsUpdated: 0, atBoot: false },
+                {
+                    cluster: null,
+                    clusterLabel: null,
+                    namespace: "condominio",
+                    release: "winker-prod",
+                    state: "updating",
+                    updated: 9,
+                    desired: 17,
+                    cronJobsUpdated: 0,
+                    atBoot: false,
+                },
             ]);
         });
 
@@ -266,7 +276,9 @@ describe("Estado do painel de deploys", () => {
             assert.strictEqual(snap.deploys.length, 0);
             assert.strictEqual(snap.history[0].outcome, "done");
             assert.strictEqual(snap.history[0].endedAt - snap.history[0].startedAt, 12 * 60 * 1000);
-            assert.deepStrictEqual(snap.history[0].releases, [{ namespace: "condominio", release: "winker-prod" }]);
+            assert.deepStrictEqual(snap.history[0].releases, [
+                { cluster: null, namespace: "condominio", release: "winker-prod" },
+            ]);
         });
 
         test("virada travada sai quando um deploy posterior do projeto conclui, e os dois ficam no histórico", () => {

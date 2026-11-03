@@ -1,5 +1,5 @@
 const { log } = require("../../src/util");
-const { loadDeployBoardConfig } = require("./config");
+const { loadDeployBoardConfig, parseReleaseRef, releaseRef } = require("./config");
 const { DeployBoardStore, HISTORY_MS } = require("./store");
 const { broadcastToLoggedIn } = require("./broadcast");
 const { ClusterTracker } = require("./cluster-tracker");
@@ -21,6 +21,13 @@ const PARSERS = {
     github: parseGithub,
 };
 
+/**
+ * Where the credential of each other cluster is mounted, one directory per cluster name with `server`
+ * (the API URL), `token` and `ca.crt`: a Secret created by hand, like the one of the webhooks. Not
+ * under the directory of the configuration, which is a read-only ConfigMap volume.
+ */
+const CLUSTERS_DIR = "/etc/deploy-board-clusters";
+
 /** The database keeps a week of deploys; the screen shows the last HISTORY_MS of them. */
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 60 * 60 * 1000;
@@ -33,7 +40,8 @@ class DeployBoard {
      * @param {object} options Options.
      * @param {object} options.env Environment (process.env by default).
      * @param {DeployBoardStore} options.store State (a new one by default).
-     * @param {object} options.kubernetes Extra options of the KubernetesSource (tests).
+     * @param {object} options.kubernetes Extra options of the KubernetesSource of the pod's cluster,
+     * and `clusters` with those of each other cluster by name (tests).
      * @param {DeployHistoryRepository} options.history Where ended deploys are kept.
      * @param {object} options.amplify Extra options of the AmplifySource (tests).
      */
@@ -54,7 +62,7 @@ class DeployBoard {
         this.ready = Promise.resolve();
         this.pruneTimer = null;
         this.known = new Map();
-        this.cluster = null;
+        this.clusters = [];
         this.config = null;
         this.configStatus = "missing";
         this.started = false;
@@ -207,35 +215,62 @@ class DeployBoard {
     }
 
     /**
-     * Start reading rollouts from the cluster. Outside Kubernetes the source stays "unconfigured".
+     * Start reading rollouts from the cluster the pod runs in, and from each other cluster of the
+     * configuration. A cluster without a credential stays "unconfigured" and does not stop the others.
      * @param {object} config Normalized configuration.
      * @returns {void}
      */
     startCluster(config) {
         this.store.setProjects(config.projects);
-        const releases = config.projects.flatMap((p) => p.releases.map((r) => `${r.namespace}/${r.release}`));
-        const tracker = new ClusterTracker({
-            releases,
-            now: this.store.now,
-            onRollout: (rollout) => this.store.upsertRollout(rollout),
-            known: this.known,
-            onSeen: (key, signature) => this.history.saveObject(key, signature, this.store.now()),
-        });
-        this.store.setCommitsLookup((release) => tracker.commitsOf(release));
-        this.cluster = new KubernetesSource({
-            namespaces: config.namespaces,
-            tracker,
-            store: this.store,
-            env: this.env,
-            now: this.store.now,
-            ...this.kubernetesOptions,
-        });
-        if (this.cluster.start()) {
-            this.store.startTicking();
-            log.info("deploy-board", `Watching ${config.namespaces.length} namespaces for ${releases.length} releases`);
-        } else {
-            log.info("deploy-board", "No Kubernetes service account in this pod; the cluster source is off.");
+        // Test options: those of the pod's own cluster, and `clusters` by name for the others.
+        const { clusters: perCluster = {}, ...own } = this.kubernetesOptions;
+        const trackers = new Map();
+        const clusters = [{ name: null, namespaces: config.namespaces }, ...(config.clusters || [])];
+        for (const cluster of clusters) {
+            const sourceId = cluster.name ? this.store.addClusterSource(cluster.name, cluster.label) : "cluster";
+            const releases = config.projects
+                .flatMap((p) => p.releases)
+                .filter((r) => r.cluster === cluster.name)
+                .map((r) => `${r.namespace}/${r.release}`);
+            const tracker = new ClusterTracker({
+                releases,
+                cluster: cluster.name,
+                now: this.store.now,
+                onRollout: (rollout) => this.store.upsertRollout(rollout),
+                known: this.known,
+                onSeen: (key, signature) => this.history.saveObject(key, signature, this.store.now()),
+            });
+            trackers.set(cluster.name, tracker);
+            const dir = `${this.env.DEPLOY_BOARD_CLUSTERS_DIR || CLUSTERS_DIR}/${cluster.name}`;
+            const source = new KubernetesSource({
+                namespaces: cluster.namespaces,
+                tracker,
+                store: this.store,
+                env: this.env,
+                now: this.store.now,
+                sourceId,
+                ...(cluster.name
+                    ? { serviceAccountDir: dir, serverFile: `${dir}/server`, ...perCluster[cluster.name] }
+                    : own),
+            });
+            this.clusters.push(source);
+            const where = cluster.name ? `cluster ${cluster.name}` : "the cluster";
+            if (source.start()) {
+                this.store.startTicking();
+                log.info(
+                    "deploy-board",
+                    `Watching ${cluster.namespaces.length} namespaces of ${where} for ${releases.length} releases`
+                );
+            } else if (cluster.name) {
+                log.info("deploy-board", `No credential in ${dir}; the source of cluster ${cluster.name} is off.`);
+            } else {
+                log.info("deploy-board", "No Kubernetes service account in this pod; the cluster source is off.");
+            }
         }
+        this.store.setCommitsLookup((ref) => {
+            const r = parseReleaseRef(ref);
+            return r ? (trackers.get(r.cluster)?.commitsOf(releaseRef({ ...r, cluster: null })) ?? null) : null;
+        });
     }
 
     /**
@@ -244,7 +279,9 @@ class DeployBoard {
      */
     stop() {
         clearInterval(this.pruneTimer);
-        this.cluster?.stop();
+        for (const source of this.clusters) {
+            source.stop();
+        }
         this.amplify?.stop();
         this.store.close();
     }
@@ -260,6 +297,7 @@ class DeployBoard {
 const deployBoard = new DeployBoard();
 
 module.exports = {
+    CLUSTERS_DIR,
     WEBHOOK_SECRET_ENVS,
     HISTORY_RETENTION_MS,
     DeployBoard,

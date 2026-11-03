@@ -14,7 +14,7 @@ export const SOUND_EVENTS = ["started", "built", "rolling", "done", "failed"];
  */
 function stageOf(deploy) {
     return deploy.releases
-        .map((r) => `${r.namespace}/${r.release}`)
+        .map((r) => `${r.cluster ? `${r.cluster}:` : ""}${r.namespace}/${r.release}`)
         .sort()
         .join(",");
 }

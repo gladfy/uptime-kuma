@@ -19,7 +19,7 @@
             </template>
 
             <ul class="db-rollback-notes">
-                <li v-for="r in rollbackGaps" :key="r.namespace + '/' + r.release">
+                <li v-for="r in rollbackGaps" :key="(r.cluster ? r.cluster + ':' : '') + r.namespace + '/' + r.release">
                     {{ $t(GAP_KEYS[r.status], [r.release]) }}
                 </li>
                 <li v-if="rollbackText">{{ $t("deployBoardRollbackRunYourself") }}</li>
@@ -97,7 +97,11 @@ export default {
                 .map((r) => {
                     const previous = SHA_RE.test(r.previous) ? r.previous.slice(0, 7) : r.previous;
                     const head = `# ${this.$t("deployBoardRollbackComment", [`${r.namespace}/${r.release}`, previous])}`;
-                    return [head, ...r.setImage, ...r.rolloutStatus].join("\n");
+                    // The board does not know the kubectl context of whoever copies: it says which cluster.
+                    const where = r.clusterLabel
+                        ? [`# ${this.$t("deployBoardRollbackCluster", [r.clusterLabel])}`]
+                        : [];
+                    return [head, ...where, ...r.setImage, ...r.rolloutStatus].join("\n");
                 })
                 .join("\n\n");
         },

@@ -197,7 +197,7 @@ describe("Coletor do cluster", () => {
         const { cluster } = store.snapshot().sources;
         assert.strictEqual(cluster.state, "stale");
         assert.strictEqual(cluster.detail, "chat: 403");
-        assert.deepStrictEqual([...store.staleNamespaces], ["chat"]);
+        assert.deepStrictEqual([...store.staleNamespaces.get("cluster")], ["chat"]);
 
         // O condominio continua sendo lido.
         watches

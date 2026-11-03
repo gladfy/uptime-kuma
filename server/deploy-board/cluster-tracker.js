@@ -32,8 +32,20 @@ class ClusterTracker {
      * @param {Map<string, string>} options.known Last signature saved of each object (see signatureOf),
      * to tell at boot what changed while the board was down.
      * @param {Function} options.onSeen Called with (key, signature) when an object shows a new one.
+     * @param {string|null} options.cluster Name of the cluster, or null for the one the pod runs in.
+     * It prefixes the rollout ids and the object keys, so a release of the same name in another
+     * cluster is another release, in the database too.
      */
-    constructor({ releases, onRollout = () => {}, now = () => Date.now(), known = new Map(), onSeen = () => {} }) {
+    constructor({
+        releases,
+        onRollout = () => {},
+        now = () => Date.now(),
+        known = new Map(),
+        onSeen = () => {},
+        cluster = null,
+    }) {
+        this.cluster = cluster;
+        this.prefix = cluster ? `${cluster}:` : "";
         this.tracked = new Set(releases);
         this.onRollout = onRollout;
         this.now = now;
@@ -138,7 +150,7 @@ class ClusterTracker {
         const release = releaseKey(kept);
 
         const signature = signatureOf(kind, kept);
-        const saved = this.known.get(`${kind}/${key}`);
+        const saved = this.known.get(`${this.prefix}${kind}/${key}`);
         this.see(kind, key, signature);
 
         if (baseline) {
@@ -176,7 +188,7 @@ class ClusterTracker {
      * @returns {void}
      */
     see(kind, key, signature) {
-        const objectKey = `${kind}/${key}`;
+        const objectKey = `${this.prefix}${kind}/${key}`;
         if (this.known.get(objectKey) === signature) {
             return;
         }
@@ -225,7 +237,8 @@ class ClusterTracker {
             }
             const [namespace, releaseName] = release.split("/");
             rollout = {
-                id: `${release}:${++this.sequence}`,
+                id: `${this.prefix}${release}:${++this.sequence}`,
+                cluster: this.cluster,
                 namespace,
                 release: releaseName,
                 atBoot,
@@ -344,6 +357,7 @@ function publicRollout(rollout, objects) {
         .sort((a, b) => a.name.localeCompare(b.name));
     return {
         id: rollout.id,
+        cluster: rollout.cluster,
         namespace: rollout.namespace,
         release: rollout.release,
         atBoot: rollout.atBoot,

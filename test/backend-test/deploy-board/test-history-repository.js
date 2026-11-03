@@ -160,7 +160,7 @@ describe("Histórico do painel no banco do Kuma", () => {
                     },
                 ],
             });
-            const tracker = board.cluster.tracker;
+            const tracker = board.clusters[0].tracker;
             assert.strictEqual(tracker.known.get("deployments/condominio/winker-prod"), "6");
             tracker.see("deployments", "condominio/winker-prod", "7");
             assert.deepStrictEqual(saved, [["deployments/condominio/winker-prod", "7", NOW]]);

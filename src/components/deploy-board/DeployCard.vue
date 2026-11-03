@@ -75,8 +75,16 @@
         </section>
 
         <ul class="db-card-releases">
-            <li v-for="r in deploy.releases" :key="r.namespace + '/' + r.release" class="db-release" :class="['is-' + stateClass(r.state), { 'is-complete': r.desired > 0 && r.updated >= r.desired }]">
-                <span class="db-release-name">{{ r.release }}</span>
+            <li
+                v-for="r in deploy.releases"
+                :key="(r.cluster ? r.cluster + ':' : '') + r.namespace + '/' + r.release"
+                class="db-release"
+                :class="['is-' + stateClass(r.state), { 'is-complete': r.desired > 0 && r.updated >= r.desired }]"
+            >
+                <span class="db-release-name">
+                    {{ r.release }}
+                    <span v-if="r.clusterLabel" class="db-release-cluster">{{ r.clusterLabel }}</span>
+                </span>
                 <template v-if="r.desired > 0">
                     <span class="db-release-count">{{ $t("deployBoardReleaseProgress", [r.updated, r.desired]) }}</span>
                     <span class="db-release-bar" aria-hidden="true">
@@ -706,6 +714,18 @@ export default {
 .db-release-name {
     font-weight: 600;
     overflow-wrap: anywhere;
+}
+
+/* Outside the pod's own cluster: which one, since the same release name can exist in both. */
+.db-release-cluster {
+    margin-left: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--db-line);
+    border-radius: 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--db-ink-2);
 }
 
 .db-release-count {

@@ -15,7 +15,19 @@ da OCI.
 
 #### Scenario: Configuração sem outros clusters
 - **WHEN** a configuração não tem `clusters`
-- **THEN** o painel funciona como antes, só com o EKS, e a fonte "Cluster OCI" aparece como não configurada
+- **THEN** o painel funciona como antes, só com o EKS, e o rodapé não mostra outro cluster
+
+### Requirement: Cluster sem credencial não muda o comportamento dos projetos dele
+
+A credencial de cada cluster além do EKS SHALL vir de um diretório próprio, montado de um Secret
+opcional, com o endereço da API, o token e a CA. Enquanto ela não estiver lá, a fonte do cluster SHALL
+aparecer como não configurada, e os projetos com release nele SHALL seguir a regra de quem não tem
+cluster: a pipeline verde é o fim do deploy. O endereço da API SHALL ser `https`; outro esquema conta
+como credencial ausente, para o token nunca sair em texto aberto.
+
+#### Scenario: Secret do OKE ainda não criado
+- **WHEN** a configuração lista o cluster `oci` e o Secret dele não existe, e a pipeline do `ia-rag` fica verde
+- **THEN** o rodapé mostra "Cluster OCI" não configurado, o cartão do `ia-rag` fecha como "No ar" sem o passo da virada e sem "Nenhuma virada vista", e o EKS segue como está
 
 ### Requirement: O cluster faz parte da identidade da release
 
@@ -30,7 +42,8 @@ vistas usada no boot. O cartão SHALL mostrar o cluster ao lado de uma release q
 
 ### Requirement: Cada cluster é uma fonte com estado próprio
 
-O rodapé SHALL mostrar "Cluster OCI" separado do "Cluster EKS". Quando o OKE não responder, só as
+O rodapé SHALL mostrar "Cluster OCI" (o rótulo do cluster na configuração, o nome em maiúsculas
+quando não houver) separado do "Cluster EKS". Quando o OKE não responder, só as
 releases dele SHALL aparecer como não confirmadas; o EKS SHALL continuar como está.
 
 #### Scenario: OCI fora do ar

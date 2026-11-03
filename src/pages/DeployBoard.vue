@@ -428,8 +428,17 @@ export default {
             if (this.failures.length) {
                 return { tone: "bad", title: this.$t("deployBoardVerdictFailures", this.failures.length), sub };
             }
-            if (this.board.sources.cluster.state === "stale") {
-                return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
+            const unread = Object.entries(this.board.sources).find(
+                ([id, s]) => isClusterSource(id) && s.state === "stale"
+            );
+            if (unread) {
+                const [id, source] = unread;
+                const name = id === "cluster" ? "" : `${source.label} · `;
+                return {
+                    tone: "muted",
+                    title: this.$t("deployBoardClusterNoRead"),
+                    sub: `${name}${source.detail || ""}`,
+                };
             }
             // Nothing running is not news: grey, with no dot.
             return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), sub };
@@ -768,7 +777,9 @@ export default {
                 return null;
             }
             if (!monitor.releases.length) {
-                return ["cluster", "amplify"].some((id) => deploys.sources[id]?.state === "active")
+                return Object.entries(deploys.sources).some(
+                    ([id, s]) => (isClusterSource(id) || id === "amplify") && s.state === "active"
+                )
                     ? this.$t("deployBoardIncidentNoTag")
                     : null;
             }
@@ -833,7 +844,7 @@ const ENDED_STATES = ["done", "failed", "cancelled", "superseded"];
 
 /**
  * What a monitor is linked to, from its Kuma tags named "deploy": "<namespace>/<release>" of the
- * cluster, or "amplify/<app>".
+ * cluster, "<cluster>:<namespace>/<release>" of another cluster, or "amplify/<app>".
  * @param {object|undefined} monitor Monitor from the socket list.
  * @returns {string[]} Tag values.
  */
@@ -850,7 +861,27 @@ function deployTags(monitor) {
  * only be said by who reads the source.
  */
 function sourcesRead(tags, sources) {
-    return tags.every((t) => sources[t.startsWith("amplify/") ? "amplify" : "cluster"]?.state === "active");
+    return tags.every((t) => sources[sourceOfTag(t)]?.state === "active");
+}
+
+/**
+ * @param {string} tag Value of a "deploy" tag.
+ * @returns {string} The board source that reads what it points to.
+ */
+function sourceOfTag(tag) {
+    if (tag.startsWith("amplify/")) {
+        return "amplify";
+    }
+    const cluster = /^([^:/]+):/.exec(tag);
+    return cluster ? `cluster:${cluster[1]}` : "cluster";
+}
+
+/**
+ * @param {string} id Source id of the board.
+ * @returns {boolean} Whether it reads a cluster (the pod's own, or another of the configuration).
+ */
+function isClusterSource(id) {
+    return id === "cluster" || id.startsWith("cluster:");
 }
 
 /** States of a deploy rolling out in the cluster: the service is being changed. */
@@ -877,7 +908,7 @@ function reachedService(deploy) {
  * @returns {string[]} The tag values it answers to (older servers send only the releases).
  */
 function linksOf(deploy) {
-    return deploy.links || deploy.releases.map((r) => `${r.namespace}/${r.release}`);
+    return deploy.links || deploy.releases.map((r) => `${r.cluster ? `${r.cluster}:` : ""}${r.namespace}/${r.release}`);
 }
 
 /**

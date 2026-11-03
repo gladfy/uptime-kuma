@@ -59,12 +59,13 @@ function beforeAsDeployments(before) {
  * the chat's "prod") has nothing a tag can go back to.
  * @param {object} rollout Rollout of the release, with `deployments`, `before` and `cronJobsUpdated`.
  * @param {object[]} candidates Earlier finished rollouts of the same release, newest first.
- * @returns {object} { namespace, release, status, previous, setImage, rolloutStatus, cronJobs },
- * status being "known", "unknown", "unchanged" or "cronOnly".
+ * @returns {object} { cluster, namespace, release, status, previous, setImage, rolloutStatus, cronJobs },
+ * status being "known", "unknown", "unchanged" or "cronOnly"; cluster is null for the pod's own.
  */
 function releaseRollback(rollout, candidates) {
     const current = rollout.deployments || [];
     const plan = {
+        cluster: rollout.cluster ?? null,
         namespace: rollout.namespace,
         release: rollout.release,
         status: "unknown",

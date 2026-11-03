@@ -98,7 +98,7 @@ entre parênteses).
 | 6. Como voltar | Em produção | Nada |
 | 7. Amplify | Em produção; os 8 apps lidos pela role, sem erro; "Flow", "Convite", "Portaria Web" e "Phone (Frontend)" ligados aos apps (03/11) | Acompanhar um build real do `pro` no painel e conferir o link "abrir" (26.3) |
 | 8. Conferência de cobertura | Não começada; é a próxima | Tudo (27 e 28) |
-| 9. Projetos da OCI | Não começada; bloqueada | Inventário do OKE e caminho de rede do EKS até a API dele (29.1 e 29.2), que dependem de quem tem acesso à OCI |
+| 9. Projetos da OCI | Código pronto (03/11/2026); conta Winker sem credencial ainda | ServiceAccount de leitura no OKE, Secret no EKS e webhooks dos dois repositórios (31.1 a 31.3); a conta Condominizar espera decisão (29.3) |
 
 Dos 6 repositórios do Bitbucket que ainda não entregaram, 5 não tiveram merge na branch de deploy
 desde o cadastro (connector-server, observer, land, mcp-winker e audit-consumer); a entrega vem com o

@@ -59,8 +59,8 @@ describe("Configuração do painel de deploys", () => {
         const { config, error } = validateDeployBoardConfig(VALID);
         assert.strictEqual(error, null);
         assert.deepStrictEqual(config.projects[0].releases, [
-            { namespace: "condominio", release: "winker-prod" },
-            { namespace: "condominio", release: "winker-integration" },
+            { cluster: null, namespace: "condominio", release: "winker-prod" },
+            { cluster: null, namespace: "condominio", release: "winker-integration" },
         ]);
         assert.deepStrictEqual(config.amplify, { region: "us-east-1" });
     });
@@ -104,7 +104,7 @@ describe("Configuração do painel de deploys", () => {
             repo: null,
             branch: null,
             workflow: null,
-            releases: [{ namespace: "microservices-prod", release: "agua-gas" }],
+            releases: [{ cluster: null, namespace: "microservices-prod", release: "agua-gas" }],
         });
         // O projeto com origem continua como estava.
         assert.strictEqual(config.projects[0].source, "bitbucket");
@@ -168,6 +168,80 @@ describe("Configuração do painel de deploys", () => {
         const r3 = loadDeployBoardConfig({ DEPLOY_BOARD_CONFIG: wrong });
         assert.strictEqual(r3.status, "invalid");
         assert.strictEqual(r3.error, `${wrong}: namespaces: expected a non-empty list`);
+    });
+
+    test("outro cluster: release com prefixo vira cluster + namespace + nome, e o rótulo padrão é o nome em maiúsculas", () => {
+        const raw = variant({
+            clusters: [{ name: "oci", namespaces: ["ia-rag-prod", "ia-process-document-prod"] }],
+            projects: [
+                ...VALID.projects,
+                {
+                    name: "ia-rag",
+                    source: "bitbucket",
+                    repo: "winker/ia-rag",
+                    branch: "main",
+                    releases: ["oci:ia-rag-prod/rag-prod"],
+                },
+            ],
+        });
+        const { config, error } = validateDeployBoardConfig(raw);
+        assert.strictEqual(error, null);
+        assert.deepStrictEqual(config.clusters, [
+            { name: "oci", label: "OCI", namespaces: ["ia-rag-prod", "ia-process-document-prod"] },
+        ]);
+        assert.deepStrictEqual(config.projects[2].releases, [
+            { cluster: "oci", namespace: "ia-rag-prod", release: "rag-prod" },
+        ]);
+        // O EKS continua sem prefixo, como antes.
+        assert.strictEqual(config.projects[0].releases[0].cluster, null);
+        assert.deepStrictEqual(validateDeployBoardConfig(VALID).config.clusters, []);
+    });
+
+    test("outro cluster: a mensagem nomeia o campo", () => {
+        const ia = (releases) => ({ name: "ia-rag", releases });
+        const cases = [
+            [{ clusters: {} }, "clusters: expected a list"],
+            [
+                { clusters: [{ name: "OCI", namespaces: ["a"] }] },
+                'clusters[0].name: expected a lowercase name, e.g. "oci"',
+            ],
+            [
+                {
+                    clusters: [
+                        { name: "oci", namespaces: ["a"] },
+                        { name: "oci", namespaces: ["b"] },
+                    ],
+                },
+                'clusters[1].name: "oci" is repeated',
+            ],
+            [{ clusters: [{ name: "oci", namespaces: [] }] }, "clusters[0].namespaces: expected a non-empty list"],
+            [
+                { clusters: [{ name: "oci", label: "", namespaces: ["a"] }] },
+                "clusters[0].label: expected a text of up to 20 characters",
+            ],
+            [
+                { projects: [ia(["oci:ia-rag-prod/rag-prod"])] },
+                'projects[0].releases[0]: cluster "oci" is not in clusters',
+            ],
+            [
+                {
+                    clusters: [{ name: "oci", namespaces: ["ia-rag-prod"] }],
+                    projects: [ia(["oci:condominio/winker-prod"])],
+                },
+                'projects[0].releases[0]: namespace "condominio" is not in clusters "oci" namespaces',
+            ],
+            [
+                { clusters: [{ name: "oci", namespaces: ["ia-rag-prod"] }], projects: [ia(["ia-rag-prod/rag-prod"])] },
+                'projects[0].releases[0]: namespace "ia-rag-prod" is not in namespaces',
+            ],
+            [
+                { projects: [ia(["oci:x:y/z"])] },
+                'projects[0].releases[0]: expected "<namespace>/<release>" or "<cluster>:<namespace>/<release>"',
+            ],
+        ];
+        for (const [patch, message] of cases) {
+            assert.strictEqual(validateDeployBoardConfig(variant(patch)).error, message);
+        }
     });
 
     test("arquivo válido no disco: status ok", () => {
