@@ -3,17 +3,30 @@
         <header class="db-card-head">
             <span class="db-card-project">{{ deploy.project }}</span>
             <code v-if="deploy.version" class="db-card-version">{{ deploy.version }}</code>
-            <span v-if="noPipeline" class="db-card-tag" :title="$t('deployBoardNoPipelineHint')">
-                {{ $t("deployBoardLabelNoPipeline") }}
-            </span>
             <span class="db-card-label">
                 <font-awesome-icon v-if="tone === 'bad'" icon="exclamation-triangle" class="db-card-label-icon" />
                 {{ $t(labelKey) }}
             </span>
+            <button
+                v-if="dismissible"
+                type="button"
+                class="db-dismiss db-control"
+                :title="$t('deployBoardDismiss')"
+                :aria-label="$t('deployBoardDismiss')"
+                @click="$emit('dismiss', deploy.id)"
+            >
+                ✕
+            </button>
         </header>
 
         <p class="db-card-time">
-            <span>{{ timeText }}</span>
+            <span>
+                {{ timeText }}
+                <!-- Where the deploy came from, not a state: grey, in the subtitle. -->
+                <template v-if="noPipeline">
+                    · <span :title="$t('deployBoardNoPipelineHint')">{{ $t("deployBoardNoPipelineLinked") }}</span>
+                </template>
+            </span>
             <span v-if="steps" class="db-steps-count">{{ $t("deployBoardStepCount", [stepNumber, steps.length]) }}</span>
         </p>
 
@@ -33,7 +46,7 @@
         <section v-if="pipeline" class="db-pipeline" :class="'is-' + pipeline.state">
             <div class="db-pipeline-head">
                 <span class="db-pipeline-state">{{ $t(PIPELINE_KEYS[pipeline.state] || PIPELINE_KEYS.running) }}</span>
-                <a v-if="pipeline.url" class="db-pipeline-link" :href="pipeline.url" target="_blank" rel="noopener noreferrer">
+                <a v-if="pipeline.url" class="db-pipeline-link db-control" :href="pipeline.url" target="_blank" rel="noopener noreferrer">
                     {{ $t("deployBoardPipelineOpen") }}
                 </a>
             </div>
@@ -48,7 +61,7 @@
         </section>
 
         <ul class="db-card-releases">
-            <li v-for="r in deploy.releases" :key="r.namespace + '/' + r.release" class="db-release" :class="'is-' + stateClass(r.state)">
+            <li v-for="r in deploy.releases" :key="r.namespace + '/' + r.release" class="db-release" :class="['is-' + stateClass(r.state), { 'is-complete': r.desired > 0 && r.updated >= r.desired }]">
                 <span class="db-release-name">{{ r.release }}</span>
                 <template v-if="r.desired > 0">
                     <span class="db-release-count">{{ $t("deployBoardReleaseProgress", [r.updated, r.desired]) }}</span>
@@ -59,42 +72,23 @@
                 <span v-if="r.cronJobsUpdated > 0" class="db-release-cron">
                     {{ $t("deployBoardReleaseCronJobs", [r.cronJobsUpdated]) }}
                 </span>
-                <span v-if="r.atBoot" class="db-release-note">{{ $t("deployBoardFoundAtBoot") }}</span>
             </li>
         </ul>
+
+        <!-- Once per card, whatever the number of workloads found mid-rollout at boot. -->
+        <p v-if="deploy.releases.some((r) => r.atBoot)" class="db-card-note">ⓘ {{ $t("deployBoardFoundAtBootNote") }}</p>
 
         <p v-if="!deploy.confirmed && (deploy.links || deploy.releases).length" class="db-card-warning">
             {{ $t(pipeline?.source === "amplify" ? "deployBoardUnconfirmedAmplify" : "deployBoardUnconfirmed") }}
         </p>
 
-        <div v-if="deploy.rollback" class="db-rollback">
-            <button type="button" class="db-rollback-toggle" :aria-expanded="String(rollbackOpen)" @click="rollbackOpen = !rollbackOpen">
-                {{ $t("deployBoardRollbackButton") }}
-            </button>
-
-            <div v-if="rollbackOpen" class="db-rollback-body">
-                <template v-if="rollbackText">
-                    <pre ref="command" class="db-rollback-command"><code>{{ rollbackText }}</code></pre>
-                    <button type="button" class="db-rollback-copy" @click="copyRollback">
-                        {{ $t(copied ? "deployBoardRollbackCopied" : "deployBoardRollbackCopy") }}
-                    </button>
-                </template>
-
-                <ul class="db-rollback-notes">
-                    <li v-for="r in rollbackGaps" :key="r.namespace + '/' + r.release">
-                        {{ $t(GAP_KEYS[r.status], [r.release]) }}
-                    </li>
-                    <li v-if="rollbackText">{{ $t("deployBoardRollbackRunYourself") }}</li>
-                    <li v-if="rollbackCronJobs > 0">{{ $t("deployBoardRollbackCronJobs", [rollbackCronJobs]) }}</li>
-                    <li v-if="rollbackText">{{ $t("deployBoardRollbackNextDeploy") }}</li>
-                    <li v-if="rollbackKnown.length > 1">{{ $t("deployBoardRollbackDeleteRelease") }}</li>
-                </ul>
-            </div>
-        </div>
+        <RollbackPanel v-if="deploy.rollback" :rollback="deploy.rollback" />
     </article>
 </template>
 
 <script>
+import RollbackPanel from "./RollbackPanel.vue";
+
 /** Card label → i18n key. */
 const LABEL_KEYS = {
     rolling: "deployBoardLabelRolling",
@@ -149,19 +143,6 @@ const STEP_KEYS = {
     live: "deployBoardStepLive",
 };
 
-/** Why a release has no command → i18n key. */
-const GAP_KEYS = {
-    unknown: "deployBoardRollbackUnknown",
-    unchanged: "deployBoardRollbackUnchanged",
-    cronOnly: "deployBoardRollbackCronOnly",
-};
-
-/** A tag that is a commit is shown short, as the card shows the version. */
-const SHA_RE = /^[0-9a-f]{7,40}$/;
-
-/** How long "Copied" stays on the button. */
-const COPIED_MS = 2000;
-
 /** Deploy state → tone of the card. */
 const TONES = {
     updating: "rolling",
@@ -175,6 +156,10 @@ const TONES = {
 };
 
 export default {
+    components: {
+        RollbackPanel,
+    },
+
     props: {
         /** Deploy from the board snapshot */
         deploy: {
@@ -191,49 +176,23 @@ export default {
             type: Function,
             required: true,
         },
+        /** A failure stays on screen until someone dismisses it: the card offers the button */
+        dismissible: {
+            type: Boolean,
+            default: false,
+        },
     },
+
+    emits: ["dismiss"],
 
     data() {
         return {
-            GAP_KEYS,
             PIPELINE_KEYS,
             STEP_KEYS,
-            rollbackOpen: false,
-            copied: false,
         };
     },
 
     computed: {
-        /** @returns {object[]} Releases with a command to go back */
-        rollbackKnown() {
-            return this.deploy.rollback.releases.filter((r) => r.status === "known");
-        },
-
-        /** @returns {object[]} Releases without one, to say why */
-        rollbackGaps() {
-            return this.deploy.rollback.releases.filter((r) => r.status !== "known");
-        },
-
-        /** @returns {number} CronJobs of the deploy that the command leaves on the new version */
-        rollbackCronJobs() {
-            return this.deploy.rollback.releases.reduce((n, r) => n + r.cronJobs, 0);
-        },
-
-        /**
-         * The text to copy: per release, a comment naming it, the `set image` lines and then the
-         * `rollout status` lines. Empty when no release has a previous version.
-         * @returns {string} Command.
-         */
-        rollbackText() {
-            return this.rollbackKnown
-                .map((r) => {
-                    const previous = SHA_RE.test(r.previous) ? r.previous.slice(0, 7) : r.previous;
-                    const head = `# ${this.$t("deployBoardRollbackComment", [`${r.namespace}/${r.release}`, previous])}`;
-                    return [head, ...r.setImage, ...r.rolloutStatus].join("\n");
-                })
-                .join("\n\n");
-        },
-
         /**
          * "No pipeline" is a fact about where the deploy came from, not a state: it goes beside the
          * label, in neutral, and the label keeps saying how the rollout is going.
@@ -307,10 +266,6 @@ export default {
         },
     },
 
-    beforeUnmount() {
-        clearTimeout(this.copiedTimer);
-    },
-
     methods: {
         /**
          * @param {object} job Job of the pipeline.
@@ -323,32 +278,6 @@ export default {
             }
             const until = job.endedAt || this.now;
             return `${state} · ${this.formatDuration(until - job.startedAt)}`;
-        },
-
-        /**
-         * Copy the command. Where the browser refuses the clipboard, the text is selected for Ctrl+C.
-         * @returns {void}
-         */
-        copyRollback() {
-            const done = () => {
-                this.copied = true;
-                clearTimeout(this.copiedTimer);
-                this.copiedTimer = setTimeout(() => {
-                    this.copied = false;
-                }, COPIED_MS);
-            };
-            const select = () => {
-                const range = document.createRange();
-                range.selectNodeContents(this.$refs.command);
-                const selection = window.getSelection();
-                selection.removeAllRanges();
-                selection.addRange(range);
-            };
-            if (navigator.clipboard?.writeText) {
-                navigator.clipboard.writeText(this.rollbackText).then(done, select);
-            } else {
-                select();
-            }
         },
 
         /**
@@ -373,9 +302,9 @@ export default {
 <style lang="scss" scoped>
 .db-card {
     display: grid;
-    gap: 0.45em;
-    padding: 0.8em 1em;
-    border-radius: 10px;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 14px;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
     border-left: 4px solid var(--db-deploy);
@@ -400,42 +329,25 @@ export default {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.2em 0.6em;
+    gap: 4px 8px;
 }
 
 .db-card-project {
-    font-size: 1.15em;
-    font-weight: 800;
+    font-size: 17px;
+    font-weight: 700;
     overflow-wrap: anywhere;
 }
 
 .db-card-version {
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-2);
-}
-
-.db-card-tag {
-    margin-left: auto;
-    padding: 0.05em 0.5em;
-    border: 1px solid var(--db-line-2);
-    border-radius: 0.6em;
-    font-size: 0.72em;
-    font-weight: 700;
-    color: var(--db-ink-3);
-    white-space: nowrap;
 }
 
 .db-card-label {
     margin-left: auto;
-    font-size: 0.8em;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-size: 13.5px;
+    font-weight: 600;
     color: var(--db-deploy);
-
-    .db-card-tag + & {
-        margin-left: 0;
-    }
 
     .is-ok & {
         color: var(--db-ok);
@@ -451,16 +363,16 @@ export default {
 }
 
 .db-card-label-icon {
-    margin-right: 0.2em;
+    margin-right: 4px;
 }
 
 .db-card-time {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: 0.2em 0.8em;
+    gap: 4px 12px;
     margin: 0;
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
@@ -473,23 +385,23 @@ export default {
 .db-steps {
     display: grid;
     grid-template-columns: repeat(var(--db-steps), minmax(0, 1fr));
-    gap: 0.3em;
-    margin: 0.1em 0 0.15em;
+    gap: 4px;
+    margin: 4px 0 4px;
     padding: 0;
     list-style: none;
 }
 
 .db-step {
     display: grid;
-    gap: 0.3em;
+    gap: 4px;
     min-width: 0;
-    font-size: 0.72em;
+    font-size: 12.5px;
     color: var(--db-ink-3);
 
     i {
         display: block;
         height: 0.45rem;
-        border-radius: 0.2rem;
+        border-radius: 2px;
         background: var(--db-panel-2);
     }
 
@@ -499,11 +411,12 @@ export default {
         white-space: nowrap;
     }
 
+    // The track is the deploy's own colour: steps done solid, the current one pulsing, the rest grey.
     &.is-done {
         color: var(--db-ink-2);
 
         i {
-            background: var(--db-ok);
+            background: var(--db-deploy);
         }
     }
 
@@ -516,7 +429,7 @@ export default {
     &.is-current,
     &.is-warn,
     &.is-failed {
-        font-weight: 800;
+        font-weight: 700;
     }
 
     &.is-current {
@@ -553,7 +466,7 @@ export default {
 
 .db-card-releases {
     display: grid;
-    gap: 0.35em;
+    gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -563,8 +476,8 @@ export default {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 0.15em 0.6em;
-    font-size: 0.9em;
+    gap: 4px 8px;
+    font-size: 13.5px;
 }
 
 .db-release-name {
@@ -579,8 +492,8 @@ export default {
 
 .db-release-bar {
     grid-column: 1 / -1;
-    height: 0.4em;
-    border-radius: 0.2em;
+    height: 4px;
+    border-radius: 2px;
     background: var(--db-panel-2);
     overflow: hidden;
 
@@ -591,7 +504,8 @@ export default {
         transition: width 0.6s ease;
     }
 
-    .is-done & i {
+    .is-done & i,
+    .is-complete & i {
         background: var(--db-ok);
     }
 
@@ -604,27 +518,26 @@ export default {
     }
 }
 
-.db-release-cron,
-.db-release-note {
+.db-release-cron {
     grid-column: 1 / -1;
-    font-size: 0.9em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
 .db-card-warning {
     margin: 0;
-    font-size: 0.85em;
+    font-size: 13.5px;
     font-weight: 600;
     color: var(--db-warn);
 }
 
 .db-pipeline {
     display: grid;
-    gap: 0.25em;
-    padding: 0.5em 0.7em;
-    border-radius: 6px;
+    gap: 4px;
+    padding: 8px 12px;
+    border-radius: 8px;
     background: var(--db-panel-2);
-    font-size: 0.88em;
+    font-size: 13.5px;
     min-width: 0;
 }
 
@@ -633,7 +546,7 @@ export default {
     flex-wrap: wrap;
     align-items: baseline;
     justify-content: space-between;
-    gap: 0.2em 0.8em;
+    gap: 4px 12px;
 }
 
 .db-pipeline-state {
@@ -652,7 +565,7 @@ export default {
 
 .db-pipeline-link {
     color: var(--db-ink-2);
-    font-size: 0.92em;
+    font-size: 13.5px;
 
     &:hover {
         color: var(--db-brand);
@@ -672,8 +585,8 @@ export default {
 
 .db-jobs {
     display: grid;
-    gap: 0.15em;
-    margin: 0.2em 0 0;
+    gap: 4px;
+    margin: 4px 0 0;
     padding: 0;
     list-style: none;
 }
@@ -681,7 +594,7 @@ export default {
 .db-job {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.6em;
+    gap: 8px;
     color: var(--db-ink-2);
 
     &.is-failed .db-job-state {
@@ -701,65 +614,31 @@ export default {
     font-variant-numeric: tabular-nums;
 }
 
-.db-rollback {
-    display: grid;
-    gap: 0.5em;
-    justify-items: start;
-    min-width: 0;
+.db-card-note {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--db-ink-3);
 }
 
-.db-rollback-toggle,
-.db-rollback-copy {
-    padding: 0.25em 0.7em;
+.db-dismiss {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
     border: 1px solid var(--db-line-2);
-    border-radius: 6px;
-    background: var(--db-panel-2);
-    color: var(--db-ink);
+    border-radius: 999px;
+    background: var(--db-panel);
+    color: var(--db-ink-2);
     font: inherit;
-    font-size: 0.85em;
-    font-weight: 600;
+    font-size: 12.5px;
+    line-height: 1;
     cursor: pointer;
 
-    &:hover {
-        border-color: var(--db-brand);
-    }
-
     &:focus-visible {
-        outline: 2px solid var(--db-brand);
+        outline: 2px solid var(--db-deploy);
         outline-offset: 2px;
     }
-}
-
-.db-rollback-body {
-    display: grid;
-    gap: 0.5em;
-    justify-items: start;
-    width: 100%;
-    min-width: 0;
-}
-
-.db-rollback-command {
-    width: 100%;
-    max-height: 18em;
-    margin: 0;
-    padding: 0.6em 0.8em;
-    overflow: auto;
-    border: 1px solid var(--db-line);
-    border-radius: 6px;
-    background: var(--db-bg);
-    color: var(--db-ink);
-    font-size: 0.8em;
-    line-height: 1.5;
-    white-space: pre;
-}
-
-.db-rollback-notes {
-    display: grid;
-    gap: 0.2em;
-    margin: 0;
-    padding-left: 1.1em;
-    font-size: 0.85em;
-    color: var(--db-ink-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

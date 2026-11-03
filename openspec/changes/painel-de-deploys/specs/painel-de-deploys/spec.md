@@ -35,9 +35,11 @@ hoje. O painel SHALL NOT importar nem alterar `StatusPage.vue` nem `StatusPageTv
 Em tela larga, o painel SHALL dividir a tela em duas colunas: deploys numa coluna estreita à
 esquerda (até cerca de 30% da largura) e monitores à direita no restante.
 
-Numa tela de 1920 × 1080, os 34 monitores da status page `winker` SHALL caber todos sem paginar.
-Quando a quantidade de monitores passar da capacidade da coluna, o painel SHALL paginar, com a
-capacidade medida no DOM e nunca constante, sem cortar cartão.
+Os monitores SHALL ficar numa superfície só, dividida em 3 colunas (2 abaixo de 1180 px, 1 no
+celular), preenchida de cima para baixo e coluna por coluna, com a última coluna completada por
+células vazias para as linhas alinharem. Cada monitor é uma linha (nome à esquerda, barras à
+direita) e as linhas dividem a altura disponível: numa tela de 1920 × 1080 todos cabem, sem paginar e
+sem rolar. Um monitor SHALL ficar sempre no mesmo lugar, qualquer que seja o estado dele.
 
 Em tela estreita, as colunas SHALL empilhar (deploys em cima), com rolagem vertical normal e
 nenhuma rolagem horizontal.
@@ -46,9 +48,9 @@ nenhuma rolagem horizontal.
 - **WHEN** o painel é aberto em 1920 × 1080 com a status page `winker` (34 monitores) e três deploys ativos
 - **THEN** os 34 monitores aparecem na mesma tela, sem indicador de página, e nenhum cartão de deploy fica cortado
 
-#### Scenario: Mais monitores do que cabem
-- **WHEN** a status page tem mais monitores do que a coluna comporta na altura disponível
-- **THEN** a coluna pagina sozinha e mostra "página X de Y", e nenhuma página corta cartão
+#### Scenario: Monitor cai
+- **WHEN** o monitor "Superlógica" fica fora do ar
+- **THEN** ele continua na mesma linha da grade, com a pílula "▲ Fora do ar" e a linha em vermelho claro
 
 #### Scenario: Celular
 - **WHEN** o painel é aberto com 400 px de largura
@@ -110,7 +112,9 @@ de uma tag `deploy`. Mudar a tag na tela do monitor SHALL refletir no painel sem
 
 ### Requirement: O destaque de queda diz se havia deploy
 
-Cada monitor no destaque SHALL mostrar há quanto tempo está no estado e uma linha sobre deploy:
+Com ao menos um monitor fora do ar, uma faixa acima da grade SHALL dizer quais (até 3, e "+N" para
+o resto), quantas verificações seguidas falharam e há quanto tempo está fora (mm:ss), e SHALL sumir
+quando todos voltarem. A faixa SHALL dizer, do que está fora há mais tempo, uma linha sobre deploy:
 "Deploy de <projeto> em andamento", "Começou <n> min depois da virada de <release>" (virada
 concluída até 60 min antes do início da queda), "Nenhum deploy relacionado na última hora" ou
 "Este monitor não tem deploy associado".
@@ -134,16 +138,18 @@ quando a fonte informar) e, para projetos no cluster, uma linha por release com
 "<atualizados>/<réplicas> na versão nova" e o estado da virada. Quando a pipeline já terminou e a
 virada continua, o cartão SHALL dizer isso explicitamente.
 
-Rótulos do cartão: "Na pipeline", "Virando no cluster", "Sem progresso", "Virada travada",
-"Falhou" e "No ar". Virada sem pipeline correspondente SHALL manter o rótulo do estado dela e
-mostrar ao lado uma etiqueta neutra "Sem pipeline": é um fato sobre a origem do deploy, não um
-estado, e não usa a cor de falha.
+Rótulos do cartão: "Na pipeline", "Virando no cluster", "Sem progresso", "Virada travada" e
+"Falhou". Virada sem pipeline correspondente SHALL manter o rótulo do estado dela e dizer "sem
+pipeline vinculado" em cinza no subtítulo: é um fato sobre a origem do deploy, não um estado, e
+não usa a cor de falha.
 
 Cores e formas do painel: verde é saudável ou concluído; azul é deploy em andamento, nos cartões
 da esquerda e na marca "em deploy" dos monitores da direita; âmbar é atenção; vermelho é só falha
 de verdade (fora do ar, pipeline que falhou, virada travada) e vem com um triângulo, para não
 depender só da cor. O magenta é da marca, não de estado. Monitor no ar não escreve "Normal": a cor
-diz; só a exceção tem texto.
+diz; só a exceção tem texto, numa pílula dentro da linha. Movimento só no deploy rodando, no
+monitor fora do ar e na etapa atual, e os botões (som, tema, "abrir", "Como voltar") somem sem
+ninguém na tela e voltam com o mouse, um toque ou uma tecla.
 
 Quando a fonte de pipeline do projeto (Bitbucket ou GitHub) não está configurada, ou o projeto não
 tem origem de pipeline na configuração, o cartão SHALL
@@ -156,7 +162,7 @@ de pipeline ali é falta de fonte, não deploy manual.
 
 #### Scenario: Virada manual
 - **WHEN** a fonte de pipeline do projeto está configurada e uma release dele muda de revisão sem pipeline correspondente
-- **THEN** o cartão aparece com o rótulo do estado da virada ("Virando no cluster", "Virada travada"...), a etiqueta neutra "Sem pipeline" ao lado e as três primeiras etapas puladas
+- **THEN** o cartão aparece com o rótulo do estado da virada ("Virando no cluster", "Virada travada"...), "sem pipeline vinculado" em cinza no subtítulo e as três primeiras etapas puladas
 
 #### Scenario: Pipeline ainda não ligada
 - **WHEN** a fonte de pipeline do projeto não está configurada e uma release dele muda de revisão
@@ -199,14 +205,18 @@ o navegador só desenha.
 
 ### Requirement: Ordem e ciclo de vida dos cartões
 
-Os cartões SHALL aparecer nesta ordem: com falha, travados, em andamento, concluídos. Um deploy
-concluído SHALL ficar visível por 10 minutos e depois sair para a lista "Hoje". Um cartão de falha
-ou de virada travada SHALL sair sozinho quando um deploy posterior do mesmo projeto concluir com
-sucesso, e SHALL NOT exigir clique para sair.
+Só deploy rodando e deploy com falha SHALL ser cartão: com falha primeiro, sob "Com falha", e os
+rodando sob "Em andamento"; sem nenhum, a coluna mostra só o histórico. Um deploy que fica no ar
+SHALL virar a primeira linha das "Últimas 24 horas", destacada em verde por 15 minutos, com o "Como
+voltar" nela. Um cartão de falha ou de virada travada SHALL ficar até alguém dispensar (o ✕ do
+cartão, gravado no navegador; o cabeçalho deixa de contá-lo) ou até um deploy posterior do mesmo
+projeto concluir com sucesso, o que vier primeiro.
 
-A lista "Hoje" SHALL mostrar os deploys encerrados nas últimas 24 horas (projeto, SHA curto,
-desfecho, duração e há quanto tempo), os mais recentes primeiro. Um deploy da lista SHALL voltar
-para a coluna de cartões quando uma virada do mesmo projeto e do mesmo SHA começar.
+As "Últimas 24 horas" SHALL mostrar os deploys encerrados nas últimas 24 horas em quatro colunas
+(✓/✕, projeto e SHA curto, duração, há quanto tempo), os mais recentes primeiro. Duração
+desconhecida (virou com o painel fora do ar) SHALL ser "—", com uma nota só abaixo da lista. Um
+deploy da lista SHALL voltar para a coluna de cartões quando uma virada do mesmo projeto e do mesmo
+SHA começar.
 
 #### Scenario: Integration e prod do mesmo commit, 26 minutos depois
 - **WHEN** o `winker-integration` concluiu o commit `9ee108f`, o deploy já saiu para a lista "Hoje", e 26 minutos depois o `winker-prod` começa a virar o mesmo commit
@@ -214,7 +224,11 @@ para a coluna de cartões quando uma virada do mesmo projeto e do mesmo SHA come
 
 #### Scenario: Falha resolvida por deploy novo
 - **WHEN** o connector-server tem uma virada travada e um deploy posterior dele conclui
-- **THEN** o cartão travado sai do painel e os dois deploys aparecem na lista "Hoje"
+- **THEN** o cartão travado sai do painel sozinho e os dois deploys aparecem nas "Últimas 24 horas"
+
+#### Scenario: Falha que ninguém consertou
+- **WHEN** a pipeline do api_gateway falha e nenhum deploy dele conclui depois
+- **THEN** o cartão fica até alguém clicar no ✕, mesmo depois de o servidor mandar o deploy para o histórico
 
 ### Requirement: O painel não afirma o que não leu
 

@@ -1,5 +1,5 @@
 <template>
-    <div class="deploy-board" :class="{ 'is-dark': $root.isDark, 'is-wall': wall }">
+    <div class="deploy-board" :class="{ 'is-dark': $root.isDark, 'is-wall': wall, 'is-idle': idle }">
         <div v-if="!$root.loggedIn" class="db-login">
             <Login v-if="$root.allowLoginDialog" />
         </div>
@@ -15,25 +15,19 @@
                     <h1 class="db-title">{{ $t("deployBoardTitle") }}</h1>
                 </div>
 
-                <div class="db-verdict" :data-tone="servicesVerdict.tone">
-                    <span class="db-verdict-dot"></span>
-                    <span class="db-verdict-key">{{ $t("deployBoardServices") }}</span>
-                    <span class="db-verdict-title">{{ servicesVerdict.title }}</span>
-                    <span class="db-verdict-sub">{{ servicesVerdict.sub }}</span>
-                </div>
-
-                <div class="db-verdict" :data-tone="deploysVerdict.tone">
-                    <span class="db-verdict-dot"></span>
-                    <span class="db-verdict-key">{{ $t("deployBoardDeploys") }}</span>
-                    <span class="db-verdict-title">{{ deploysVerdict.title }}</span>
-                    <span class="db-verdict-sub">{{ deploysVerdict.sub }}</span>
-                </div>
-
-                <div v-if="stats" class="db-verdict db-stats" data-tone="muted" :title="statsDetail">
-                    <span class="db-verdict-dot"></span>
-                    <span class="db-verdict-key">{{ $t("deployBoardStatsKey") }}</span>
-                    <span class="db-verdict-title">{{ $t("deployBoardStatsTotal", stats.total) }}</span>
-                    <span class="db-verdict-sub">{{ statsSuccess }}</span>
+                <!-- One bar, three readings. A dot only where it says something: never for "no deploy". -->
+                <div class="db-summary">
+                    <div v-for="seg in summary" :key="seg.id" class="db-seg" :data-tone="seg.tone" :title="seg.hint || null">
+                        <span class="db-seg-key">{{ seg.key }}</span>
+                        <span class="db-seg-value">
+                            <span v-if="seg.dot" class="db-dot" :class="'is-' + seg.tone" aria-hidden="true"></span>
+                            {{ seg.title }}
+                        </span>
+                        <span class="db-seg-sub">
+                            <b v-if="seg.rate !== undefined" class="db-seg-rate" :class="{ 'is-ok': seg.rate === 100 }">{{ seg.rate }}%</b>
+                            {{ seg.sub }}
+                        </span>
+                    </div>
                 </div>
 
                 <div class="db-clock">
@@ -45,7 +39,7 @@
                     <span v-if="soundOn && soundBlocked" class="db-sound-blocked">{{ $t("deployBoardSoundBlocked") }}</span>
                     <button
                         type="button"
-                        class="db-theme db-sound"
+                        class="db-theme db-sound db-control"
                         :class="{ 'is-on': soundOn, 'is-blocked': soundOn && soundBlocked }"
                         :title="soundToggleTitle"
                         :aria-label="soundToggleLabel"
@@ -56,7 +50,7 @@
                     </button>
                     <button
                         type="button"
-                        class="db-theme"
+                        class="db-theme db-control"
                         :title="themeToggleLabel"
                         :aria-label="themeToggleLabel"
                         @click="toggleTheme"
@@ -67,7 +61,13 @@
             </header>
 
             <main class="db-main">
-                <DeployColumn :board="board" :now="now" :format-duration="formatDuration" />
+                <DeployColumn
+                    :board="board"
+                    :failures="failures"
+                    :now="now"
+                    :format-duration="formatDuration"
+                    @dismiss="dismiss"
+                />
 
                 <section
                     class="db-services"
@@ -75,25 +75,18 @@
                     :aria-label="$t('deployBoardServices')"
                 >
                     <div class="db-services-head">
-                        <h2 class="db-section-title">{{ $t("deployBoardServices") }}</h2>
-                        <span class="db-legend">
-                            <span class="db-legend-item is-up">{{ $t("deployBoardStatusUp") }}</span>
-                            <span class="db-legend-item is-pending">{{ $t("deployBoardStatusPending") }}</span>
-                            <span class="db-legend-item is-down">{{ $t("deployBoardStatusDown") }}</span>
-                            <span class="db-legend-item is-maintenance">{{ $t("deployBoardStatusMaintenance") }}</span>
-                            <span>{{ $t("deployBoardBeatsHint") }}</span>
-                        </span>
-                        <span v-if="paging.pages > 1" class="db-page">
-                            {{ $t("deployBoardPage", [paging.page, paging.pages]) }}
-                        </span>
+                        <h2 class="db-section-title">
+                            {{ $t("deployBoardServices") }}
+                            <span v-if="curationLoaded" class="db-section-count">{{ $t("deployBoardMonitorCount", monitors.length) }}</span>
+                        </h2>
                     </div>
 
                     <p v-if="!kumaConnected" class="db-warning">{{ $t("deployBoardKumaNoReadDetail") }}</p>
                     <p v-else-if="curationFailed" class="db-warning">{{ $t("deployBoardCurationFailed") }}</p>
 
                     <div class="db-services-body">
-                        <IncidentBlock v-if="promoted.length" :monitors="promoted" />
-                        <MonitorGrid :monitors="gridMonitors" :fill="wall" @paging="paging = $event" />
+                        <AlertBand v-if="downMonitors.length" :monitors="downMonitors" :now="now" />
+                        <MonitorGrid :monitors="gridMonitors" :fill="wall" />
                     </div>
                 </section>
             </main>
@@ -113,7 +106,7 @@ import axios from "axios";
 import dayjs from "dayjs";
 import Login from "../components/Login.vue";
 import MonitorGrid from "../components/deploy-board/MonitorGrid.vue";
-import IncidentBlock from "../components/deploy-board/IncidentBlock.vue";
+import AlertBand from "../components/deploy-board/AlertBand.vue";
 import DeployColumn from "../components/deploy-board/DeployColumn.vue";
 import SourcesFooter from "../components/deploy-board/SourcesFooter.vue";
 import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
@@ -135,6 +128,31 @@ const BOARD_RETRY_MS = 2000;
 
 /** Width from which the board is a one-screen wall layout. Mirrors the media query below. */
 const WALL_QUERY = "(min-width: 1180px)";
+
+/** The buttons fade out this long after the last mouse move, touch or key. */
+const IDLE_MS = 2500;
+
+/** What counts as someone at the screen. */
+const ACTIVITY_EVENTS = ["mousemove", "pointerdown", "touchstart", "keydown"];
+
+/** States and outcomes that are a failure: a card that stays until someone dismisses it. */
+const FAILED = ["failed", "stuck"];
+
+/** Where this browser keeps the failures someone dismissed. */
+const DISMISSED_KEY = "deployBoardDismissed";
+const DISMISSED_MAX = 200;
+
+/**
+ * @returns {string[]} Ids of the dismissed failures (empty when the browser keeps nothing).
+ */
+function dismissedSaved() {
+    try {
+        const ids = JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]");
+        return Array.isArray(ids) ? ids : [];
+    } catch (e) {
+        return [];
+    }
+}
 
 /** Where this browser remembers that sound is on. */
 const SOUND_KEY = "deployBoardSound";
@@ -162,7 +180,7 @@ export default {
     components: {
         Login,
         MonitorGrid,
-        IncidentBlock,
+        AlertBand,
         DeployColumn,
         SourcesFooter,
     },
@@ -177,7 +195,8 @@ export default {
             board: null,
             now: Date.now(),
             wall: window.matchMedia(WALL_QUERY).matches,
-            paging: { page: 1, pages: 1 },
+            idle: false,
+            dismissed: dismissedSaved(),
             soundOn: soundSaved(),
             // After a reload the browser plays nothing until someone clicks the page.
             soundBlocked: soundSaved() && !navigator.userActivation?.hasBeenActive,
@@ -195,25 +214,65 @@ export default {
             return this.curated.map((entry) => this.liveMonitor(entry));
         },
 
-        /** @returns {object[]} Down and pending monitors, promoted above the grid */
-        promoted() {
+        /**
+         * Monitors that are down, the longest down first, for the band above the grid. Pending ones
+         * only get their pill: the band is for what is out.
+         * @returns {object[]} Monitors with their deploy line
+         */
+        downMonitors() {
             return this.monitors
-                .filter((m) => m.tone === "down" || m.tone === "pending")
-                .sort((a, b) => (a.tone === b.tone ? (a.since || 0) - (b.since || 0) : a.tone === "down" ? -1 : 1))
-                .map((m) => ({
-                    ...m,
-                    stateText: m.since
-                        ? this.$t("deployBoardStateFor", [m.label, this.formatDuration(this.now - m.since)])
-                        : m.label,
-                    deployLine: this.incidentDeployLine(m),
-                }));
+                .filter((m) => m.tone === "down")
+                .sort((a, b) => (a.since ?? Infinity) - (b.since ?? Infinity))
+                .map((m) => ({ ...m, deployLine: this.incidentDeployLine(m) }));
         },
 
-        /** @returns {object[]} Monitors that stay in the grid, with their deploy mark */
+        /**
+         * Failed and stuck deploys nobody dismissed nor fixed: the ones on screen with their whole card, and the
+         * ones the server already moved to the history with what the history keeps. The column draws
+         * them and the header counts them, so dismissing one quiets both.
+         * @returns {object[]} Deploys, as DeployCard takes them
+         */
+        failures() {
+            if (!this.board) {
+                return [];
+            }
+            // A stuck rollout still on the server's screen is still happening: it leaves when the
+            // server moves it to the history, not when someone dismisses it.
+            const live = this.board.deploys
+                .filter((d) => FAILED.includes(d.state))
+                .map((d) => ({ ...d, dismissible: d.state !== "stuck" }));
+            const seen = new Set(live.map((d) => d.id));
+            const past = this.board.history
+                .filter((h) => FAILED.includes(h.outcome) && !seen.has(h.id))
+                .map((h) => ({
+                    id: h.id,
+                    project: h.project,
+                    version: h.version,
+                    state: h.outcome,
+                    label: h.outcome,
+                    missed: h.missed,
+                    startedAt: h.startedAt,
+                    endedAt: h.endedAt,
+                    confirmed: true,
+                    releases: (h.releases || []).map((r) => ({ ...r, updated: 0, desired: 0, cronJobsUpdated: 0 })),
+                    links: h.links,
+                    rollback: null,
+                    pipeline: null,
+                    steps: null,
+                    dismissible: true,
+                }));
+            // A failure a later deploy of the same project fixed leaves by itself; one nobody fixed
+            // stays until someone dismisses it.
+            const fixed = (f) =>
+                [...this.board.deploys.filter((d) => d.state === "done"), ...this.board.history.filter((h) => h.outcome === "done")].some(
+                    (d) => d.project === f.project && d.startedAt > f.startedAt
+                );
+            return [...live, ...past].filter((d) => !(d.dismissible && this.dismissed.includes(d.id)) && !fixed(d));
+        },
+
+        /** @returns {object[]} Every monitor in its place, with its deploy mark: none leaves the grid */
         gridMonitors() {
-            return this.monitors
-                .filter((m) => m.tone !== "down" && m.tone !== "pending")
-                .map((m) => ({ ...m, mark: this.deployMark(m) }));
+            return this.monitors.map((m) => ({ ...m, mark: this.deployMark(m) }));
         },
 
         /** @returns {{tone: string, title: string, sub: string}} Services verdict of the top bar */
@@ -222,7 +281,7 @@ export default {
                 return {
                     tone: "muted",
                     title: this.$t("deployBoardKumaNoRead"),
-                    sub: this.$t("deployBoardKumaNoReadDetail"),
+                    sub: this.$t("deployBoardKumaNoReadShort"),
                 };
             }
             if (!this.curationLoaded) {
@@ -248,18 +307,38 @@ export default {
             return { tone: "ok", title: this.$t("deployBoardServicesAllUp"), sub };
         },
 
+        /**
+         * The three segments of the top bar. The services and deploys ones carry a dot only for a
+         * state (normal, running, failing); "no deploy now" and the counters have none.
+         * @returns {object[]} Segments: key, title, sub, tone, dot, rate, hint.
+         */
+        summary() {
+            const segments = [
+                { id: "services", key: this.$t("deployBoardServices"), ...this.servicesVerdict },
+                { id: "deploys", key: this.$t("deployBoardDeploys"), ...this.deploysVerdict },
+            ];
+            for (const seg of segments) {
+                seg.dot = seg.tone !== "idle" && seg.tone !== "muted";
+            }
+            if (this.stats) {
+                const rate = this.stats.successRate;
+                segments.push({
+                    id: "stats",
+                    key: this.$t("deployBoardStatsKey"),
+                    title: this.$t("deployBoardStatsTotal", this.stats.total),
+                    sub: rate === null ? this.$t("deployBoardStatsSuccessNone") : this.$t("deployBoardStatsSuccessWord"),
+                    rate: rate === null ? undefined : rate,
+                    tone: "idle",
+                    dot: false,
+                    hint: this.statsDetail,
+                });
+            }
+            return segments;
+        },
+
         /** @returns {object|null} Counters of the last 24 hours, from the server */
         stats() {
             return this.board ? this.board.stats : null;
-        },
-
-        /** @returns {string} "Success: 92% (11 of 12)", or a dash with nothing ended */
-        statsSuccess() {
-            const s = this.stats;
-            if (s.successRate === null) {
-                return this.$t("deployBoardStatsSuccessNone");
-            }
-            return this.$t("deployBoardStatsSuccess", [s.successRate, s.done, s.done + s.stuck + s.failed]);
         },
 
         /** @returns {string} Every counter, for the tooltip */
@@ -302,22 +381,31 @@ export default {
                 return { tone: "muted", title: this.$t("deployBoardNoSourcesShort"), sub: "" };
             }
             const verdicts = [
-                [(d) => d.state === "failed", "bad", "deployBoardVerdictFailed"],
-                [(d) => d.state === "stuck", "bad", "deployBoardVerdictStuck"],
+                [(d) => d.state === "failed", "bad", "deployBoardVerdictFailed", this.failures],
+                [(d) => d.state === "stuck", "bad", "deployBoardVerdictStuck", this.failures],
                 [(d) => d.state === "noProgress", "warn", "deployBoardVerdictNoProgress"],
                 [(d) => d.label === "noRollout", "warn", "deployBoardVerdictNoRollout"],
                 [(d) => ["updating", "pipeline", "built"].includes(d.state), "rolling", "deployBoardVerdictRolling"],
             ];
-            for (const [matches, tone, key] of verdicts) {
-                const deploys = this.board.deploys.filter(matches);
+            for (const [matches, tone, key, from = this.board.deploys] of verdicts) {
+                const deploys = from.filter(matches);
                 if (deploys.length) {
-                    return { tone, title: this.$t(key, [deploys.length]), sub: projectNames(deploys) };
+                    const sub =
+                        tone === "rolling"
+                            ? deploys.map((d) => [d.project, this.stepName(d)].filter(Boolean).join(" · ")).join(", ")
+                            : projectNames(deploys);
+                    return { tone, title: this.$t(key, [deploys.length]), sub };
                 }
             }
             if (this.board.sources.cluster.state === "stale") {
                 return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
             }
-            return { tone: "ok", title: this.$t("deployBoardNoDeploys"), sub: "" };
+            // Nothing running is not news: grey, with no dot.
+            const last = [...this.board.deploys, ...this.board.history]
+                .filter((d) => d.endedAt)
+                .sort((a, b) => b.endedAt - a.endedAt)[0];
+            const sub = last ? this.$t("deployBoardLastDeploy", [last.project, this.formatDuration(this.now - last.endedAt)]) : "";
+            return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), sub };
         },
 
         /**
@@ -400,6 +488,18 @@ export default {
         };
         document.addEventListener("pointerdown", this.onFirstGesture);
         document.addEventListener("keydown", this.onFirstGesture);
+        // Seen from across the room the buttons are noise: they show while someone is at the screen.
+        this.onActivity = () => {
+            this.idle = false;
+            clearTimeout(this.idleTimer);
+            this.idleTimer = setTimeout(() => {
+                this.idle = true;
+            }, IDLE_MS);
+        };
+        for (const name of ACTIVITY_EVENTS) {
+            document.addEventListener(name, this.onActivity, { passive: true });
+        }
+        this.onActivity();
         this.slug = String(this.$route.params.slug || "").toLowerCase();
         this.clockTimer = setInterval(() => {
             this.now = Date.now();
@@ -432,6 +532,10 @@ export default {
         this.wallQuery?.removeEventListener("change", this.onWallChange);
         document.removeEventListener("pointerdown", this.onFirstGesture);
         document.removeEventListener("keydown", this.onFirstGesture);
+        for (const name of ACTIVITY_EVENTS) {
+            document.removeEventListener(name, this.onActivity);
+        }
+        clearTimeout(this.idleTimer);
         this.player.stop();
         this.releaseAwake?.();
         if (this.onBoardUpdate) {
@@ -580,6 +684,7 @@ export default {
                 tone,
                 label: this.$t(LABEL_KEYS[tone]),
                 since: last ? sinceOf(list) : null,
+                downChecks: tone === "down" ? runLength(list) : 0,
                 beats: beatsOf(list),
             };
         },
@@ -602,7 +707,7 @@ export default {
         },
 
         /**
-         * Line about deploys in the highlight of a monitor that is down or pending. Omitted when a
+         * Line about deploys in the alert band of a monitor that is down. Omitted when a
          * source of its tags is not being read: "no related deploy" can only be said by who reads it.
          * @param {object} monitor Live monitor.
          * @returns {string|null} The line, or null.
@@ -637,6 +742,30 @@ export default {
         },
 
         /**
+         * Take a failure off the screen, in this browser: its card and its count in the header.
+         * @param {string} id Deploy id.
+         * @returns {void}
+         */
+        dismiss(id) {
+            this.dismissed = [...this.dismissed, id].slice(-DISMISSED_MAX);
+            try {
+                localStorage.setItem(DISMISSED_KEY, JSON.stringify(this.dismissed));
+            } catch (e) {
+                // Not kept: it comes back after a reload.
+            }
+        },
+
+        /**
+         * @param {object} deploy Deploy of the board.
+         * @returns {string} Name of the step it is on ("Virada"), or "" when it has none.
+         */
+        stepName(deploy) {
+            const steps = deploy.steps || [];
+            const at = steps.findLastIndex((s) => s.status !== "pending");
+            return at === -1 ? "" : this.$t(STEP_KEYS[steps[at].key]);
+        },
+
+        /**
          * Short duration: "12 s", "3 min", "1 h 05 min".
          * @param {number} ms Milliseconds.
          * @returns {string} Formatted duration.
@@ -653,6 +782,15 @@ export default {
             return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
         },
     },
+};
+
+/** Step of a deploy → i18n key (the same names as the card's steps). */
+const STEP_KEYS = {
+    merge: "deployBoardStepMerge",
+    pipeline: "deployBoardStepPipeline",
+    built: "deployBoardStepBuilt",
+    rollout: "deployBoardStepRollout",
+    live: "deployBoardStepLive",
 };
 
 /** A rollout that ended this long before an outage is named in its highlight. */
@@ -767,6 +905,18 @@ function sinceOf(list) {
 }
 
 /**
+ * @param {object[]} list Heartbeats, oldest first.
+ * @returns {number} How many of the latest ones in a row have the status of the last one.
+ */
+function runLength(list) {
+    let n = 0;
+    for (let i = list.length - 1; i >= 0 && list[i].status === list[list.length - 1].status; i--) {
+        n++;
+    }
+    return n;
+}
+
+/**
  * The last BEATS statuses as tones, oldest first, padded on the left when there are fewer.
  * @param {object[]} list Heartbeats, oldest first.
  * @returns {string[]} Tones ("empty" for padding).
@@ -798,6 +948,18 @@ function names(monitors) {
 body.deploy-board-body .Vue-Toastification__container {
     display: none;
 }
+
+/* Buttons and links of the whole board, children included, fade out with no one at the screen; a
+   keyboard focus brings its own back. Here, unscoped, because they live in the child components. */
+.deploy-board.is-idle .db-control {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.deploy-board.is-idle .db-control:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
 </style>
 
 <style lang="scss" scoped>
@@ -818,6 +980,9 @@ body.deploy-board-body .Vue-Toastification__container {
     --db-warn-soft: #fbeed6;
     --db-bad: #c42828;
     --db-bad-soft: #fbe3e3;
+    // Solid red with white text: deep enough in both themes for the text to read.
+    --db-bad-solid: #c42828;
+    --db-on-bad: #fff;
     --db-maint: #535e8d;
     --db-maint-soft: #e8eaf4;
     // "Deploy em andamento", on both columns. Brand magenta is only identity.
@@ -840,7 +1005,8 @@ body.deploy-board-body .Vue-Toastification__container {
         Roboto,
         Arial,
         sans-serif;
-    font-size: clamp(14px, calc(0.45vw + 8px), 19px);
+    // The type scale is fixed (12.5 / 13.5 / 15 / 17 / 21 / 32): the base is the 15.
+    font-size: 15px;
     line-height: 1.35;
     -webkit-font-smoothing: antialiased;
 
@@ -860,6 +1026,7 @@ body.deploy-board-body .Vue-Toastification__container {
         --db-warn-soft: #35290f;
         --db-bad: #f2625f;
         --db-bad-soft: #3b1a1c;
+        --db-bad-solid: #c8302e;
         --db-maint: #959ec7;
         --db-maint-soft: #23263a;
         --db-deploy: #5aa7ff;
@@ -874,15 +1041,15 @@ body.deploy-board-body .Vue-Toastification__container {
     display: grid;
     place-items: center;
     min-height: 100%;
-    padding: 2em max(16px, env(safe-area-inset-right, 0px)) 2em max(16px, env(safe-area-inset-left, 0px));
+    padding: 32px max(16px, env(safe-area-inset-right, 0px)) 32px max(16px, env(safe-area-inset-left, 0px));
 }
 
 .db-shell {
     display: flex;
     flex-direction: column;
-    gap: 0.9em;
+    gap: 12px;
     min-height: 100%;
-    padding-block: 0.9em;
+    padding-block: 12px;
     padding-left: max(16px, env(safe-area-inset-left, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
@@ -891,20 +1058,19 @@ body.deploy-board-body .Vue-Toastification__container {
     display: flex;
     flex-wrap: wrap;
     align-items: stretch;
-    gap: 0.7em 1em;
+    gap: 12px 16px;
 }
 
 .db-ident {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 0.2em;
-    margin-right: auto;
+    gap: 4px;
     min-width: 0;
 }
 
 .db-eyebrow {
-    font-size: 0.78em;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -913,102 +1079,120 @@ body.deploy-board-body .Vue-Toastification__container {
 
 .db-title {
     margin: 0;
-    font-size: 1.8em;
-    font-weight: 800;
+    font-size: 21px;
+    font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.05;
 }
 
-.db-verdict {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    column-gap: 0.8em;
-    align-content: center;
-    flex: 1 1 18em;
-    max-width: 30em;
+/* The three readings in one bar, split by hairlines. */
+.db-summary {
+    display: flex;
+    flex: 1 1 36em;
+    flex-wrap: wrap;
+    max-width: 56em;
     min-width: 0;
-    padding: 0.6em 1.1em;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
-    border-radius: 10px;
+    border-radius: 14px;
 }
 
-.db-verdict-dot {
-    grid-row: 1 / 4;
-    align-self: center;
-    width: 0.9em;
-    height: 0.9em;
-    border-radius: 50%;
-    background: var(--db-ok);
-    box-shadow: 0 0 0 0.3em var(--db-ok-soft);
+.db-seg {
+    display: grid;
+    flex: 1 1 12em;
+    align-content: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 12px 20px;
+
+    & + & {
+        border-left: 1px solid var(--db-line);
+    }
 }
 
-.db-verdict-key {
-    font-size: 0.72em;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+.db-seg-key {
+    font-size: 12.5px;
     color: var(--db-ink-3);
 }
 
-.db-verdict-title {
-    font-size: 1.35em;
-    font-weight: 800;
-    line-height: 1.15;
+.db-seg-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.2;
+
+    [data-tone="bad"] > & {
+        color: var(--db-bad);
+    }
+
+    [data-tone="warn"] > & {
+        color: var(--db-warn);
+    }
+
+    [data-tone="rolling"] > & {
+        color: var(--db-deploy);
+    }
+
+    [data-tone="idle"] > &,
+    [data-tone="muted"] > & {
+        color: var(--db-ink-2);
+    }
 }
 
-.db-verdict-sub {
-    font-size: 0.88em;
-    color: var(--db-ink-2);
+.db-seg-sub {
+    font-size: 12.5px;
+    color: var(--db-ink-3);
     overflow-wrap: anywhere;
 }
 
-.db-verdict[data-tone="warn"] {
-    .db-verdict-dot {
-        background: var(--db-warn);
-        box-shadow: 0 0 0 0.3em var(--db-warn-soft);
-    }
+.db-seg-rate {
+    font-weight: 600;
+    color: var(--db-ink-2);
 
-    .db-verdict-title {
-        color: var(--db-warn);
+    &.is-ok {
+        color: var(--db-ok);
     }
 }
 
-.db-verdict[data-tone="bad"] {
-    // A triangle, not a dot: the critical state is told apart by shape too, not only by colour.
-    .db-verdict-dot {
-        width: 1.1em;
-        height: 1em;
+.db-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--db-ok);
+
+    &.is-warn {
+        background: var(--db-warn);
+    }
+
+    &.is-rolling {
+        background: var(--db-deploy);
+        animation: db-dot-pulse 1.8s ease-in-out infinite;
+    }
+
+    // Red, pulsing, and a triangle: the critical state is told apart by shape too.
+    &.is-bad {
+        width: 10px;
+        height: 9px;
         border-radius: 0;
         background: var(--db-bad);
-        box-shadow: none;
         clip-path: polygon(50% 0, 100% 100%, 0 100%);
-    }
-
-    .db-verdict-title {
-        color: var(--db-bad);
+        animation: db-dot-pulse 1.8s ease-in-out infinite;
     }
 }
 
-.db-verdict[data-tone="rolling"] {
-    .db-verdict-dot {
-        background: var(--db-deploy);
-        box-shadow: 0 0 0 0.3em var(--db-deploy-soft);
-    }
-
-    .db-verdict-title {
-        color: var(--db-deploy);
+@keyframes db-dot-pulse {
+    50% {
+        opacity: 0.35;
     }
 }
 
-.db-verdict[data-tone="muted"] {
-    .db-verdict-dot {
-        background: var(--db-ink-3);
-        box-shadow: 0 0 0 0.3em var(--db-panel-2);
-    }
-
-    .db-verdict-title {
-        color: var(--db-ink-2);
+@media (prefers-reduced-motion: reduce) {
+    .db-dot.is-rolling,
+    .db-dot.is-bad {
+        animation: none;
     }
 }
 
@@ -1017,18 +1201,19 @@ body.deploy-board-body .Vue-Toastification__container {
     flex-direction: column;
     justify-content: center;
     align-items: flex-end;
-    gap: 0.15em;
+    gap: 4px;
+    margin-left: auto;
 }
 
 .db-clock-time {
-    font-size: 1.7em;
+    font-size: 32px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     line-height: 1;
 }
 
 .db-clock-date {
-    font-size: 0.85em;
+    font-size: 13.5px;
     color: var(--db-ink-3);
 }
 
@@ -1039,7 +1224,7 @@ body.deploy-board-body .Vue-Toastification__container {
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.5em;
+    gap: 8px;
 }
 
 .db-sound {
@@ -1059,11 +1244,11 @@ body.deploy-board-body .Vue-Toastification__container {
     top: calc(100% + 0.4em);
     right: 0;
     z-index: 2;
-    padding: 0.3em 0.6em;
+    padding: 4px 8px;
     border: 1px solid var(--db-warn);
-    border-radius: 6px;
+    border-radius: 999px;
     background: var(--db-warn-soft);
-    font-size: 0.8em;
+    font-size: 12.5px;
     font-weight: 600;
     white-space: nowrap;
     color: var(--db-warn);
@@ -1096,14 +1281,14 @@ body.deploy-board-body .Vue-Toastification__container {
 .db-main {
     display: flex;
     flex-direction: column;
-    gap: 1.2em;
+    gap: 16px;
     min-width: 0;
 }
 
 .db-services {
     display: flex;
     flex-direction: column;
-    gap: 0.6em;
+    gap: 8px;
     min-width: 0;
     min-height: 0;
 
@@ -1116,69 +1301,28 @@ body.deploy-board-body .Vue-Toastification__container {
 .db-services-body {
     display: flex;
     flex-direction: column;
-    gap: 0.6em;
+    gap: 8px;
 }
 
 .db-services-head {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.3em 1.2em;
+    gap: 4px 16px;
+}
+
+.db-section-count {
+    margin-left: 8px;
+    font-size: 13.5px;
+    font-weight: 400;
+    color: var(--db-ink-3);
 }
 
 .db-section-title {
     margin: 0;
-    font-size: 0.8em;
-    font-weight: 800;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--db-ink-2);
-}
-
-.db-legend {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.3em 0.9em;
-    font-size: 0.8em;
-    color: var(--db-ink-3);
-}
-
-.db-legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
-
-    &::before {
-        content: "";
-        width: 0.6em;
-        height: 0.6em;
-        border-radius: 2px;
-        background: var(--db-ok);
-    }
-
-    &.is-pending::before {
-        background: var(--db-warn);
-    }
-
-    &.is-down::before {
-        width: 0.75em;
-        border-radius: 0;
-        background: var(--db-bad);
-        clip-path: polygon(50% 0, 100% 100%, 0 100%);
-    }
-
-    &.is-maintenance::before {
-        background: var(--db-maint);
-    }
-}
-
-.db-page {
-    margin-left: auto;
-    font-size: 0.82em;
-    font-weight: 700;
-    color: var(--db-ink-2);
-    font-variant-numeric: tabular-nums;
 }
 
 .db-warning {
@@ -1202,7 +1346,7 @@ body.deploy-board-body .Vue-Toastification__container {
     .db-main {
         display: grid;
         grid-template-columns: minmax(26em, 30%) minmax(0, 1fr);
-        gap: 1.4em;
+        gap: 20px;
         min-height: 0;
     }
 
@@ -1213,9 +1357,19 @@ body.deploy-board-body .Vue-Toastification__container {
 }
 
 @media (max-width: 680px) {
-    .db-verdict {
+    .db-summary {
         flex-basis: 100%;
         max-width: none;
+    }
+
+    // Stacked, the hairlines go between the rows.
+    .db-seg {
+        flex-basis: 100%;
+
+        & + & {
+            border-left: 0;
+            border-top: 1px solid var(--db-line);
+        }
     }
 
     .db-clock {
