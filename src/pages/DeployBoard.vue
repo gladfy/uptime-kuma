@@ -417,17 +417,18 @@ export default {
             if (running > 0) {
                 return { tone: "rolling", title: this.$t("deployBoardVerdictRolling", [running]), parts };
             }
-            if (this.board.sources.cluster.state === "stale") {
-                return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
-            }
-            // Nothing running is not news: grey, with no dot.
-            if (parts.length) {
-                return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), parts };
-            }
             const last = [...this.board.deploys, ...this.board.history]
                 .filter((d) => d.endedAt)
                 .sort((a, b) => b.endedAt - a.endedAt)[0];
             const sub = last ? this.$t("deployBoardLastDeploy", [last.project, this.formatDuration(this.now - last.endedAt)]) : "";
+            // Only failures on screen (a stuck rollout is still happening): red, with the triangle.
+            if (this.failures.length) {
+                return { tone: "bad", title: this.$t("deployBoardVerdictFailures", this.failures.length), sub };
+            }
+            if (this.board.sources.cluster.state === "stale") {
+                return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
+            }
+            // Nothing running is not news: grey, with no dot.
             return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), sub };
         },
 

@@ -3,48 +3,51 @@
         <p v-if="!board" class="db-empty">{{ $t("deployBoardReading") }}</p>
         <p v-else-if="noSourceOn" class="db-empty">{{ $t("deployBoardNoSources") }}</p>
 
-        <!-- A failure stays until someone dismisses it; a deploy that went live becomes a line below. -->
-        <template v-if="failureCards.length">
-            <h2 class="db-section-title">
-                {{ $t("deployBoardFailures") }}
-                <span class="db-section-count">{{ failureCards.length }}</span>
-            </h2>
-            <div class="db-cards">
-                <DeployCard
-                    v-for="deploy in failureCards"
-                    :key="deploy.id"
-                    :data-id="deploy.id"
-                    :hidden="hiddenIds.includes(deploy.id)"
-                    :deploy="deploy"
-                    :now="now"
-                    :format-duration="formatDuration"
-                    :dismissible="deploy.dismissible"
-                    :level="levels[deploy.id] || 'full'"
-                    @dismiss="$emit('dismiss', $event)"
-                />
-            </div>
-        </template>
+        <!-- The cards in one block: it changes size when a card does (its way back opening, say). -->
+        <div v-show="cards.length" ref="stack" class="db-stack">
+            <!-- A failure stays until someone dismisses it; a deploy that went live becomes a line below. -->
+            <template v-if="failureCards.length">
+                <h2 class="db-section-title">
+                    {{ $t("deployBoardFailures") }}
+                    <span class="db-section-count">{{ failureCards.length }}</span>
+                </h2>
+                <div class="db-cards">
+                    <DeployCard
+                        v-for="deploy in failureCards"
+                        :key="deploy.id"
+                        :data-id="deploy.id"
+                        :hidden="hiddenIds.includes(deploy.id)"
+                        :deploy="deploy"
+                        :now="now"
+                        :format-duration="formatDuration"
+                        :dismissible="deploy.dismissible"
+                        :level="levels[deploy.id] || 'full'"
+                        @dismiss="$emit('dismiss', $event)"
+                    />
+                </div>
+            </template>
 
-        <template v-if="running.length">
-            <h2 class="db-section-title">
-                {{ $t("deployBoardRunning") }}
-                <span class="db-section-count">{{ running.length }}</span>
-            </h2>
-            <div class="db-cards">
-                <DeployCard
-                    v-for="deploy in running"
-                    :key="deploy.id"
-                    :data-id="deploy.id"
-                    :hidden="hiddenIds.includes(deploy.id)"
-                    :deploy="deploy"
-                    :now="now"
-                    :format-duration="formatDuration"
-                    :level="levels[deploy.id] || 'full'"
-                />
-            </div>
-        </template>
-        <!-- In place of the cards that did not fit even compact. -->
-        <p class="db-more" :hidden="hiddenIds.length === 0">{{ $t("deployBoardMore", hiddenIds.length) }}</p>
+            <template v-if="running.length">
+                <h2 class="db-section-title">
+                    {{ $t("deployBoardRunning") }}
+                    <span class="db-section-count">{{ running.length }}</span>
+                </h2>
+                <div class="db-cards">
+                    <DeployCard
+                        v-for="deploy in running"
+                        :key="deploy.id"
+                        :data-id="deploy.id"
+                        :hidden="hiddenIds.includes(deploy.id)"
+                        :deploy="deploy"
+                        :now="now"
+                        :format-duration="formatDuration"
+                        :level="levels[deploy.id] || 'full'"
+                    />
+                </div>
+            </template>
+            <!-- In place of the cards that did not fit even compact. -->
+            <p class="db-more" :hidden="hiddenIds.length === 0">{{ $t("deployBoardMore", hiddenIds.length) }}</p>
+        </div>
 
         <div ref="history" class="db-history">
             <h2 class="db-section-title">
@@ -59,7 +62,12 @@
                     class="db-history-item"
                     :class="['is-' + outcomeClass(item.outcome), { 'is-fresh': isFresh(item) }]"
                 >
-                    <span class="db-history-outcome" role="img" :aria-label="$t(OUTCOME_KEYS[item.outcome])" :title="$t(OUTCOME_KEYS[item.outcome])">
+                    <span
+                        class="db-history-outcome"
+                        role="img"
+                        :aria-label="$t(OUTCOME_KEYS[item.outcome])"
+                        :title="$t(OUTCOME_KEYS[item.outcome])"
+                    >
                         {{ OUTCOME_MARKS[item.outcome] || "·" }}
                     </span>
                     <span class="db-history-name">
@@ -79,7 +87,9 @@
                     <span class="db-history-took" :class="{ 'is-unknown': item.missed }">
                         {{ item.missed ? "—" : formatDuration(item.endedAt - item.startedAt) }}
                     </span>
-                    <span class="db-history-when">{{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}</span>
+                    <span class="db-history-when">
+                        {{ $t("deployBoardAgo", [formatDuration(now - item.endedAt)]) }}
+                    </span>
                     <RollbackPanel
                         v-if="item.rollback && backOpen === item.id"
                         :rollback="item.rollback"
@@ -88,7 +98,9 @@
                     />
                 </li>
             </ol>
-            <p v-if="historyRows.some((item) => item.missed)" class="db-history-note">{{ $t("deployBoardMissedNote") }}</p>
+            <p v-if="historyRows.some((item) => item.missed)" class="db-history-note">
+                {{ $t("deployBoardMissedNote") }}
+            </p>
         </div>
     </section>
 </template>
@@ -239,7 +251,9 @@ export default {
                 .filter((d) => ENDED_OUTCOMES[d.state])
                 .map((d) => ({ ...d, outcome: ENDED_OUTCOMES[d.state] }));
             const ids = new Set(ended.map((d) => d.id));
-            return [...ended, ...this.board.history.filter((h) => !ids.has(h.id))].sort((a, b) => b.endedAt - a.endedAt);
+            return [...ended, ...this.board.history.filter((h) => !ids.has(h.id))].sort(
+                (a, b) => b.endedAt - a.endedAt
+            );
         },
     },
 
@@ -265,9 +279,12 @@ export default {
         // is the room the cards above leave to the history.
         this.observer = new ResizeObserver(() => this.measure());
         this.observer.observe(this.$refs.history);
-        // The column itself for the levels: it changes size with the window, not with the cards.
+        // The column changes size with the window; the block of cards, when a card grows or shrinks
+        // without the list changing. The pick is the same for the same sizes, so it settles in one
+        // more pass.
         this.columnObserver = new ResizeObserver(() => this.fit());
         this.columnObserver.observe(this.$el);
+        this.columnObserver.observe(this.$refs.stack);
         // The web font is wider than the fallback: what fitted before it loads may not fit after.
         // "ready" may already be resolved when the page has not asked for the font yet.
         this.onFonts = () => this.fit();
@@ -432,6 +449,13 @@ export default {
     .has-cards > & {
         min-height: 150px;
     }
+}
+
+.db-stack {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 12px;
 }
 
 .db-more {

@@ -290,6 +290,10 @@ três níveis, sobre o mesmo conteúdo:
 - **compacto** (cerca de 70 px): cabeçalho com o tempo decorrido à direita, a faixa sem os nomes e a
   linha de detalhe.
 
+Em qualquer nível o cartão SHALL manter o aviso de estado não confirmado e o "Como voltar" da virada
+travada: um diz que o cartão pode estar errado, o outro é o que se precisa no incidente. Abrir o
+"Como voltar" SHALL refazer a escolha dos níveis, como qualquer cartão que muda de altura.
+
 A linha de detalhe SHALL ser uma linha só, cortada com reticências: na virada, as réplicas de cada
 workload ("winker-prod 4/7, winker-integration 2/2"); na pipeline, o job atual e os próximos
 ("build rodando há 1 min, depois deploy e verify"); na falha, o job que falhou ("build falhou há 2
@@ -322,7 +326,8 @@ falhas), com a bolinha azul pulsando; e, embaixo, a contagem por etapa, só das 
 ordem: "X na virada, Y na pipeline, Z aguardando virada" e, se houver, "W falhou" em vermelho. A
 linha de baixo SHALL NOT listar nomes de repositório e SHALL NOT quebrar. Sem deploy em andamento,
 o segmento SHALL ficar sem bolinha, com "Nenhum agora" e, embaixo, o último deploy ("último:
-<projeto>, há N") ou as falhas que restam.
+<projeto>, há N"); com só falhas na tela, SHALL dizer "N com falha" em vermelho, com o triângulo
+(uma virada travada ainda está acontecendo).
 
 #### Scenario: Cinco em andamento e uma falha
 - **WHEN** há duas viradas, duas pipelines, uma pipeline verde aguardando a virada e uma falha

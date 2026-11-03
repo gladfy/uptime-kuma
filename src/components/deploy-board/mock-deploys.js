@@ -193,7 +193,8 @@ export function withMockDeploys(board, n, t0) {
     const deploys = cases(t0)
         .slice(0, n)
         .map((d, i) => ({
-            id: `mock-${i + 1}`,
+            // New ids on every load: a made-up failure dismissed once comes back the next time.
+            id: `mock-${t0}-${i + 1}`,
             endedAt: null,
             missed: false,
             confirmed: true,

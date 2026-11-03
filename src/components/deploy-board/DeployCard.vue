@@ -512,13 +512,13 @@ export default {
     }
 }
 
+/* The "not confirmed" warning and "Como voltar" stay at every level: one says the card may be wrong,
+   the other is what someone needs when a rollout is stuck. */
 .db-card[data-level="medium"],
 .db-card[data-level="compact"] {
     .db-pipeline,
     .db-card-releases,
-    .db-card-note,
-    .db-card-warning,
-    .db-card-rollback {
+    .db-card-note {
         display: none;
     }
 

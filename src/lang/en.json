@@ -386,6 +386,7 @@
     "deployBoardTookTime": "took {0}",
     "deployBoardAgo": "{0} ago",
     "deployBoardVerdictRolling": "{0} in progress",
+    "deployBoardVerdictFailures": "{n} failed",
     "deployBoardSummaryRollout": "{n} rolling out",
     "deployBoardSummaryPipeline": "{n} in the pipeline",
     "deployBoardSummaryBuilt": "{n} waiting for the rollout",

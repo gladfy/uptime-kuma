@@ -568,6 +568,7 @@
     "deployBoardTookTime": "levou {0}",
     "deployBoardAgo": "há {0}",
     "deployBoardVerdictRolling": "{0} em andamento",
+    "deployBoardVerdictFailures": "{n} com falha",
     "deployBoardSummaryRollout": "{n} na virada",
     "deployBoardSummaryPipeline": "{n} na pipeline",
     "deployBoardSummaryBuilt": "{n} aguardando virada",
