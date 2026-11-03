@@ -466,7 +466,7 @@
     "deployBoardNotFound": "Status page \"{0}\" não encontrada.",
     "deployBoardServicesAllUp": "Todos normais",
     "deployBoardServicesDown": "{0} fora do ar",
-    "deployBoardServicesPending": "{0} pendentes",
+    "deployBoardServicesPending": "{n} pendente | {n} pendentes",
     "deployBoardServicesSummary": "{0} de {1} serviços",
     "deployBoardServicesSummaryMaintenance": "{0} de {1} serviços, {2} em manutenção",
     "deployBoardKumaNoRead": "Sem leitura do Kuma",

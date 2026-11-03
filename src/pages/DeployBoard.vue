@@ -314,7 +314,7 @@ export default {
             if (pending.length) {
                 return {
                     tone: "warn",
-                    title: this.$t("deployBoardServicesPending", [pending.length]),
+                    title: this.$t("deployBoardServicesPending", pending.length),
                     sub: names(pending),
                 };
             }
