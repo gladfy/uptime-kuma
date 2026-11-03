@@ -41,7 +41,10 @@
                 :class="'is-' + s.status"
                 :aria-current="s.status === 'current' ? 'step' : null"
             >
-                <i aria-hidden="true"></i>
+                <!-- The step it is on fills with how far it has gone inside it. -->
+                <i aria-hidden="true">
+                    <b v-if="s.status === 'current' || s.status === 'warn'" :style="{ width: stepProgress + '%' }"></b>
+                </i>
                 <span>{{ $t(STEP_KEYS[s.key]) }}</span>
             </li>
         </ol>
@@ -157,6 +160,12 @@ const STEP_KEYS = {
 /** Deploy states of a rollout in the cluster: their one line is the replicas of each workload. */
 const ROLLOUT_STATES = ["updating", "noProgress", "stuck"];
 
+/** A running job counts this much of a job in the progress of the pipeline step. */
+const RUNNING_JOB_SHARE = 0.35;
+
+/** The step it is on is never filled less than this, in percent: it must always show. */
+const MIN_PROGRESS = 6;
+
 /** Stands for the name in a translated text, to split it around the name. */
 const NAME_MARK = "\u0000";
 
@@ -243,9 +252,31 @@ export default {
             return this.deploy.steps?.length ? this.deploy.steps : null;
         },
 
+        /**
+         * How far the deploy is inside the step it is on: the replicas on the new version of every
+         * workload in the rollout, the jobs that ended in the pipeline (a running one counts a
+         * third), and half anywhere else. Never under MIN_PROGRESS, so the step always shows it.
+         * @returns {number} Percent, MIN_PROGRESS to 100.
+         */
+        stepProgress() {
+            const step = this.steps?.[this.stepNumber - 1]?.key;
+            let share = 0.5;
+            if (step === "rollout") {
+                const desired = this.deploy.releases.reduce((sum, r) => sum + r.desired, 0);
+                if (desired > 0) {
+                    share = this.deploy.releases.reduce((sum, r) => sum + Math.min(r.updated, r.desired), 0) / desired;
+                }
+            } else if (step === "pipeline" && this.pipeline?.jobs.length) {
+                const jobs = this.pipeline.jobs;
+                const ended = jobs.filter((j) => j.state === "success").length;
+                share = (ended + (jobs.some((j) => j.state === "running") ? RUNNING_JOB_SHARE : 0)) / jobs.length;
+            }
+            return Math.max(MIN_PROGRESS, Math.min(100, Math.round(share * 100)));
+        },
+
         /** @returns {number} Number of the step it is on, from 1: the last one reached */
         stepNumber() {
-            return this.steps.findLastIndex((s) => s.status !== "pending") + 1;
+            return (this.steps || []).findLastIndex((s) => s.status !== "pending") + 1;
         },
 
         /** @returns {object|null} Pipeline of the deploy (older servers do not send it) */
@@ -577,7 +608,14 @@ export default {
         display: block;
         height: 0.45rem;
         border-radius: 2px;
+        overflow: hidden;
         background: var(--db-panel-2);
+    }
+
+    b {
+        display: block;
+        height: 100%;
+        transition: width 0.6s ease;
     }
 
     span {
@@ -607,19 +645,29 @@ export default {
         font-weight: 700;
     }
 
+    // The step it is on: pale blue, filled in blue as far as it has gone, the filling pulsing.
     &.is-current {
         color: var(--db-deploy);
 
         i {
+            background: var(--db-deploy-soft);
+        }
+
+        b {
             background: var(--db-deploy);
             animation: db-step-pulse 1.6s ease-in-out infinite;
         }
     }
 
+    // Stopped without failing: the same filling in amber, still.
     &.is-warn {
         color: var(--db-warn);
 
         i {
+            background: var(--db-warn-soft);
+        }
+
+        b {
             background: var(--db-warn);
         }
     }
@@ -635,7 +683,7 @@ export default {
 
 @keyframes db-step-pulse {
     50% {
-        opacity: 0.45;
+        opacity: 0.6;
     }
 }
 
@@ -821,7 +869,11 @@ export default {
         transition: none;
     }
 
-    .db-step.is-current i {
+    .db-step b {
+        transition: none;
+    }
+
+    .db-step.is-current b {
         animation: none;
     }
 }
