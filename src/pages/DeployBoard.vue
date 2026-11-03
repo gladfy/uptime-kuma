@@ -20,7 +20,14 @@
 
                 <!-- One bar, three readings. A dot only where it says something: never for "no deploy". -->
                 <div class="db-summary">
-                    <div v-for="seg in summary" :key="seg.id" class="db-seg" :data-tone="seg.tone" :title="seg.hint || null">
+                    <div
+                        v-for="seg in summary"
+                        :key="seg.id"
+                        class="db-seg"
+                        :class="'is-' + seg.id"
+                        :data-tone="seg.tone"
+                        :title="seg.hint || null"
+                    >
                         <span class="db-seg-key">{{ seg.key }}</span>
                         <span class="db-seg-value">
                             <span v-if="seg.dot" class="db-dot" :class="'is-' + seg.tone" aria-hidden="true"></span>
@@ -28,7 +35,13 @@
                         </span>
                         <span class="db-seg-sub">
                             <b v-if="seg.rate !== undefined" class="db-seg-rate" :class="{ 'is-ok': seg.rate === 100 }">{{ seg.rate }}%</b>
-                            {{ seg.sub }}
+                            <template v-if="seg.parts">
+                                <template v-for="(part, i) in seg.parts" :key="i">
+                                    <template v-if="i">, </template>
+                                    <span :class="{ 'db-seg-bad': part.bad }">{{ part.text }}</span>
+                                </template>
+                            </template>
+                            <template v-else>{{ seg.sub }}</template>
                         </span>
                     </div>
                 </div>
@@ -377,7 +390,11 @@ export default {
             return this.$t(this.$root.isDark ? "deployBoardThemeToLight" : "deployBoardThemeToDark");
         },
 
-        /** @returns {{tone: string, title: string, sub: string}} Deploys verdict of the top bar */
+        /**
+         * Deploys verdict of the top bar: how many are running, and below how many are on each step
+         * and how many failed. Never the names of the projects: with a few deploys the line wrapped.
+         * @returns {{tone: string, title: string, sub?: string, parts?: object[]}} Verdict.
+         */
         deploysVerdict() {
             if (!this.board) {
                 return { tone: "muted", title: this.$t("deployBoardReading"), sub: "" };
@@ -386,27 +403,27 @@ export default {
             if (!anyOn) {
                 return { tone: "muted", title: this.$t("deployBoardNoSourcesShort"), sub: "" };
             }
-            const verdicts = [
-                [(d) => d.state === "failed", "bad", "deployBoardVerdictFailed", this.failures],
-                [(d) => d.state === "stuck", "bad", "deployBoardVerdictStuck", this.failures],
-                [(d) => d.state === "noProgress", "warn", "deployBoardVerdictNoProgress"],
-                [(d) => d.label === "noRollout", "warn", "deployBoardVerdictNoRollout"],
-                [(d) => ["updating", "pipeline", "built"].includes(d.state), "rolling", "deployBoardVerdictRolling"],
+            const count = (states) => this.board.deploys.filter((d) => states.includes(d.state)).length;
+            const steps = [
+                ["deployBoardSummaryRollout", count(["updating", "noProgress"])],
+                ["deployBoardSummaryPipeline", count(["pipeline"])],
+                ["deployBoardSummaryBuilt", count(["built"])],
             ];
-            for (const [matches, tone, key, from = this.board.deploys] of verdicts) {
-                const deploys = from.filter(matches);
-                if (deploys.length) {
-                    const sub =
-                        tone === "rolling"
-                            ? deploys.map((d) => [d.project, this.stepName(d)].filter(Boolean).join(" · ")).join(", ")
-                            : projectNames(deploys);
-                    return { tone, title: this.$t(key, [deploys.length]), sub };
-                }
+            const running = steps.reduce((sum, [, n]) => sum + n, 0);
+            const parts = steps.filter(([, n]) => n > 0).map(([key, n]) => ({ text: this.$t(key, n) }));
+            if (this.failures.length) {
+                parts.push({ text: this.$t("deployBoardSummaryFailed", this.failures.length), bad: true });
+            }
+            if (running > 0) {
+                return { tone: "rolling", title: this.$t("deployBoardVerdictRolling", [running]), parts };
             }
             if (this.board.sources.cluster.state === "stale") {
                 return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
             }
             // Nothing running is not news: grey, with no dot.
+            if (parts.length) {
+                return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), parts };
+            }
             const last = [...this.board.deploys, ...this.board.history]
                 .filter((d) => d.endedAt)
                 .sort((a, b) => b.endedAt - a.endedAt)[0];
@@ -765,16 +782,6 @@ export default {
         },
 
         /**
-         * @param {object} deploy Deploy of the board.
-         * @returns {string} Name of the step it is on ("Virada"), or "" when it has none.
-         */
-        stepName(deploy) {
-            const steps = deploy.steps || [];
-            const at = steps.findLastIndex((s) => s.status !== "pending");
-            return at === -1 ? "" : this.$t(STEP_KEYS[steps[at].key]);
-        },
-
-        /**
          * Short duration: "12 s", "3 min", "1 h 05 min".
          * @param {number} ms Milliseconds.
          * @returns {string} Formatted duration.
@@ -791,15 +798,6 @@ export default {
             return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
         },
     },
-};
-
-/** Step of a deploy → i18n key (the same names as the card's steps). */
-const STEP_KEYS = {
-    merge: "deployBoardStepMerge",
-    pipeline: "deployBoardStepPipeline",
-    built: "deployBoardStepBuilt",
-    rollout: "deployBoardStepRollout",
-    live: "deployBoardStepLive",
 };
 
 /** A rollout that ended this long before an outage is named in its highlight. */
@@ -845,14 +843,6 @@ function linksOf(deploy) {
  */
 function touches(deploy, tags) {
     return linksOf(deploy).some((l) => tags.includes(l));
-}
-
-/**
- * @param {object[]} deploys Deploys.
- * @returns {string} Their projects, comma separated, without repetition.
- */
-function projectNames(deploys) {
-    return [...new Set(deploys.map((d) => d.project))].join(", ");
 }
 
 /** Tone → i18n key of its label. */
@@ -1112,7 +1102,7 @@ body.deploy-board-body .Vue-Toastification__container {
     display: flex;
     flex: 1 1 36em;
     flex-wrap: wrap;
-    max-width: 56em;
+    max-width: 62em;
     min-width: 0;
     background: var(--db-panel);
     border: 1px solid var(--db-line);
@@ -1129,6 +1119,11 @@ body.deploy-board-body .Vue-Toastification__container {
 
     & + & {
         border-left: 1px solid var(--db-line);
+    }
+
+    // Its line counts every step: "2 na virada, 2 na pipeline, 1 aguardando virada, 1 falhou".
+    &.is-deploys {
+        flex: 1.6 1 16em;
     }
 }
 
@@ -1167,6 +1162,18 @@ body.deploy-board-body .Vue-Toastification__container {
     font-size: 12.5px;
     color: var(--db-ink-3);
     overflow-wrap: anywhere;
+
+    // The deploys line stays one line, whatever happens.
+    .is-deploys > & {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.db-seg-bad {
+    font-weight: 600;
+    color: var(--db-bad);
 }
 
 .db-seg-rate {

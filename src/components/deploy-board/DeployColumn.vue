@@ -5,7 +5,10 @@
 
         <!-- A failure stays until someone dismisses it; a deploy that went live becomes a line below. -->
         <template v-if="failureCards.length">
-            <h2 class="db-section-title">{{ $t("deployBoardFailures") }}</h2>
+            <h2 class="db-section-title">
+                {{ $t("deployBoardFailures") }}
+                <span class="db-section-count">{{ failureCards.length }}</span>
+            </h2>
             <div class="db-cards">
                 <DeployCard
                     v-for="deploy in failureCards"
@@ -23,7 +26,10 @@
         </template>
 
         <template v-if="running.length">
-            <h2 class="db-section-title">{{ $t("deployBoardRunning") }}</h2>
+            <h2 class="db-section-title">
+                {{ $t("deployBoardRunning") }}
+                <span class="db-section-count">{{ running.length }}</span>
+            </h2>
             <div class="db-cards">
                 <DeployCard
                     v-for="deploy in running"
