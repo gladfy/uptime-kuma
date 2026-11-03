@@ -16,7 +16,9 @@ os deploys em cima, os 34 monitores ficaram pequenos e paginados. O painel de TV
 - **Página logada nova `/deploys/<slug>`**, em tela cheia e separada da TV, em duas colunas:
   deploys numa coluna estreita à esquerda e os monitores da status page `<slug>` em cerca de 70% da
   largura à direita. Os 34 monitores da status page `winker` cabem numa TV 1080p sem paginar.
-  A página só abre com login no Kuma.
+  A página só abre com login no Kuma. A coluna de deploys cabe na tela com vários deploys ao
+  mesmo tempo: cada cartão tem três níveis (completo, médio e compacto), escolhidos medindo a
+  coluna, e o cabeçalho resume quantos estão em cada etapa.
 - **Virada lida do cluster.** O servidor do Kuma passa a observar os Deployments e os CronJobs dos
   namespaces configurados, com permissão **só de leitura**, e detecta a virada pela revisão do
   Deployment, não pela tag da imagem (o chat publica sempre `tiwinker/chatwoot:prod`). Estados:
@@ -75,26 +77,33 @@ dela, e a seguinte não muda o que a anterior entregou.
 | **8. Conferência de cobertura** | Relatório que cruza EKS e Amplify com a configuração do painel e as tags do Kuma; lacunas fechadas ou excluídas com motivo | Nenhuma nova; criar monitores e tags que faltarem |
 | **9. Projetos da OCI** | A virada do `ia-rag`, do `ia-process-document` e do que mais rodar no OKE, com a pipeline deles no mesmo cartão; o OKE na conferência de cobertura | ServiceAccount só de leitura no OKE, credencial dela num Secret do EKS, caminho de rede do EKS até a API do OKE; cadastrar os webhooks dos repositórios da OCI |
 
-## Onde estamos (02/11/2026)
+## Onde estamos (03/11/2026)
 
-No ar a imagem `2.5.3-winker.30` e o chart `uptimekuma` 0.5.0. As fases 1 a 7 estão em produção.
-Na 7 falta só a conferência com um build real; a 8 e a 9 ainda não começaram. Uma fase só se fecha quando a conferência com deploy real
-também foi feita (as tarefas com o número entre parênteses).
+No ar a imagem `2.5.3-winker.36` e o chart `uptimekuma` 0.5.2. As fases 1 a 7 estão em produção,
+e a tela de parede ganhou dois refinamentos fora das fases: o painel calmo (14.5) e a coluna de
+deploys que cabe com até seis deploys em 1920 × 1080 (14.6). A 8 é a próxima; a 9 está bloqueada.
+Uma fase só se fecha quando a conferência com deploy real também foi feita (as tarefas com o número
+entre parênteses).
 
 | Fase | Situação | O que falta |
 |---|---|---|
 | 1. Página e monitores | Em produção | Nada |
-| 2. Virada no cluster | Em produção; monitores da `winker` ligados às releases pela tag `deploy` (8 na fase 2, os demais na 10.5) | Comparar o fim da virada com o `kubectl rollout status` num merge real (8.2) |
-| 3. Cobertura do EKS | Em produção: 17 namespaces, 30 releases | Origem do `chat-api` (10.1); até lá ele aparece só com a virada |
-| 3.1 Histórico no banco | Em produção; conferido com o merge `45ba525` e o reinício da `winker.28` | Nada |
+| 2. Virada no cluster | Em produção; 20 monitores da `winker` com a tag `deploy` | Comparar o fim de uma virada com o `kubectl rollout status` num merge real (8.2) |
+| 3. Cobertura do EKS | Em produção: 17 namespaces, 30 releases, 21 projetos (12 com origem de pipeline) | Origem do `jambonz-vad`, o único sem resposta (10.1); até lá ele aparece só com a virada |
+| 3.1 Histórico no banco | Em produção | Nada |
 | 3.2 Indicadores e tema | Em produção | Nada |
 | 3.3 Painel fora do ar | Em produção | Nada |
-| 4. Pipelines | Em produção. Webhooks cadastrados (8 no Bitbucket, 3 no GitHub); os 3 do GitHub conferidos pelo `ping`; a primeira entrega do Bitbucket chegou com o merge do condominio de 02/11 e abriu o cartão "Na pipeline". O cartão mostra a etapa do deploy ("etapa 2 de 5") desde a `winker.28` | Primeira entrega dos outros 7 repositórios do Bitbucket e o `refname` da pipeline de pull request (20.3); um merge do condominio acompanhado até a virada concluída, com os tempos (20.4) |
-| 5. Sons | Em produção, ligados por padrão; ouvidos num deploy real | Nada |
-| 6. Como voltar | Em produção; comando conferido pelo Erik num deploy real | Nada |
-| 7. Amplify | Em produção (`winker.30`, chart 0.5.0); os 8 apps lidos pela role, sem erro | Acompanhar um build real do `pro` e ligar os monitores com `amplify/<app>` (26.3) |
-| 8. Conferência de cobertura | Não começada; é a próxima | Tudo |
+| 4. Pipelines | Em produção, com 9 webhooks no Bitbucket e 3 no GitHub. Já entregaram: condominio, api_gateway e chat-winker (Bitbucket) e os 3 do GitHub. O chat-winker chegou em 03/11 e foi descartado, porque o painel esperava a branch `master` e a produção sai da `main`; corrigido no chart 0.5.2 | A primeira entrega aceita do chat-winker e a primeira dos outros 6 do Bitbucket, mais o `refname` da pipeline de pull request (20.3); um merge do condominio acompanhado até a virada concluída, com os tempos (20.4) |
+| 5. Sons | Em produção | Nada |
+| 6. Como voltar | Em produção | Nada |
+| 7. Amplify | Em produção; os 8 apps lidos pela role, sem erro; "Flow", "Convite", "Portaria Web" e "Phone (Frontend)" ligados aos apps (03/11) | Acompanhar um build real do `pro` no painel e conferir o link "abrir" (26.3) |
+| 8. Conferência de cobertura | Não começada; é a próxima | Tudo (27 e 28) |
 | 9. Projetos da OCI | Não começada; bloqueada | Inventário do OKE e caminho de rede do EKS até a API dele (29.1 e 29.2), que dependem de quem tem acesso à OCI |
+
+Dos 6 repositórios do Bitbucket que ainda não entregaram, 5 não tiveram merge na branch de deploy
+desde o cadastro (connector-server, observer, land, mcp-winker e audit-consumer); a entrega vem com o
+próximo. O `ia-agents` teve um merge em 02/11 às 16:02 UTC, que os logs do Kuma, refeitos a cada
+deploy dele, já não mostram: a conferência é no "View requests" do webhook no Bitbucket.
 
 As conferências que faltam nas fases 2 e 4 (8.2 e 20.4) dependem do mesmo evento: um merge do
 condominio acompanhado no painel do push até "No ar", comparando o fim com o `kubectl rollout status`.

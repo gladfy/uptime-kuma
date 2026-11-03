@@ -83,17 +83,17 @@ Leva ao painel as outras aplicações que rodam no EKS. Inventário de 31/10/202
 |---|---|---|---|
 | agua-gas | `microservices-prod/agua-gas` | nenhuma (CodeCommit `agua_gas_server`) | Água/Gás |
 | superlogica | `microservices-prod/ms` | nenhuma (CodeCommit `microservice_superlogica`) | Superlógica |
-| status | `microservices-prod/status` | a confirmar (Bitbucket `winker/status` ou CodeCommit `status`) | Status |
+| status | `microservices-prod/status` | nenhuma (CodeCommit `status`, `buildspec.yml`) | Status |
 | integration | `microservices-prod/integration-prod`, `microservices-prod/integration-worker` | nenhuma (CodeCommit `integration`) | — |
 | observer | `observer/observer-prod`, `observer/observer-worker` | Bitbucket `winker/observer` | Observer |
-| site | `site-prod/site-prod` | a confirmar (CodeCommit `site`) | Site |
-| jambonz | `jambonz-prod/jambonz-worker`, `jambonz-prod/jambonz-vad` | GitHub `gladfy/jambonz-worker` (o do vad a confirmar) | Jambonz Worker |
-| wk-face-api | `facial/wk-face-api` | a confirmar | — |
-| land | `land/land` | a confirmar | — |
+| site | `site-prod/site-prod` | nenhuma (CodeCommit `site`, `buildspec.yml`) | Site |
+| jambonz | `jambonz-prod/jambonz-worker`, `jambonz-prod/jambonz-vad` | GitHub `gladfy/jambonz-worker`, branch `main`; o `jambonz-vad` é projeto próprio, sem origem (a imagem `tiwinker/jambonz-vad` não sai desse repositório; a confirmar) | Jambonz Worker |
+| wk-face-api | `facial/wk-face-api` | nenhuma (GitHub `gladfy/wk-face-api`, workflow só de testes) | — |
+| land | `land/land` | Bitbucket `winker/land`, branch `master` | — |
 | chat-api | `chat-api/chat-api` | Bitbucket `winker/chat-winker`, branch `main` (02/11/2026; chart 0.5.2 corrige o `master` do 0.5.1) | — |
-| ai-agents | `ai-agents-prod/ai-agents-prod` | a confirmar | — |
-| winker-mcp | `mcp-prod/winker-mcp-prod` | a confirmar | — |
-| audit-consumer | `audit-platform/audit-consumer` | a confirmar | — |
+| ai-agents | `ai-agents-prod/ai-agents-prod` | Bitbucket `winker/ia-agents`, branch `master` | — |
+| winker-mcp | `mcp-prod/winker-mcp-prod` | Bitbucket `winker/mcp-winker`, branch `master` | — |
+| audit-consumer | `audit-platform/audit-consumer` | Bitbucket `winker/audit-consumer`, branch `master` | — |
 | temporal | `temporal/temporal` | nenhuma (chart de infraestrutura) | Temporal |
 | prefect | `big-data/prefect-server` | nenhuma (chart de infraestrutura) | Prefect |
 
@@ -112,6 +112,7 @@ Fora desta fase, para a conferência da fase 8 decidir: as variantes de estágio
   - 02/11/2026, pelos clones locais: `land` tem pipeline no Bitbucket (`winker/land`, `master`, `helm upgrade` no `bitbucket-pipelines.yml`) e ganha origem no chart da fase 4; Status e Site fazem deploy pelo CodeCommit (`buildspec.yml`) e ficam sem origem; `wk-face-api` está no GitHub (`gladfy/wk-face-api`), mas o workflow só roda testes, sem deploy, e fica sem origem. Faltam chat-api, ai-agents, winker-mcp e audit-consumer (sem clone local) e o endereço do monitor "Flow".
   - 02/11/2026, com o Erik: `ai-agents` é Bitbucket `winker/ia-agents` e `winker-mcp` é Bitbucket `winker/mcp-winker`, os dois com deploy a partir do `master` (o `ci-scripts/build-deploy.sh` publica `ai-agents-prod` e `winker-mcp-prod`); entram com origem no chart da fase 4, junto com o `land`. O monitor "Flow" checa `https://flow.winker.com.br`, domínio do app `pro` do Amplify (`d1ymgc35qf7bzb`): tag `amplify/pro` na fase 7, não do gateway. **Pendente:** `chat-api`.
   - 02/11/2026: `audit-consumer` é Bitbucket `winker/audit-consumer`, deploy a partir do `master` (`helm upgrade --install audit-consumer -n audit-platform`); entra com origem no chart da fase 4.
+  - 03/11/2026: `chat-api` é Bitbucket `winker/chat-winker`, deploy a partir da `main` (o step `main` do `bitbucket-pipelines.yml`; a `master` é outra branch), no chart 0.5.2. Resta só o `jambonz-vad`: a imagem dele não sai do `gladfy/jambonz-worker`, e ele segue sem origem até alguém dizer de onde vem.
   - No chart 0.3.0 entraram com origem só as confirmadas por clone local: `observer` (Bitbucket `winker/observer`, `master`) e `jambonz-worker` (GitHub `gladfy/jambonz-worker`, branch **`main`**). O `jambonz-vad` virou projeto próprio, sem origem, para a fase 4 não esperar pipeline do repositório do worker na virada dele. Os demais entraram sem origem.
 - [x] 10.2 Chart `uptimekuma` 0.3.0: os namespaces `microservices-prod`, `observer`, `site-prod`, `jambonz-prod`, `facial`, `land`, `chat-api`, `ai-agents-prod`, `mcp-prod`, `audit-platform`, `temporal` e `big-data` em `deployBoard.namespaces` (RoleBinding e configuração da mesma lista) e os projetos da tabela em `deployBoard.projects`. `helm lint`, `helm template` e o `config.json` renderizado passando no validador da 9.1. Publicar no S3 só com o pedido do Erik.
   - Branch `feat/uptimekuma-painel-de-deploys-fase-3` do `infrastructure` (19a1140f). `helm lint` ok; `helm template` com 17 RoleBindings; `config.json` renderizado com 17 namespaces, 21 projetos e 30 releases, aceito pelo validador novo e **recusado** pelo do master (`projects[7].source`), o que confirma a ordem; as 30 releases existem no cluster. Pacote `uptimekuma-0.3.0.tgz` (sha256 `04058c8b…733fec26`) pronto, ainda não publicado. `CHART_VERSION` da pipeline do fork em 0.3.0, no mesmo PR do código.
@@ -218,6 +219,7 @@ Exige o Secret com os dois segredos e o cadastro dos webhooks: os cinco da fase 
 - [x] 20.1 Secret com `DEPLOY_BOARD_BITBUCKET_SECRET` e `DEPLOY_BOARD_GITHUB_SECRET`, referenciado no Deployment. Publicar a versão nova do chart. Chart 0.4.0 na branch `feat/uptimekuma-painel-de-deploys-fase-4` do infrastructure: o Secret `uptime-kuma-deploy-board-webhooks` é referenciado com `optional: true` e criado à mão pelo Erik (o chart não o cria); um Ingress próprio para os dois caminhos exatos do webhook, com a lista de faixas de saída do Bitbucket e do GitHub (o Ingress principal só aceita o connector e a sede); `workflow` do chat, do Kuma e do jambonz; origem do land, ai-agents, winker-mcp e audit-consumer. Feito em 02/11/2026: Secret criado pelo Erik, chart 0.4.0 na `main` do infrastructure e publicado no S3, no ar com a `2.5.3-winker.25`; o caminho do webhook responde 403 da sede e o resto do Kuma continua com a lista de antes.
 - [x] 20.2 `npm run build`, `npm run test-backend`, `npm run lint` e `node extra/check-lang-json.js` verdes; deploy.
 - [ ] 20.3 Cadastrar os webhooks com o segredo (os cinco da fase 2 e os dos projetos da fase 3 com origem) e conferir a primeira entrega de cada um no histórico do remetente, incluindo o formato do cabeçalho de assinatura do Bitbucket. Cadastrados em 02/11/2026 (8 no Bitbucket, 3 no GitHub). O `ping` dos 3 do GitHub chegou com assinatura válida; a primeira entrega do Bitbucket chegou com o merge do condominio de 02/11 (push e status da pipeline, cartão "Na pipeline" com a mensagem do merge), o que confirma o cabeçalho de assinatura do Bitbucket. Falta a primeira entrega dos outros 7 repositórios do Bitbucket e conferir o `refname` do status de pipeline de pull request do condominio.
+  - 03/11/2026: o webhook do `winker/chat-winker` (o nono do Bitbucket, cadastrado pelo Erik) entregou o merge de `e45dd76` às 10:17 UTC, com assinatura válida, e o painel o descartou: a configuração esperava `master`, e a produção sai da `main`. Corrigido no chart 0.5.2, no ar desde 11:20 UTC. Ainda sem entrega: connector-server, observer, land, ia-agents, mcp-winker e audit-consumer. Só o `ia-agents` teve merge na branch de deploy depois do dia do cadastro (02/11 16:02 UTC, `9ed13cf`); os outros cinco não tiveram nenhum, então esperam o próximo merge. A entrega do `ia-agents` se confere no "View requests" do webhook, porque o log do Kuma recomeça a cada deploy dele.
 - [ ] 20.4 Acompanhar um merge real do condominio, do push à virada concluída, e registrar os tempos observados no change.
 
 # Fase 5 — Sons
