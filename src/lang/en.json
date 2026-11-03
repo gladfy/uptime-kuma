@@ -332,6 +332,7 @@
     "deployBoardLabelLive": "Live",
     "deployBoardLabelNoPipeline": "No pipeline",
     "deployBoardRunning": "In progress",
+    "deployBoardMore": "+{n} in progress",
     "deployBoardFailures": "Failed",
     "deployBoardDismiss": "Dismiss",
     "deployBoardNoPipelineLinked": "no pipeline linked",

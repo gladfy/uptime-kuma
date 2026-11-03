@@ -514,6 +514,7 @@
     "deployBoardLabelLive": "No ar",
     "deployBoardLabelNoPipeline": "Sem pipeline",
     "deployBoardRunning": "Em andamento",
+    "deployBoardMore": "+{n} em andamento",
     "deployBoardFailures": "Com falha",
     "deployBoardDismiss": "Dispensar",
     "deployBoardNoPipelineLinked": "sem pipeline vinculado",
