@@ -654,7 +654,8 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 - **Rede até o OKE (fase 9):** respondida para a conta Winker em 03/11/2026 (API pública, ver
   decisão 19). Continua aberta para a conta Condominizar, de API só privada (tarefa 29.3).
 - **Onde fica o RBAC do lado da OCI:** respondida em 03/11/2026: não havia RBAC do OKE versionado. O
-  da leitura do painel fica em `helm-packages/tools/uptimekuma/oke/deploy-board-reader.yaml`.
+  da leitura do painel sai do chart do Kuma (`templates/deploy-board-reader-other-cluster.yaml`),
+  gerado dos mesmos namespaces de `deployBoard.clusters` e aplicado no OKE.
 - **O que mais roda no OKE:** respondida para a conta Winker em 03/11/2026 (tarefa 29.1): além das
   duas releases do painel, n8n, evolution-api, coturn, Loki, Tempo e Prometheus, sem origem de
   pipeline confirmada.
