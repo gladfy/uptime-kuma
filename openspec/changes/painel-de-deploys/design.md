@@ -653,7 +653,7 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
   ai-agents (`winker/ia-agents`), winker-mcp (`winker/mcp-winker`) e audit-consumer
   (`winker/audit-consumer`), que entram com origem na fase 4; Status e Site são CodeCommit e
   wk-face-api não tem deploy por pipeline, então ficam sem origem. O chat-api é o Bitbucket
-  `winker/chat-winker` (branch `master`, webhook cadastrado em 02/11/2026), com origem no chart 0.5.1.
+  `winker/chat-winker` (branch `main`, que é a do deploy de produção; webhook cadastrado em 02/11/2026), com origem no chart 0.5.2 — o 0.5.1 apontava `master` e descartava os webhooks.
 - **Monitor "Flow":** resolvido — `flow.winker.com.br` é domínio do app `pro` do Amplify; tag
   `amplify/pro` na fase 7.
 - **Ligações que dependem de confirmação:** guest-link → "Convite" e gatekeeper-dashboard →
