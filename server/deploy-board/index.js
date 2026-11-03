@@ -221,6 +221,7 @@ class DeployBoard {
             known: this.known,
             onSeen: (key, signature) => this.history.saveObject(key, signature, this.store.now()),
         });
+        this.store.setCommitsLookup((release) => tracker.commitsOf(release));
         this.cluster = new KubernetesSource({
             namespaces: config.namespaces,
             tracker,

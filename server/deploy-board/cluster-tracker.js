@@ -16,6 +16,9 @@ const JOIN_MS = 2 * 60 * 1000;
 /** Kinds read from the cluster. */
 const KINDS = ["deployments", "cronjobs"];
 
+/** An image tag that is a commit. */
+const COMMIT_RE = /^[0-9a-f]{7,40}$/;
+
 /**
  * Rollouts of the configured Helm releases, from the Deployments and CronJobs the cluster source
  * reads. Holds only the fields of rollout-state.js; the I/O lives in kubernetes-source.js.
@@ -289,6 +292,21 @@ class ClusterTracker {
      */
     publish(rollout) {
         this.onRollout(publicRollout(rollout, this.objects));
+    }
+
+    /**
+     * The commit each object of a release runs now, by its image tag.
+     * @param {string} release "<namespace>/<release>".
+     * @returns {string[]|null} One commit per object whose tag is one, or null when no object of the
+     * release was seen.
+     */
+    commitsOf(release) {
+        const all = KINDS.flatMap((kind) => [...this.objects[kind].values()]);
+        const objects = all.filter((o) => releaseKey(o) === release);
+        if (!objects.length) {
+            return null;
+        }
+        return objects.map((o) => o.images.find((tag) => COMMIT_RE.test(tag))).filter(Boolean);
     }
 
     /**

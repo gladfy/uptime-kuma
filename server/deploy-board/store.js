@@ -159,6 +159,8 @@ class DeployBoardStore {
         this.projects = new Map();
         this.configProjects = [];
         this.amplifyApps = [];
+        // What each release runs now, from the cluster (see ClusterTracker.commitsOf).
+        this.commitsOf = () => null;
         this.staleNamespaces = new Set();
         this.lastDoneStartedAt = new Map();
         this.sequence = 0;
@@ -236,13 +238,17 @@ class DeployBoardStore {
         this.projectOfRelease.clear();
         this.projects.clear();
         for (const project of this.configProjects) {
-            this.projects.set(project.name, { name: project.name, source: project.source });
+            this.projects.set(project.name, {
+                name: project.name,
+                source: project.source,
+                releases: project.releases,
+            });
             for (const r of project.releases) {
                 this.projectOfRelease.set(`${r.namespace}/${r.release}`, { name: project.name, source: project.source });
             }
         }
         for (const name of this.amplifyApps) {
-            this.projects.set(name, { name, source: "amplify" });
+            this.projects.set(name, { name, source: "amplify", releases: [] });
         }
     }
 
@@ -310,9 +316,19 @@ class DeployBoardStore {
             // older (committed, reviewed, pushed), and would make the merge look stale on arrival.
             event = { ...event, at: this.now() };
         }
+        // A run that starts after the commit's deploy went live is a deploy of its own (a rerun of an
+        // old commit): joined, the card would count the days between them. An open one comes first.
+        const sameCommitOpen = (d) =>
+            d.project === project.name &&
+            d.sha === event.sha &&
+            !startsAfter(event, d.state === "done" ? d.endedAt : null);
         let deploy =
-            this.deploys.find((d) => d.project === project.name && d.sha === event.sha) ||
-            this.reopen(project, event.sha, () => true);
+            this.deploys
+                .filter(sameCommitOpen)
+                .sort(
+                    (a, b) => (a.endedAt === null ? 0 : 1) - (b.endedAt === null ? 0 : 1) || b.startedAt - a.startedAt
+                )[0] ||
+            this.reopen(project, event.sha, (h) => !startsAfter(event, h.outcome === "done" ? h.endedAt : null));
         if (!deploy && event.kind === "run") {
             deploy = this.deploys.find(
                 (d) =>
@@ -342,6 +358,7 @@ class DeployBoardStore {
         }
         const wasEnded = deploy.endedAt !== null;
         refresh(deploy, this.waitsRollout(deploy));
+        this.closeIfLive(deploy);
         // Saved when it ends, and again when a pipeline of an ended deploy reports (the chat's
         // workflow finishes after the rollout it waits for).
         if (deploy.endedAt !== null) {
@@ -377,6 +394,45 @@ class DeployBoardStore {
      */
     waitsRollout(deploy) {
         return deploy.pipelineSource !== "amplify" && this.clusterConfigured();
+    }
+
+    /**
+     * @param {Function} lookup "<namespace>/<release>" → the commits its objects run, or null.
+     * @returns {void}
+     */
+    setCommitsLookup(lookup) {
+        this.commitsOf = lookup;
+    }
+
+    /**
+     * Whether every release of the deploy's project already runs its commit: a green pipeline of it
+     * has nothing to roll (a rerun of the commit in production), so there is no rollout to wait for.
+     * @param {object} deploy Internal deploy.
+     * @returns {boolean} Whether it is live already.
+     */
+    alreadyLive(deploy) {
+        const releases = this.projects.get(deploy.project)?.releases || [];
+        if (!deploy.sha || !releases.length || !this.clusterActive()) {
+            return false;
+        }
+        return releases.every((r) => {
+            const commits = this.commitsOf(`${r.namespace}/${r.release}`);
+            return commits?.length > 0 && commits.every((c) => sameCommit(c, deploy.sha));
+        });
+    }
+
+    /**
+     * End, as live, a green pipeline whose commit the cluster already runs.
+     * @param {object} deploy Internal deploy.
+     * @returns {boolean} Whether it ended now.
+     */
+    closeIfLive(deploy) {
+        if (deploy.state !== "built" || !this.alreadyLive(deploy)) {
+            return false;
+        }
+        deploy.state = "done";
+        deploy.endedAt = pipelineEnd(deploy.pipeline);
+        return true;
     }
 
     /**
@@ -713,6 +769,12 @@ class DeployBoardStore {
         const now = this.now();
         let moved = false;
         for (const deploy of [...this.deploys]) {
+            if (this.closeIfLive(deploy)) {
+                this.save(recordOf(deploy, "done", deploy.endedAt));
+                const last = this.lastDoneStartedAt.get(deploy.project) ?? -Infinity;
+                this.lastDoneStartedAt.set(deploy.project, Math.max(last, deploy.startedAt));
+                moved = true;
+            }
             let outcome = null;
             if (deploy.state === "superseded") {
                 outcome = "replaced";
@@ -1063,8 +1125,7 @@ function applyPipelineEvent(pipeline, event, now) {
             url: event.url ?? before?.url ?? null,
             // The commit message, for a source with no merge event (Amplify).
             message: event.message ?? before?.message ?? null,
-            // A late "completed" may come without the start the "in_progress" had.
-            startedAt: event.startedAt ?? before?.startedAt ?? null,
+            startedAt: runStart(before, event),
             endedAt: event.endedAt,
             attempt: event.attempt ?? 1,
             updatedAt: event.updatedAt ?? null,
@@ -1172,6 +1233,40 @@ function pipelineSilent(pipeline, now) {
  */
 function eventTime(event) {
     return event.at ?? event.startedAt ?? null;
+}
+
+/**
+ * When a run started. Within an attempt the start of the first event stays: a late "completed" may
+ * come without it, or (Bitbucket) with the creation of the status, days old on a rerun. A run that
+ * runs again after it ended is a rerun, and starts again.
+ * @param {object|undefined} before What the board has of the run.
+ * @param {object} event What arrived.
+ * @returns {number|null} Start.
+ */
+function runStart(before, event) {
+    const again =
+        !before ||
+        (event.attempt ?? 1) !== (before.attempt ?? 1) ||
+        (FINAL_STATES.includes(before.state) && !FINAL_STATES.includes(event.state));
+    return (again ? event.startedAt ?? before?.startedAt : before.startedAt ?? event.startedAt) ?? null;
+}
+
+/**
+ * @param {object} event Pipeline event.
+ * @param {number|null} endedAt When a deploy went live, or null when it did not.
+ * @returns {boolean} Whether it is a run that started after that.
+ */
+function startsAfter(event, endedAt) {
+    return event.kind === "run" && endedAt != null && event.startedAt != null && event.startedAt > endedAt;
+}
+
+/**
+ * @param {string} a Commit, full or short.
+ * @param {string} b Commit, full or short.
+ * @returns {boolean} Whether they are the same commit.
+ */
+function sameCommit(a, b) {
+    return a.startsWith(b) || b.startsWith(a);
 }
 
 /**

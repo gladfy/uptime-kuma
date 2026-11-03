@@ -109,6 +109,36 @@ describe("Status page group expansion (show_children)", () => {
         assert.ok(!nomes.includes("Worker pausado"), "filho pausado nao pode aparecer");
     });
 
+    test("filhos em ordem alfabetica de leitura: acento junto da letra, numero pelo valor", async () => {
+        const grupo = R.dispense("monitor");
+        grupo.name = "Grupo ordem";
+        grupo.type = "group";
+        grupo.active = true;
+        await R.store(grupo);
+        for (const nome of ["Zabbix", "Água/Gás", "TURN 3478", "agenda", "TURN 443", "Évora"]) {
+            const filho = R.dispense("monitor");
+            filho.name = nome;
+            filho.type = "http";
+            filho.active = true;
+            filho.parent = grupo.id;
+            await R.store(filho);
+        }
+        await R.exec("DELETE FROM monitor_group");
+        const row = R.dispense("monitor_group");
+        row.group_id = pageGroup.id;
+        row.monitor_id = grupo.id;
+        row.weight = 1;
+        row.show_children = true;
+        await R.store(row);
+
+        const bean = await R.findOne("group", " id = ? ", [pageGroup.id]);
+        const json = await bean.toPublicJSON();
+        assert.deepStrictEqual(
+            json.monitorList[0].childrenList.map((c) => c.name),
+            ["agenda", "Água/Gás", "Évora", "TURN 443", "TURN 3478", "Zabbix"]
+        );
+    });
+
     test("URL do filho nunca vaza — com controle positivo do mecanismo", async () => {
         await montarPagina(true, true);
         const bean = await R.findOne("group", " id = ? ", [pageGroup.id]);

@@ -124,7 +124,9 @@ linha fica sem marca.
 Com ao menos um monitor fora do ar, uma faixa acima da grade SHALL dizer quais (até 3, e "+N" para
 o resto), quantas verificações seguidas falharam e há quanto tempo está fora (mm:ss), e SHALL sumir
 quando todos voltarem. A faixa SHALL dizer, do que está fora há mais tempo, uma linha sobre deploy:
-"Deploy de <projeto> em andamento", "Começou <n> min depois da virada de <release>" (virada
+"Deploy de <projeto> em andamento" (só deploy que já chegou ao serviço: virada no cluster ou passo de
+publicação do Amplify, a mesma regra da marca "em deploy"; pipeline e build pronto não contam),
+"Começou <n> min depois da virada de <release>" (virada
 concluída até 60 min antes do início da queda), "Nenhum deploy relacionado na última hora" ou
 "Este monitor não tem deploy associado".
 
@@ -134,6 +136,10 @@ omitir a linha de deploy: "nenhum deploy relacionado" só pode ser dito por quem
 #### Scenario: Queda depois de virada
 - **WHEN** a virada de `gateway/gateway-prod` conclui e o monitor ligado cai 2 minutos depois
 - **THEN** o destaque mostra "Começou 2 min depois da virada de gateway-prod" com o SHA curto do commit
+
+#### Scenario: Queda com pipeline do mesmo projeto rodando
+- **WHEN** o monitor ligado ao `gateway/gateway-prod` cai enquanto a pipeline do api_gateway roda e nada virou ainda
+- **THEN** o destaque não diz "Deploy de api_gateway em andamento"
 
 #### Scenario: Queda sem a fonte do cluster
 - **WHEN** o monitor "Web" (tag `deploy` = `condominio/winker-prod`) cai e a fonte do cluster não está configurada
@@ -234,6 +240,13 @@ voltar" nela. Um cartão de falha ou de virada travada SHALL ficar até alguém 
 cartão, gravado no navegador; o cabeçalho deixa de contá-lo) ou até um deploy posterior do mesmo
 projeto concluir com sucesso, o que vier primeiro.
 
+Uma pipeline rodada de novo num commit cujo deploy já foi ao ar SHALL ser um deploy próprio,
+contado da hora em que a nova execução começou, e não do merge nem da primeira execução (o Bitbucket
+reaproveita o status da primeira, com a data de criação de dias antes). Rodada de novo depois de uma
+falha, a pipeline SHALL seguir no cartão da falha. Pipeline verde de um commit que todas as releases
+do projeto já rodam (cada objeto com tag de commit, lido do cluster ativo) SHALL concluir como "No ar"
+na hora, sem esperar virada e sem o aviso "Nenhuma virada": não há o que trocar.
+
 As "Últimas 24 horas" SHALL mostrar os deploys encerrados nas últimas 24 horas em quatro colunas
 (✓/✕, projeto e SHA curto, duração, há quanto tempo), os mais recentes primeiro. Duração
 desconhecida (virou com o painel fora do ar) SHALL ser "—", com uma nota só abaixo da lista. Um
@@ -247,6 +260,10 @@ SHA começar.
 #### Scenario: Integration e prod do mesmo commit, 26 minutos depois
 - **WHEN** o `winker-integration` concluiu o commit `9ee108f`, o deploy já saiu para a lista "Hoje", e 26 minutos depois o `winker-prod` começa a virar o mesmo commit
 - **THEN** o deploy `condominio 9ee108f` volta a ser cartão, com as duas linhas de release, e há uma entrada só desse commit
+
+#### Scenario: Pipeline rodada de novo num commit em produção
+- **WHEN** a pipeline do audit-consumer roda de novo no commit `c3073ea`, que o cluster já roda, 11 dias depois do merge, e fica verde em 4 minutos
+- **THEN** o deploy entra nas "Últimas 24 horas" como concluído com 4 min, sem cartão "Nenhuma virada" e sem "263 h"
 
 #### Scenario: Falha resolvida por deploy novo
 - **WHEN** o connector-server tem uma virada travada e um deploy posterior dele conclui
@@ -322,12 +339,17 @@ espaço para pelo menos três linhas e manter o degradê na base quando for cort
 ### Requirement: Resumo dos deploys no cabeçalho
 
 O segmento "Deploys" do cabeçalho SHALL ter, na linha principal, "N em andamento" (sem contar as
-falhas), com a bolinha azul pulsando; e, embaixo, a contagem por etapa, só das que existem, nesta
+falhas), com a bolinha azul pulsando, ou em âmbar quando algum cartão em andamento está em âmbar
+(virada sem progresso, pipeline verde sem virada); e, embaixo, a contagem por etapa, só das que existem, nesta
 ordem: "X na virada, Y na pipeline, Z aguardando virada" e, se houver, "W falhou" em vermelho. A
 linha de baixo SHALL NOT listar nomes de repositório e SHALL NOT quebrar. Sem deploy em andamento,
 o segmento SHALL ficar sem bolinha, com "Nenhum agora" e, embaixo, o último deploy ("último:
 <projeto>, há N"); com só falhas na tela, SHALL dizer "N com falha" em vermelho, com o triângulo
 (uma virada travada ainda está acontecendo).
+
+#### Scenario: Pipeline verde sem virada
+- **WHEN** há dois deploys em andamento e um deles está com o aviso "Nenhuma virada"
+- **THEN** "2 em andamento" e a bolinha aparecem em âmbar
 
 #### Scenario: Cinco em andamento e uma falha
 - **WHEN** há duas viradas, duas pipelines, uma pipeline verde aguardando a virada e uma falha
@@ -338,12 +360,13 @@ o segmento SHALL ficar sem bolinha, com "Nenhum agora" e, embaixo, o último dep
 O cabeçalho SHALL mostrar quantos deploys houve nas últimas 24 horas e a taxa de sucesso, contados
 por deploy (um commit com integration e prod é um deploy). A taxa SHALL ser concluídos ÷
 (concluídos + travados + com falha); deploy substituído e deploy em andamento SHALL ficar fora dela.
-Sem nenhum deploy encerrado na janela, a taxa SHALL aparecer como "—". Os indicadores SHALL NOT mudar
-a cor de monitor nem de cartão.
+Sem nenhum deploy encerrado na janela, a taxa SHALL aparecer como "—". Com a taxa abaixo de 100%, o
+total e a taxa SHALL aparecer em âmbar; em 100%, a taxa em verde. Os indicadores SHALL NOT mudar a cor
+de monitor nem de cartão.
 
 #### Scenario: Doze encerrados, um travado
 - **WHEN** nas últimas 24 horas houve 11 deploys concluídos, 1 travado, 2 substituídos e 1 em andamento
-- **THEN** o cabeçalho mostra "Deploys 24 h: 15" e "Sucesso: 92% (11 de 12)"
+- **THEN** o cabeçalho mostra "Deploys 24 h: 15" e "Sucesso: 92% (11 de 12)", os dois em âmbar
 
 #### Scenario: Nada encerrado
 - **WHEN** não há deploy encerrado nas últimas 24 horas

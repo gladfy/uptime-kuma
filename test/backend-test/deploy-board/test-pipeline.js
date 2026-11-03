@@ -267,6 +267,104 @@ describe("Pipeline e virada viram um deploy só", () => {
         assert.strictEqual(snap.stats.successRate, null, "fora da taxa de sucesso");
     });
 
+    test("pipeline verde de um commit que o cluster já roda: No ar, sem aviso de virada", () => {
+        store.setCommitsLookup((release) => (release.startsWith("condominio/") ? [SHA, SHA.slice(0, 7)] : null));
+        run("condominio", SHA, "running");
+        tick(5 * MIN);
+        run("condominio", SHA, "success");
+        let [card] = cards();
+        assert.strictEqual(card.state, "done");
+        assert.strictEqual(card.label, "live");
+        assert.strictEqual(card.endedAt, clock);
+        assert.strictEqual(saved.at(-1).outcome, "done");
+        tick(NO_ROLLOUT_MS);
+        store.tick();
+        [card] = cards();
+        assert.notStrictEqual(card?.label, "noRollout");
+    });
+
+    test("commit já no ar só em parte: uma release noutro commit, ou sem objeto lido, ainda espera a virada", () => {
+        // O Deployment já no commit e o CronJob da mesma release ainda no anterior.
+        const running = { "condominio/winker-prod": [SHA], "condominio/winker-integration": [SHA, SHA2] };
+        store.setCommitsLookup((release) => running[release] ?? null);
+        run("condominio", SHA, "success");
+        assert.strictEqual(cards()[0].state, "built");
+        running["condominio/winker-integration"] = null;
+        store.tick();
+        assert.strictEqual(cards()[0].state, "built");
+        running["condominio/winker-integration"] = [SHA];
+        store.tick();
+        assert.strictEqual(cards()[0].state, "done", "fecha assim que o cluster mostra o commit");
+    });
+
+    test("commit no ar com o cluster sem leitura: não fecha (não dá para afirmar)", () => {
+        store.setCommitsLookup(() => [SHA]);
+        store.setSource("cluster", "stale");
+        run("condominio", SHA, "success");
+        assert.strictEqual(cards()[0].state, "built");
+    });
+
+    test("pipeline rodada de novo num commit que já foi ao ar: deploy novo, contado da nova execução", () => {
+        merge("condominio", SHA);
+        run("condominio", SHA, "running", { updatedAt: clock });
+        tick(8 * MIN);
+        run("condominio", SHA, "success", { updatedAt: clock });
+        rollout("condominio", "winker-prod", SHA, { state: "done" });
+        rollout("condominio", "winker-integration", SHA, { state: "done" });
+        assert.strictEqual(cards()[0].state, "done");
+        tick(DONE_VISIBLE_MS);
+        store.tick();
+        assert.strictEqual(store.snapshot().history.length, 1);
+
+        tick(20 * 60 * MIN);
+        store.setCommitsLookup(() => [SHA]);
+        const rerunAt = clock;
+        run("condominio", SHA, "running", { startedAt: rerunAt, updatedAt: rerunAt });
+        tick(4 * MIN);
+        // O fim do Bitbucket traz a criação do status, da primeira execução.
+        run("condominio", SHA, "success", { startedAt: rerunAt - 20 * 60 * MIN, updatedAt: clock });
+        const [card] = cards();
+        assert.strictEqual(cards().length, 1);
+        assert.strictEqual(card.startedAt, rerunAt);
+        assert.strictEqual(card.endedAt - card.startedAt, 4 * MIN);
+        assert.strictEqual(card.state, "done");
+        const history = store.snapshot().history;
+        assert.strictEqual(history.length, 1, "o deploy antigo fica como estava");
+        assert.strictEqual(history[0].endedAt - history[0].startedAt, 8 * MIN);
+    });
+
+    test("rodada de novo com o deploy anterior ainda na tela: cartão novo, e o fim vai para ele", () => {
+        run("condominio", SHA, "running", { updatedAt: clock });
+        tick(8 * MIN);
+        run("condominio", SHA, "success", { updatedAt: clock });
+        rollout("condominio", "winker-prod", SHA, { state: "done" });
+        rollout("condominio", "winker-integration", SHA, { state: "done" });
+        const firstStart = cards()[0].startedAt;
+        tick(2 * MIN);
+        store.setCommitsLookup(() => [SHA]);
+        const rerunAt = clock;
+        run("condominio", SHA, "running", { startedAt: rerunAt, updatedAt: rerunAt });
+        tick(3 * MIN);
+        run("condominio", SHA, "success", { startedAt: firstStart, updatedAt: clock });
+        const byStart = cards().sort((a, b) => a.startedAt - b.startedAt);
+        assert.strictEqual(byStart.length, 2);
+        assert.strictEqual(byStart[0].endedAt - byStart[0].startedAt, 8 * MIN, "o anterior fica como estava");
+        assert.strictEqual(byStart[1].startedAt, rerunAt);
+        assert.strictEqual(byStart[1].state, "done");
+    });
+
+    test("pipeline que falhou rodada de novo: segue no mesmo cartão", () => {
+        merge("condominio", SHA);
+        run("condominio", SHA, "running", { updatedAt: clock });
+        tick(4 * MIN);
+        run("condominio", SHA, "failed", { updatedAt: clock });
+        assert.strictEqual(cards()[0].state, "failed");
+        tick(2 * MIN);
+        run("condominio", SHA, "running", { startedAt: clock, updatedAt: clock });
+        assert.strictEqual(cards().length, 1);
+        assert.strictEqual(cards()[0].state, "pipeline");
+    });
+
     test("cluster desligado: pipeline verde é o fim do que se vê, sem aviso de virada", () => {
         store.setSource("cluster", "unconfigured");
         run("condominio", SHA, "success");

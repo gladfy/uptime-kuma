@@ -135,6 +135,27 @@ describe("Eventos do Bitbucket", () => {
         }
     });
 
+    test("pipeline rodada de novo: o status em andamento começa quando mudou, não quando foi criado", () => {
+        // O Bitbucket reaproveita o status da primeira execução: created_on é de dias antes.
+        const old = { created_on: "2026-10-24T12:00:00+00:00", updated_on: "2026-11-03T18:33:12+00:00" };
+        const [running] = parseBitbucket(
+            "repo:commit_status_updated",
+            bitbucketStatus("INPROGRESS", old),
+            PROJECTS
+        ).events;
+        assert.strictEqual(running.startedAt, Date.parse("2026-11-03T18:33:12Z"));
+        const [done] = parseBitbucket(
+            "repo:commit_status_updated",
+            bitbucketStatus("SUCCESSFUL", old),
+            PROJECTS
+        ).events;
+        assert.strictEqual(
+            done.startedAt,
+            Date.parse("2026-10-24T12:00:00Z"),
+            "o fim não sabe do rerun: o store guarda o início"
+        );
+    });
+
     test("SHA tirado do link quando não vem em commit.hash; status sem branch passa marcado", () => {
         const [e] = parseBitbucket(
             "repo:commit_status_created",

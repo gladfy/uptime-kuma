@@ -32,6 +32,15 @@ describe("Viradas por release", () => {
         assert.deepStrictEqual(published, []);
     });
 
+    test("commit que cada release roda agora: um por objeto, só tag que é commit; release não vista dá null", () => {
+        tracker.replace("condominio", "deployments", [deployment({})], true);
+        const crons = [cronJob({ name: "a", tag: "2222222bbbb" }), cronJob({ name: "b", tag: "latest" })];
+        tracker.replace("gateway", "cronjobs", crons, true);
+        assert.deepStrictEqual(tracker.commitsOf("condominio/winker-prod"), ["a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0"]);
+        assert.deepStrictEqual(tracker.commitsOf("gateway/gateway-cron"), ["2222222bbbb"]);
+        assert.strictEqual(tracker.commitsOf("chat/chatwoot"), null);
+    });
+
     test("Kuma sobe no meio da virada do gateway-prod: aparece em andamento, marcada como achada no boot", () => {
         const releases = ["gateway/gateway-prod"];
         tracker = new ClusterTracker({ releases, now: () => clock, onRollout: (r) => published.push(r) });
