@@ -1,5 +1,6 @@
 <template>
-    <article class="db-card" :class="'is-' + tone">
+    <!-- One markup for the three levels (full, medium, compact): the level only hides parts, in CSS. -->
+    <article class="db-card" :class="'is-' + tone" :data-level="level">
         <header class="db-card-head">
             <span class="db-card-project">{{ deploy.project }}</span>
             <code v-if="deploy.version" class="db-card-version">{{ deploy.version }}</code>
@@ -7,6 +8,8 @@
                 <font-awesome-icon v-if="tone === 'bad'" icon="exclamation-triangle" class="db-card-label-icon" />
                 {{ $t(labelKey) }}
             </span>
+            <!-- In compact, where the line "started N ago" is gone. -->
+            <span class="db-card-elapsed">{{ elapsedText }}</span>
             <button
                 v-if="dismissible"
                 type="button"
@@ -42,6 +45,14 @@
                 <span>{{ $t(STEP_KEYS[s.key]) }}</span>
             </li>
         </ol>
+
+        <!-- Medium and compact: one line instead of the pipeline box and the replica bars. -->
+        <p v-if="detail.length" class="db-card-detail">
+            <template v-for="(part, i) in detail" :key="i">
+                <b v-if="part.name">{{ part.text }}</b>
+                <template v-else>{{ part.text }}</template>
+            </template>
+        </p>
 
         <section v-if="pipeline" class="db-pipeline" :class="'is-' + pipeline.state">
             <div class="db-pipeline-head">
@@ -82,7 +93,7 @@
             {{ $t(pipeline?.source === "amplify" ? "deployBoardUnconfirmedAmplify" : "deployBoardUnconfirmed") }}
         </p>
 
-        <RollbackPanel v-if="deploy.rollback" :rollback="deploy.rollback" />
+        <RollbackPanel v-if="deploy.rollback" :rollback="deploy.rollback" class="db-card-rollback" />
     </article>
 </template>
 
@@ -143,6 +154,12 @@ const STEP_KEYS = {
     live: "deployBoardStepLive",
 };
 
+/** Deploy states of a rollout in the cluster: their one line is the replicas of each workload. */
+const ROLLOUT_STATES = ["updating", "noProgress", "stuck"];
+
+/** Stands for the name in a translated text, to split it around the name. */
+const NAME_MARK = "\u0000";
+
 /** Deploy state → tone of the card. */
 const TONES = {
     updating: "rolling",
@@ -180,6 +197,11 @@ export default {
         dismissible: {
             type: Boolean,
             default: false,
+        },
+        /** How much of the card shows: "full", "medium" or "compact" (the column picks it by measuring) */
+        level: {
+            type: String,
+            default: "full",
         },
     },
 
@@ -253,6 +275,51 @@ export default {
             return lines;
         },
 
+        /**
+         * The one line of the medium and compact levels, as parts; the names of workloads and jobs
+         * are the bold ones.
+         * @returns {{text: string, name: boolean}[]} Parts, none when there is nothing to say.
+         */
+        detail() {
+            const d = this.deploy;
+            const jobs = this.pipeline?.jobs || [];
+            if (ROLLOUT_STATES.includes(d.state) && d.releases.length) {
+                return d.releases.flatMap((r, i) => [
+                    ...(i ? [{ text: ", " }] : []),
+                    { text: r.release, name: true },
+                    ...(r.desired > 0 ? [{ text: ` ${r.updated}/${r.desired}` }] : []),
+                ]);
+            }
+            if (d.state === "failed") {
+                const job = jobs.find((j) => j.state === "failed");
+                const end = job?.endedAt || this.pipeline?.endedAt || d.endedAt;
+                const name = job ? job.name : this.$t(STEP_KEYS.pipeline);
+                return end ? this.named("deployBoardDetailJobFailed", name, this.formatDuration(this.now - end)) : [{ text: name, name: true }];
+            }
+            if (d.state === "pipeline" && jobs.length) {
+                const running = jobs.find((j) => j.state === "running");
+                const queued = jobs.filter((j) => j.state === "queued");
+                if (running) {
+                    const since = running.startedAt ? this.formatDuration(this.now - running.startedAt) : "";
+                    const parts = since ? this.named("deployBoardDetailJobRunning", running.name, since) : [{ text: running.name, name: true }];
+                    return queued.length ? [...parts, ...this.thenJobs(queued)] : parts;
+                }
+                if (queued.length) {
+                    return [...this.named("deployBoardDetailJobQueued", queued[0].name), ...this.thenJobs(queued.slice(1))];
+                }
+            }
+            const message = this.pipeline?.message;
+            return message ? [{ text: message }] : [];
+        },
+
+        /** @returns {string} Time running, or how long it took, alone: "15 min" */
+        elapsedText() {
+            if (this.deploy.missed) {
+                return "—";
+            }
+            return this.formatDuration((this.deploy.endedAt || this.now) - this.deploy.startedAt);
+        },
+
         /** @returns {string} How long it has been running, or how long it took */
         timeText() {
             // Its start was not seen: any duration would be made up.
@@ -267,6 +334,34 @@ export default {
     },
 
     methods: {
+        /**
+         * A translated text whose {0} is a name, in parts, so the name can be bold.
+         * @param {string} key i18n key, with the name as {0}.
+         * @param {string} name Name of the job or workload.
+         * @param {...string} rest The other values, from {1} on.
+         * @returns {{text: string, name: boolean}[]} Parts.
+         */
+        named(key, name, ...rest) {
+            const [before, after = ""] = this.$t(key, [NAME_MARK, ...rest]).split(NAME_MARK);
+            return [{ text: before }, { text: name, name: true }, { text: after }].filter((p) => p.text);
+        },
+
+        /**
+         * ", then deploy and verify", with the names bold.
+         * @param {object[]} jobs Jobs that come next.
+         * @returns {{text: string, name: boolean}[]} Parts, none without jobs.
+         */
+        thenJobs(jobs) {
+            if (!jobs.length) {
+                return [];
+            }
+            const list = new Intl.ListFormat(this.$i18n.locale, { type: "conjunction" })
+                .formatToParts(jobs.map((j) => j.name))
+                .map((p) => ({ text: p.value, name: p.type === "element" }));
+            const [before, after = ""] = this.$t("deployBoardDetailThen", [NAME_MARK]).split(NAME_MARK);
+            return [{ text: before }, ...list, { text: after }].filter((p) => p.text);
+        },
+
         /**
          * @param {object} job Job of the pipeline.
          * @returns {string} Its state, with how long it took or has been running.
@@ -325,26 +420,106 @@ export default {
     }
 }
 
+/* One line at every level: the column measures the cards, and a header that wraps would make it guess. */
 .db-card-head {
     display: flex;
-    flex-wrap: wrap;
     align-items: baseline;
-    gap: 4px 8px;
+    gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
 }
 
 .db-card-project {
+    flex-shrink: 0;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 17px;
     font-weight: 700;
-    overflow-wrap: anywhere;
 }
 
+// The hash gives way first, then the label.
 .db-card-version {
+    flex-shrink: 10;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 13.5px;
     color: var(--db-ink-2);
 }
 
+.db-card-elapsed {
+    display: none;
+    flex-shrink: 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--db-ink-2);
+}
+
+.db-card-detail {
+    display: none;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13.5px;
+    color: var(--db-ink-3);
+
+    b {
+        font-weight: 700;
+        color: var(--db-ink);
+    }
+}
+
+/* Medium: header, the time line, the track with its labels and one line of detail. */
+.db-card[data-level="medium"] {
+    gap: 6px;
+
+    .db-steps {
+        margin: 0;
+    }
+}
+
+.db-card[data-level="medium"],
+.db-card[data-level="compact"] {
+    .db-pipeline,
+    .db-card-releases,
+    .db-card-note,
+    .db-card-warning,
+    .db-card-rollback {
+        display: none;
+    }
+
+    .db-card-detail {
+        display: block;
+    }
+}
+
+/* Compact (about 70 px): header with the elapsed time, the track without labels, one line. */
+.db-card[data-level="compact"] {
+    gap: 5px;
+    padding-block: 6px;
+
+    .db-card-time,
+    .db-step span {
+        display: none;
+    }
+
+    .db-card-elapsed {
+        display: inline;
+    }
+
+    .db-steps {
+        margin: 0;
+    }
+}
+
 .db-card-label {
+    min-width: 0;
     margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 13.5px;
     font-weight: 600;
     color: var(--db-deploy);
