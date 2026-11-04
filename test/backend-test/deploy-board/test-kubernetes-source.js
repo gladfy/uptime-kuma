@@ -135,6 +135,25 @@ describe("Coletor do cluster", () => {
         assert.strictEqual(store.snapshot().sources.cluster.state, "active");
     });
 
+    test("endereço da API com caminho (API atrás de um proxy): os pedidos saem abaixo dele", async () => {
+        const tracker = new ClusterTracker({ releases: ["condominio/winker-prod"] });
+        source = new KubernetesSource({
+            namespaces: ["condominio"],
+            tracker,
+            store,
+            baseUrl: `${baseUrl}/k8s/clusters/c-1/`,
+            serviceAccountDir: dir,
+            tickMs: 60 * 60 * 1000,
+            retryMinMs: 10,
+        });
+        source.start();
+        await until(() => requests.length >= 2, "pedidos");
+        assert.ok(
+            requests.every((r) => r.path.startsWith("/k8s/clusters/c-1/apis/")),
+            JSON.stringify(requests.map((r) => r.path))
+        );
+    });
+
     test("evento partido no meio da linha chega inteiro ao rastreador", async () => {
         routes[DEPLOYMENTS("condominio")] = { list: listOf(deployment({})) };
         startSource(["condominio"], ["condominio/winker-prod"]);
@@ -197,7 +216,7 @@ describe("Coletor do cluster", () => {
         const { cluster } = store.snapshot().sources;
         assert.strictEqual(cluster.state, "stale");
         assert.strictEqual(cluster.detail, "chat: 403");
-        assert.deepStrictEqual([...store.staleNamespaces], ["chat"]);
+        assert.deepStrictEqual([...store.staleNamespaces.get("cluster")], ["chat"]);
 
         // O condominio continua sendo lido.
         watches

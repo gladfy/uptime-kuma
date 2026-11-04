@@ -73,6 +73,18 @@ export default {
                     name: this.$t(source.nameKey),
                     ...this.describe(source, this.sources?.[source.id]),
                 });
+                if (source.id === "cluster") {
+                    // The other clusters of the configuration, each with its own state, beside the EKS.
+                    for (const [id, state] of Object.entries(this.sources || {}).filter(([key]) =>
+                        key.startsWith("cluster:")
+                    )) {
+                        items.push({
+                            id,
+                            name: this.$t("deployBoardSourceClusterNamed", [state.label]),
+                            ...this.describe(source, state),
+                        });
+                    }
+                }
             }
             return items;
         },

@@ -25,6 +25,15 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 /** AWS region, e.g. us-east-1. */
 const REGION_RE = /^[a-z]{2}(-[a-z]+)+-\d$/;
 
+/** What the footer and the card call a cluster: short, it goes beside a release name. */
+const LABEL_MAX = 20;
+
+/**
+ * A cluster name prefixes the volume of its credential in the chart ("deploy-board-cluster-<name>",
+ * at most 63 characters) and the object keys of the database (a column of 160): kept short.
+ */
+const CLUSTER_NAME_MAX = 20;
+
 /**
  * Validate the parsed configuration file of the deploy board.
  *
@@ -47,6 +56,45 @@ function validateDeployBoardConfig(raw) {
         }
     }
     const namespaces = [...new Set(raw.namespaces)];
+
+    // Clusters besides the one the pod runs in. Their releases are "<cluster>:<namespace>/<release>".
+    const clustersRaw = raw.clusters === undefined ? [] : raw.clusters;
+    if (!Array.isArray(clustersRaw)) {
+        return fail("clusters: expected a list");
+    }
+    const clusters = [];
+    for (let i = 0; i < clustersRaw.length; i++) {
+        const c = clustersRaw[i];
+        const at = `clusters[${i}]`;
+        if (!c || typeof c !== "object" || Array.isArray(c)) {
+            return fail(`${at}: expected an object`);
+        }
+        if (typeof c.name !== "string" || !NAMESPACE_RE.test(c.name) || c.name.length > CLUSTER_NAME_MAX) {
+            return fail(`${at}.name: expected a lowercase name of up to ${CLUSTER_NAME_MAX} characters, e.g. "oci"`);
+        }
+        if (clusters.some((other) => other.name === c.name)) {
+            return fail(`${at}.name: "${c.name}" is repeated`);
+        }
+        if (
+            c.label !== undefined &&
+            (typeof c.label !== "string" || c.label.trim() === "" || c.label.length > LABEL_MAX)
+        ) {
+            return fail(`${at}.label: expected a text of up to ${LABEL_MAX} characters`);
+        }
+        if (!Array.isArray(c.namespaces) || c.namespaces.length === 0) {
+            return fail(`${at}.namespaces: expected a non-empty list`);
+        }
+        for (let j = 0; j < c.namespaces.length; j++) {
+            if (typeof c.namespaces[j] !== "string" || !NAMESPACE_RE.test(c.namespaces[j])) {
+                return fail(`${at}.namespaces[${j}]: not a valid namespace name`);
+            }
+        }
+        clusters.push({
+            name: c.name,
+            label: c.label === undefined ? c.name.toUpperCase() : c.label.trim(),
+            namespaces: [...new Set(c.namespaces)],
+        });
+    }
 
     const projectsRaw = raw.projects === undefined ? [] : raw.projects;
     if (!Array.isArray(projectsRaw)) {
@@ -103,15 +151,22 @@ function validateDeployBoardConfig(raw) {
         const releases = [];
         for (let j = 0; j < p.releases.length; j++) {
             const ref = p.releases[j];
-            const parts = typeof ref === "string" ? ref.split("/") : [];
-            if (parts.length !== 2 || !NAMESPACE_RE.test(parts[0]) || !RELEASE_RE.test(parts[1])) {
-                return fail(`${at}.releases[${j}]: expected "<namespace>/<release>"`);
+            const parsed = typeof ref === "string" ? parseReleaseRef(ref) : null;
+            if (!parsed || !NAMESPACE_RE.test(parsed.namespace) || !RELEASE_RE.test(parsed.release)) {
+                return fail(
+                    `${at}.releases[${j}]: expected "<namespace>/<release>" or "<cluster>:<namespace>/<release>"`
+                );
+            }
+            const cluster = parsed.cluster === null ? null : clusters.find((c) => c.name === parsed.cluster);
+            if (cluster === undefined) {
+                return fail(`${at}.releases[${j}]: cluster "${parsed.cluster}" is not in clusters`);
             }
             // A release in a namespace nobody watches would never show a rollout, silently.
-            if (!namespaces.includes(parts[0])) {
-                return fail(`${at}.releases[${j}]: namespace "${parts[0]}" is not in namespaces`);
+            if (!(cluster ? cluster.namespaces : namespaces).includes(parsed.namespace)) {
+                const list = cluster ? `clusters "${cluster.name}" namespaces` : "namespaces";
+                return fail(`${at}.releases[${j}]: namespace "${parsed.namespace}" is not in ${list}`);
             }
-            releases.push({ namespace: parts[0], release: parts[1] });
+            releases.push(parsed);
         }
 
         projects.push({
@@ -136,9 +191,28 @@ function validateDeployBoardConfig(raw) {
     }
 
     return {
-        config: { namespaces, projects, amplify },
+        config: { namespaces, clusters, projects, amplify },
         error: null,
     };
+}
+
+/**
+ * @param {string} ref "<namespace>/<release>" (the cluster the pod runs in) or
+ * "<cluster>:<namespace>/<release>", as the configuration and the "deploy" tag of the monitors write it.
+ * @returns {{cluster: string|null, namespace: string, release: string}|null} Its parts, or null when
+ * it has neither form.
+ */
+function parseReleaseRef(ref) {
+    const match = /^(?:([^:/]+):)?([^:/]+)\/([^:/]+)$/.exec(ref);
+    return match ? { cluster: match[1] ?? null, namespace: match[2], release: match[3] } : null;
+}
+
+/**
+ * @param {{cluster?: string|null, namespace: string, release: string}} r Release.
+ * @returns {string} How the configuration and the monitor tags write it (see parseReleaseRef).
+ */
+function releaseRef(r) {
+    return `${r.cluster ? `${r.cluster}:` : ""}${r.namespace}/${r.release}`;
 }
 
 /**
@@ -193,4 +267,6 @@ module.exports = {
     PIPELINE_SOURCES,
     validateDeployBoardConfig,
     loadDeployBoardConfig,
+    parseReleaseRef,
+    releaseRef,
 };

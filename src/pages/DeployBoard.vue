@@ -129,6 +129,7 @@ import { UP, DOWN, PENDING, MAINTENANCE } from "../util.ts";
 import { soundEvents } from "../components/deploy-board/sound-events.mjs";
 import { SoundPlayer } from "../components/deploy-board/sound-player.js";
 import { servicesGoneDown } from "../components/deploy-board/service-alert.mjs";
+import { releaseRef, sourceOfTag, isClusterSource } from "../components/deploy-board/release-ref.mjs";
 import { mockCount, withMockDeploys } from "../components/deploy-board/mock-deploys.js";
 
 /**
@@ -428,8 +429,16 @@ export default {
             if (this.failures.length) {
                 return { tone: "bad", title: this.$t("deployBoardVerdictFailures", this.failures.length), sub };
             }
-            if (this.board.sources.cluster.state === "stale") {
-                return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub: this.board.sources.cluster.detail || "" };
+            // Every cluster without a reading, so one does not hide another.
+            const unread = Object.entries(this.board.sources).filter(
+                ([id, s]) => isClusterSource(id) && s.state === "stale"
+            );
+            if (unread.length) {
+                const sub = unread
+                    .map(([id, s]) => [id === "cluster" ? null : s.label, s.detail].filter(Boolean).join(" · "))
+                    .filter(Boolean)
+                    .join("; ");
+                return { tone: "muted", title: this.$t("deployBoardClusterNoRead"), sub };
             }
             // Nothing running is not news: grey, with no dot.
             return { tone: "idle", title: this.$t("deployBoardNoDeploysNow"), sub };
@@ -768,7 +777,9 @@ export default {
                 return null;
             }
             if (!monitor.releases.length) {
-                return ["cluster", "amplify"].some((id) => deploys.sources[id]?.state === "active")
+                return Object.entries(deploys.sources).some(
+                    ([id, s]) => (isClusterSource(id) || id === "amplify") && s.state === "active"
+                )
                     ? this.$t("deployBoardIncidentNoTag")
                     : null;
             }
@@ -833,7 +844,7 @@ const ENDED_STATES = ["done", "failed", "cancelled", "superseded"];
 
 /**
  * What a monitor is linked to, from its Kuma tags named "deploy": "<namespace>/<release>" of the
- * cluster, or "amplify/<app>".
+ * cluster, "<cluster>:<namespace>/<release>" of another cluster, or "amplify/<app>".
  * @param {object|undefined} monitor Monitor from the socket list.
  * @returns {string[]} Tag values.
  */
@@ -850,7 +861,7 @@ function deployTags(monitor) {
  * only be said by who reads the source.
  */
 function sourcesRead(tags, sources) {
-    return tags.every((t) => sources[t.startsWith("amplify/") ? "amplify" : "cluster"]?.state === "active");
+    return tags.every((t) => sources[sourceOfTag(t)]?.state === "active");
 }
 
 /** States of a deploy rolling out in the cluster: the service is being changed. */
@@ -877,7 +888,7 @@ function reachedService(deploy) {
  * @returns {string[]} The tag values it answers to (older servers send only the releases).
  */
 function linksOf(deploy) {
-    return deploy.links || deploy.releases.map((r) => `${r.namespace}/${r.release}`);
+    return deploy.links || deploy.releases.map(releaseRef);
 }
 
 /**

@@ -1,6 +1,10 @@
 const { releaseRollback } = require("./rollback");
+const { releaseRef } = require("./config");
 
-/** The deploy sources the server reads. Kuma itself is read by the browser, not here. */
+/**
+ * The deploy sources the server reads. Kuma itself is read by the browser, not here. "cluster" is
+ * the cluster the pod runs in; each other cluster of the configuration adds "cluster:<name>".
+ */
 const SOURCE_IDS = ["cluster", "bitbucket", "github", "amplify"];
 
 /**
@@ -42,6 +46,7 @@ const HISTORY_PUBLIC_FIELDS = ["id", "project", "version", "outcome", "startedAt
  */
 const ROLLOUT_RECORD_FIELDS = [
     "id",
+    "cluster",
     "namespace",
     "release",
     "state",
@@ -161,13 +166,28 @@ class DeployBoardStore {
         this.amplifyApps = [];
         // What each release runs now, from the cluster (see ClusterTracker.commitsOf).
         this.commitsOf = () => null;
-        this.staleNamespaces = new Set();
+        // Per cluster source: namespaces whose rollout state cannot be vouched for.
+        this.staleNamespaces = new Map();
         this.lastDoneStartedAt = new Map();
         this.sequence = 0;
         this.listeners = new Set();
         this.lastEmitAt = null;
         this.emitTimer = null;
         this.tickTimer = null;
+    }
+
+    /**
+     * A source for another cluster, "unconfigured" until its collector starts. Safe to call again.
+     * @param {string} name Cluster name, from the configuration.
+     * @param {string} label What the footer and the card call it.
+     * @returns {string} The source id.
+     */
+    addClusterSource(name, label) {
+        const id = clusterSourceId(name);
+        this.sources[id] = this.sources[id] || { state: "unconfigured", lastDataAt: null, detail: null };
+        this.sources[id].label = label;
+        this.changed();
+        return id;
     }
 
     /**
@@ -244,7 +264,7 @@ class DeployBoardStore {
                 releases: project.releases,
             });
             for (const r of project.releases) {
-                this.projectOfRelease.set(`${r.namespace}/${r.release}`, { name: project.name, source: project.source });
+                this.projectOfRelease.set(releaseRef(r), { name: project.name, source: project.source });
             }
         }
         for (const name of this.amplifyApps) {
@@ -255,14 +275,16 @@ class DeployBoardStore {
     /**
      * Namespaces whose rollout state cannot be vouched for (denied or not answering).
      * @param {string[]} namespaces Namespaces.
+     * @param {string} sourceId Cluster source they belong to.
      * @returns {void}
      */
-    setStaleNamespaces(namespaces) {
+    setStaleNamespaces(namespaces, sourceId = "cluster") {
         const next = new Set(namespaces);
-        if (next.size === this.staleNamespaces.size && [...next].every((ns) => this.staleNamespaces.has(ns))) {
+        const current = this.staleNamespaces.get(sourceId) || new Set();
+        if (next.size === current.size && [...next].every((ns) => current.has(ns))) {
             return;
         }
-        this.staleNamespaces = next;
+        this.staleNamespaces.set(sourceId, next);
         this.changed();
     }
 
@@ -274,7 +296,7 @@ class DeployBoardStore {
      * @returns {void}
      */
     upsertRollout(rollout) {
-        const project = this.projectOfRelease.get(`${rollout.namespace}/${rollout.release}`);
+        const project = this.projectOfRelease.get(releaseRef(rollout));
         if (!project) {
             return;
         }
@@ -373,18 +395,36 @@ class DeployBoardStore {
     }
 
     /**
-     * @returns {boolean} Whether the cluster is being read: only then "no rollout" can be said.
+     * @param {object} deploy Internal deploy.
+     * @returns {string[]} The cluster sources its project rolls in: those of its releases, or the
+     * pod's own cluster for a project with none listed.
      */
-    clusterActive() {
-        return this.sources.cluster.state === "active";
+    clusterSourcesOf(deploy) {
+        const releases = this.projects.get(deploy.project)?.releases || [];
+        const ids = [...new Set(releases.map((r) => clusterSourceId(r.cluster)))];
+        return ids.length ? ids : ["cluster"];
     }
 
     /**
-     * @returns {boolean} Whether there is a cluster to follow at all. While it does not answer (stale),
-     * a green pipeline still waits for its rollout: it is not "No ar" for lack of news.
+     * @param {object} deploy Internal deploy.
+     * @returns {boolean} Whether the clusters of its project that have a collector are all being read:
+     * only then "no rollout" can be said.
      */
-    clusterConfigured() {
-        return this.sources.cluster.state !== "unconfigured";
+    clusterActive(deploy) {
+        const configured = this.clusterSourcesOf(deploy).filter((id) => this.sources[id]?.state !== "unconfigured");
+        return configured.length > 0 && configured.every((id) => this.sources[id].state === "active");
+    }
+
+    /**
+     * @param {object} deploy Internal deploy.
+     * @returns {boolean} Whether there is a cluster of its project to follow at all. While it does not
+     * answer (stale), a green pipeline still waits for its rollout: it is not "No ar" for lack of news.
+     * A cluster whose credential is not there yet leaves its projects as if there were no cluster.
+     */
+    clusterConfigured(deploy) {
+        return this.clusterSourcesOf(deploy).some(
+            (id) => (this.sources[id]?.state ?? "unconfigured") !== "unconfigured"
+        );
     }
 
     /**
@@ -393,11 +433,23 @@ class DeployBoardStore {
      * none: its job publishes the site itself.
      */
     waitsRollout(deploy) {
-        return deploy.pipelineSource !== "amplify" && this.clusterConfigured();
+        return deploy.pipelineSource !== "amplify" && this.clusterConfigured(deploy);
     }
 
     /**
-     * @param {Function} lookup "<namespace>/<release>" → the commits its objects run, or null.
+     * @param {object} rollout Rollout, or release, with `cluster` and `namespace`.
+     * @returns {boolean} Whether its state can be vouched for: its cluster is read, or only other
+     * namespaces of that cluster fail.
+     */
+    rolloutRead(rollout) {
+        const id = clusterSourceId(rollout.cluster);
+        const state = this.sources[id]?.state;
+        const stale = this.staleNamespaces.get(id) || new Set();
+        return state === "active" || (state === "stale" && stale.size > 0 && !stale.has(rollout.namespace));
+    }
+
+    /**
+     * @param {Function} lookup Release (see releaseRef) → the commits its objects run, or null.
      * @returns {void}
      */
     setCommitsLookup(lookup) {
@@ -412,11 +464,14 @@ class DeployBoardStore {
      */
     alreadyLive(deploy) {
         const releases = this.projects.get(deploy.project)?.releases || [];
-        if (!deploy.sha || !releases.length || !this.clusterActive()) {
+        if (!deploy.sha || !releases.length) {
             return false;
         }
         return releases.every((r) => {
-            const commits = this.commitsOf(`${r.namespace}/${r.release}`);
+            if (this.sources[clusterSourceId(r.cluster)]?.state !== "active") {
+                return false;
+            }
+            const commits = this.commitsOf(releaseRef(r));
             return commits?.length > 0 && commits.every((c) => sameCommit(c, deploy.sha));
         });
     }
@@ -517,9 +572,11 @@ class DeployBoardStore {
      */
     snapshot() {
         const sources = {};
-        for (const id of SOURCE_IDS) {
-            const s = this.sources[id];
+        for (const [id, s] of Object.entries(this.sources)) {
             sources[id] = { state: s.state, lastDataAt: s.lastDataAt, detail: s.detail };
+            if (s.label !== undefined) {
+                sources[id].label = s.label;
+            }
         }
         const deploys = [...this.deploys]
             .sort(
@@ -532,7 +589,12 @@ class DeployBoardStore {
             deploys,
             history: this.history.map((h) =>
                 pickPublic(
-                    { ...h, links: linksOf(h.releases || [], h.pipeline?.source === "amplify" ? h.project : null) },
+                    {
+                        ...h,
+                        // The label is the configuration's, not the record's: it may change.
+                        releases: (h.releases || []).map((r) => ({ ...r, clusterLabel: this.clusterLabel(r.cluster) })),
+                        links: linksOf(h.releases || [], h.pipeline?.source === "amplify" ? h.project : null),
+                    },
                     HISTORY_PUBLIC_FIELDS
                 )
             ),
@@ -578,7 +640,6 @@ class DeployBoardStore {
         // A project without a pipeline source has nothing to match a rollout against: never "no pipeline".
         const pipelineConfigured =
             deploy.pipelineSource !== null && this.sources[deploy.pipelineSource]?.state !== "unconfigured";
-        const cluster = this.sources.cluster.state;
         const rollouts = liveRollouts(deploy);
         const missed = isMissed(rollouts);
         const noRollout = this.noRollout(deploy);
@@ -599,11 +660,12 @@ class DeployBoardStore {
             confirmed:
                 deploy.pipelineSource === "amplify"
                     ? this.sources.amplify.state === "active"
-                    : cluster === "active" ||
-                      (cluster === "stale" &&
-                          this.staleNamespaces.size > 0 &&
-                          rollouts.every((r) => !this.staleNamespaces.has(r.namespace))),
+                    : rollouts.length
+                      ? rollouts.every((r) => this.rolloutRead(r))
+                      : this.clusterSourcesOf(deploy).every((id) => this.sources[id]?.state === "active"),
             releases: rollouts.map((r) => ({
+                cluster: r.cluster ?? null,
+                clusterLabel: this.clusterLabel(r.cluster),
                 namespace: r.namespace,
                 release: r.release,
                 state: r.state,
@@ -627,7 +689,9 @@ class DeployBoardStore {
      */
     noRollout(deploy) {
         const end = deploy.pipeline ? pipelineEnd(deploy.pipeline) : null;
-        return deploy.state === "built" && this.clusterActive() && end !== null && this.now() - end >= NO_ROLLOUT_MS;
+        return (
+            deploy.state === "built" && this.clusterActive(deploy) && end !== null && this.now() - end >= NO_ROLLOUT_MS
+        );
     }
 
     /**
@@ -637,7 +701,20 @@ class DeployBoardStore {
      * @returns {{releases: object[]}} One plan per release.
      */
     rollbackOf(deploy, rollouts) {
-        return { releases: rollouts.map((r) => releaseRollback(r, this.earlierDone(deploy, r))) };
+        return {
+            releases: rollouts.map((r) => ({
+                ...releaseRollback(r, this.earlierDone(deploy, r)),
+                clusterLabel: this.clusterLabel(r.cluster),
+            })),
+        };
+    }
+
+    /**
+     * @param {string|null|undefined} cluster Cluster name.
+     * @returns {string|null} What the card calls it, or null for the pod's own (no mark).
+     */
+    clusterLabel(cluster) {
+        return cluster ? (this.sources[clusterSourceId(cluster)]?.label ?? cluster) : null;
     }
 
     /**
@@ -654,11 +731,7 @@ class DeployBoardStore {
         ].flat();
         return others
             .filter(
-                (r) =>
-                    r.state === "done" &&
-                    r.namespace === rollout.namespace &&
-                    r.release === rollout.release &&
-                    r.startedAt < rollout.startedAt
+                (r) => r.state === "done" && releaseRef(r) === releaseRef(rollout) && r.startedAt < rollout.startedAt
             )
             .sort((a, b) => b.startedAt - a.startedAt);
     }
@@ -670,8 +743,8 @@ class DeployBoardStore {
      */
     deployFor(project, rollout) {
         const sha = shaOf(rollout.images);
-        const sameRelease = (d) =>
-            [...d.rollouts.values()].some((r) => r.namespace === rollout.namespace && r.release === rollout.release);
+        const ref = releaseRef(rollout);
+        const sameRelease = (d) => [...d.rollouts.values()].some((r) => releaseRef(r) === ref);
         const fits = (d) => {
             if (d.project !== project.name || sameRelease(d)) {
                 return false;
@@ -685,7 +758,7 @@ class DeployBoardStore {
         let deploy = sha ? null : this.pipelineFor(project, rollout, sameRelease);
         deploy = deploy || this.deploys.find(fits);
         if (!deploy && sha) {
-            deploy = this.reopen(project, sha, (h) => !h.rollouts.some((r) => r.namespace === rollout.namespace && r.release === rollout.release));
+            deploy = this.reopen(project, sha, (h) => !h.rollouts.some((r) => releaseRef(r) === ref));
         }
         if (!deploy) {
             deploy = this.newDeploy(project, sha, sha ? sha.slice(0, 7) : rollout.images[0] || null, rollout.startedAt);
@@ -787,7 +860,11 @@ class DeployBoardStore {
             } else if (deploy.state === "pipeline" && deploy.rollouts.size === 0 && pipelineSilent(deploy.pipeline, now)) {
                 deploy.endedAt = now;
                 outcome = "lost";
-            } else if (deploy.state === "built" && this.clusterActive() && now - pipelineEnd(deploy.pipeline) >= NO_ROLLOUT_LEAVE_MS) {
+            } else if (
+                deploy.state === "built" &&
+                this.clusterActive(deploy) &&
+                now - pipelineEnd(deploy.pipeline) >= NO_ROLLOUT_LEAVE_MS
+            ) {
                 deploy.endedAt = pipelineEnd(deploy.pipeline);
                 outcome = "noRollout";
             } else if (
@@ -900,14 +977,23 @@ class DeployBoardStore {
 }
 
 /**
- * The values of the Kuma tag "deploy" a deploy answers to: "<namespace>/<release>" of each release,
- * and "amplify/<app>" for an Amplify app. The page links monitors to deploys by them.
- * @param {{namespace: string, release: string}[]} releases Releases of the deploy.
+ * @param {string|null|undefined} cluster Cluster name, or null for the pod's own.
+ * @returns {string} The source that reads it.
+ */
+function clusterSourceId(cluster) {
+    return cluster ? `cluster:${cluster}` : "cluster";
+}
+
+/**
+ * The values of the Kuma tag "deploy" a deploy answers to: "<namespace>/<release>" of each release
+ * ("<cluster>:<namespace>/<release>" outside the pod's own cluster), and "amplify/<app>" for an
+ * Amplify app. The page links monitors to deploys by them.
+ * @param {{cluster?: string|null, namespace: string, release: string}[]} releases Releases of the deploy.
  * @param {string|null} amplifyApp App, when the deploy is of an Amplify app.
  * @returns {string[]} Tag values.
  */
 function linksOf(releases, amplifyApp) {
-    const links = releases.map((r) => `${r.namespace}/${r.release}`);
+    const links = releases.map(releaseRef);
     return amplifyApp ? [...links, `amplify/${amplifyApp}`] : links;
 }
 
@@ -1048,7 +1134,7 @@ function recordOf(deploy, outcome, endedAt) {
         missed: isMissed(rollouts),
         startedAt: deploy.startedAt,
         endedAt,
-        releases: rollouts.map((r) => ({ namespace: r.namespace, release: r.release })),
+        releases: rollouts.map((r) => ({ cluster: r.cluster ?? null, namespace: r.namespace, release: r.release })),
         rollouts,
         pipeline: deploy.pipeline ? pipelineRecord(deploy.pipeline) : null,
     };

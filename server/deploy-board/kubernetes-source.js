@@ -58,6 +58,9 @@ class KubernetesSource {
      * @param {Function} options.now Clock, in ms.
      * @param {number} options.tickMs Health and clock evaluation interval.
      * @param {number} options.retryMinMs First retry delay.
+     * @param {string} options.sourceId Source of the store this cluster reports as.
+     * @param {string|null} options.serverFile File with the API server URL, for a cluster other than
+     * the pod's own (mounted from a Secret with the token and the CA beside it).
      */
     constructor({
         namespaces,
@@ -69,7 +72,10 @@ class KubernetesSource {
         now = () => Date.now(),
         tickMs = TICK_MS,
         retryMinMs = RETRY_MIN_MS,
+        sourceId = "cluster",
+        serverFile = null,
     }) {
+        this.sourceId = sourceId;
         this.namespaces = namespaces;
         this.tracker = tracker;
         this.store = store;
@@ -78,11 +84,7 @@ class KubernetesSource {
         this.retryMinMs = retryMinMs;
         this.tokenFile = `${serviceAccountDir}/token`;
         this.caFile = `${serviceAccountDir}/ca.crt`;
-        this.baseUrl =
-            baseUrl ||
-            (env.KUBERNETES_SERVICE_HOST
-                ? `https://${env.KUBERNETES_SERVICE_HOST}:${env.KUBERNETES_SERVICE_PORT || 443}`
-                : null);
+        this.baseUrl = baseUrl || (serverFile ? readServer(serverFile) : inClusterUrl(env));
         this.streams = [];
         this.requests = new Set();
         this.stopped = false;
@@ -103,13 +105,13 @@ class KubernetesSource {
      */
     start() {
         if (!this.isConfigured()) {
-            this.store.setSource("cluster", "unconfigured");
+            this.store.setSource(this.sourceId, "unconfigured");
             return false;
         }
         if (this.baseUrl.startsWith("https:")) {
             this.agent = new https.Agent({ ca: fs.existsSync(this.caFile) ? fs.readFileSync(this.caFile) : undefined, keepAlive: true });
         }
-        this.store.setSource("cluster", "active");
+        this.store.setSource(this.sourceId, "active");
 
         const startedAt = this.now();
         for (const namespace of this.namespaces) {
@@ -198,11 +200,11 @@ class KubernetesSource {
 
         if (this.contacted) {
             this.contacted = false;
-            this.store.markData("cluster");
+            this.store.markData(this.sourceId);
         }
         const detail = [...failing].map(([ns, why]) => `${ns}: ${why}`).join(", ") || null;
-        this.store.setStaleNamespaces([...failing.keys()]);
-        this.store.setSource("cluster", failing.size ? "stale" : "active", detail);
+        this.store.setStaleNamespaces([...failing.keys()], this.sourceId);
+        this.store.setSource(this.sourceId, failing.size ? "stale" : "active", detail);
         this.tracker.tick();
     }
 
@@ -346,7 +348,9 @@ class KubernetesSource {
      */
     request(path, onResponse) {
         const token = fs.readFileSync(this.tokenFile, "utf8").trim();
-        const url = new URL(path, this.baseUrl);
+        // Kept under the path of the API address, as kubectl does (a proxied API lives below one).
+        const base = new URL(this.baseUrl);
+        const url = new URL(`${base.pathname.replace(/\/+$/, "")}${path}`, base);
         const transport = url.protocol === "https:" ? https : http;
         const req = transport.get(
             url,
@@ -359,6 +363,30 @@ class KubernetesSource {
         this.requests.add(req);
         req.on("close", () => this.requests.delete(req));
         return req;
+    }
+}
+
+/**
+ * @param {object} env Environment.
+ * @returns {string|null} The API server of the cluster the pod runs in, or null outside Kubernetes.
+ */
+function inClusterUrl(env) {
+    return env.KUBERNETES_SERVICE_HOST
+        ? `https://${env.KUBERNETES_SERVICE_HOST}:${env.KUBERNETES_SERVICE_PORT || 443}`
+        : null;
+}
+
+/**
+ * @param {string} file File with the API server URL of another cluster.
+ * @returns {string|null} The URL, or null while the file is missing or holds no https URL (the
+ * Secret not created yet): the source stays "unconfigured".
+ */
+function readServer(file) {
+    try {
+        const url = fs.readFileSync(file, "utf8").trim();
+        return /^https:\/\/[^\s/]+/.test(url) ? url : null;
+    } catch (e) {
+        return null;
     }
 }
 

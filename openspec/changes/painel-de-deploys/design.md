@@ -496,6 +496,17 @@ mostrar a pipeline deles.
   (o nome do contexto `kubectl` de cada pessoa o painel não sabe).
 - *Pipeline:* os dois repositórios entram com origem `bitbucket` e branch `main`, e o cartão junta
   merge, pipeline e virada pelo SHA, como no EKS.
+- *Montagem (03/11/2026):* um diretório por cluster em `$DEPLOY_BOARD_CLUSTERS_DIR/<nome>`, com
+  `server`, `token` e `ca.crt`, de um Secret opcional. O caminho é do chart
+  (`/etc/deploy-board-clusters`, fora de `/etc/deploy-board`, que é o volume só leitura do
+  ConfigMap); sem a variável, os outros clusters ficam "não configurados". O endereço pode ter
+  caminho (API atrás de proxy), e os pedidos saem abaixo dele, como no kubectl. O nome do cluster vai
+  a até 20 caracteres, porque prefixa o volume do chart (63) e a chave dos objetos no banco (160). Sem os arquivos, a fonte fica "não configurada" e os projetos dela se
+  comportam como sem cluster (a pipeline verde fecha o deploy), então o chart pode subir antes da
+  credencial sem alarme falso. O endereço e a CA são lidos no boot; o token, a cada pedido.
+- *Rede (03/11/2026):* a API do OKE da conta Winker é pública e a lista de segurança aceita a porta
+  6443 de qualquer IP, então o EKS chega a ela sem mudança. A conta Condominizar tem API só privada:
+  fica para uma decisão à parte (tarefa 29.3).
 
 *Alternativas descartadas:* chave de API da OCI no Kuma, gerando o token do OKE como a pipeline faz
 (precisa do `oci-cli` na imagem ou de reimplementar a assinatura de pedidos da OCI, e uma chave de
@@ -640,12 +651,14 @@ configuração (a imagem anterior ignora a tabela, e o Kuma tolera migration a m
 
 ## Open Questions
 
-- **Rede até o OKE (fase 9):** a API do OKE é pública com lista de IPs ou privada? Se for pública, a
-  lista precisa dos IPs de saída do EKS; se for privada, falta rota (VPN ou peering) entre as nuvens.
-- **Onde fica o RBAC do lado da OCI:** o repositório `infrastructure` tem charts dos apps da OCI, mas
-  não está claro se o RBAC do OKE é versionado em algum lugar ou aplicado à mão.
-- **O que mais roda no OKE:** só o `ia-rag` e o `ia-process-document` são conhecidos daqui (a máquina
-  só tem o contexto do EKS); o inventário da fase 9 responde.
+- **Rede até o OKE (fase 9):** respondida para a conta Winker em 03/11/2026 (API pública, ver
+  decisão 19). Continua aberta para a conta Condominizar, de API só privada (tarefa 29.3).
+- **Onde fica o RBAC do lado da OCI:** respondida em 03/11/2026: não havia RBAC do OKE versionado. O
+  da leitura do painel sai do chart do Kuma (`templates/deploy-board-reader-other-cluster.yaml`),
+  gerado dos mesmos namespaces de `deployBoard.clusters` e aplicado no OKE.
+- **O que mais roda no OKE:** respondida para a conta Winker em 03/11/2026 (tarefa 29.1): além das
+  duas releases do painel, n8n, evolution-api, coturn, Loki, Tempo e Prometheus, sem origem de
+  pipeline confirmada.
 
 - **Cabeçalho do Bitbucket:** conferir numa entrega real se o Bitbucket Cloud envia
   `X-Hub-Signature` com `sha256=`. Se vier outro formato, só a função de verificação muda.
