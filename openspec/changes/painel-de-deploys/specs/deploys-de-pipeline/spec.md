@@ -178,6 +178,10 @@ região também vêm dele), com erro legível no log, sem impedir o boot.
 - **WHEN** o projeto `agua-gas` está configurado só com nome e a release `microservices-prod/agua-gas`, sem origem, repositório nem branch
 - **THEN** a configuração é aceita e a virada da release aparece no painel
 
+#### Scenario: Projeto só de pipeline (fluxos do Prefect)
+- **WHEN** o projeto `dwh` (`gladfy/dwh`) está configurado com origem, repositório, branch e `workflow`, e sem release, porque a pipeline publica uma imagem que a próxima execução de fluxo baixa e nada vira no cluster
+- **THEN** a pipeline verde conclui o deploy como "No ar", sem os passos "build pronto" e "virada", sem o aviso "pipeline verde, nenhuma virada vista", e ele conta como sucesso na taxa das 24 h
+
 #### Scenario: Origem incompleta
 - **WHEN** um projeto tem `repo` e `branch` mas não tem `source`
 - **THEN** a configuração é recusada, o log nomeia `source` desse projeto, e o painel mostra as fontes como "não configuradas"

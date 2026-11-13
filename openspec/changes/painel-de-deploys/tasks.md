@@ -281,6 +281,14 @@ Pedido do Erik em 03/11/2026: um som quando um serviço cai, alerta de ambulânc
 
 Pedido do Erik em 02/11/2026. Decisão final (02/11): o painel **não** volta a versão; ele **mostra o comando** para quem tem acesso ao cluster copiar e rodar com a própria credencial. O Kuma continua só leitura, sem permissão nova, sem 2FA e sem ADR de exceção. O comando volta **só a imagem**, também por decisão do Erik: `kubectl set image` para a tag do deploy anterior, e não `kubectl rollout undo`, que volta o template inteiro e pode cair numa revisão que foi só um restart.
 
+## 22c. Projeto só de pipeline (Prefect)
+
+Pedido do Erik em 13/11/2026: o deploy do Prefect não aparecia. O deploy dos fluxos é o workflow `.github/workflows/deploy.yaml` do `gladfy/dwh` (push na `main`): ele publica a imagem `tiwinker/dwh:latest` e registra os deployments na API do Prefect, e nada vira no cluster (os CronJobs `external-flows-*` e o `prefect-work-pool` usam tag móvel). O projeto `prefect` da configuração é o chart do `prefect-server`, sem origem, e o `gladfy/dwh` não tinha webhook.
+
+- [x] 22c.1 Projeto com origem e sem release: a pipeline verde é o fim do deploy (antes ele esperava a virada no cluster do pod e acusava "Nenhuma virada vista"). Teste em `test-pipeline.js`, que reprova sem a correção.
+- [ ] 22c.2 Configuração: projeto `dwh` (github, `gladfy/dwh`, `main`, workflow `.github/workflows/deploy.yaml`, `releases: []`) no chart; publicar depois do deploy do Kuma com a 22c.1, senão a pipeline verde fica esperando virada.
+- [ ] 22c.3 Webhook do `gladfy/dwh` para `/api/deploy-board/webhook/github`, com o mesmo segredo e os mesmos eventos dos outros repositórios do GitHub (`push`, `workflow_run`, `workflow_job`); conferir o próximo push na `main` no painel.
+
 ## 23. Comando para copiar
 
 - [x] 23.1 Extração do Deployment: guardar também o nome de cada container e o repositório da imagem (sem env, volume nem nada mais do template), para montar o comando. Ampliar a asserção de `test-rollout-state.js` de que env e volumes não sobrevivem.
