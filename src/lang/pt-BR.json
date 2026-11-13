@@ -491,6 +491,7 @@
     "deployBoardSoundOn": "Ativar som",
     "deployBoardSoundOff": "Silenciar",
     "deployBoardSoundBlocked": "Clique na página para liberar o som",
+    "deployBoardSoundBlockedHint": "Para não precisar clicar depois de cada atualização do Kuma, permita reprodução automática de áudio deste site no navegador.",
     "deployBoardSoundCredits": "Gravações do Freesound: buzina de navio de tierrafilm (CC0), apito de trem \"steam train horn 02\" de eliasheuninck (CC BY 4.0, trecho editado) e sino de bordo de Sojan (CC0).",
     "deployBoardNoDeploysNow": "Nenhum agora",
     "deployBoardLastDeploy": "último: {0}, há {1}",

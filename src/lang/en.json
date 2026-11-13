@@ -309,6 +309,7 @@
     "deployBoardSoundOn": "Turn sound on",
     "deployBoardSoundOff": "Mute",
     "deployBoardSoundBlocked": "Click the page to let sound play",
+    "deployBoardSoundBlockedHint": "To skip the click after every Kuma update, allow this site to autoplay audio in the browser.",
     "deployBoardSoundCredits": "Recordings from Freesound: ship horn by tierrafilm (CC0), \"steam train horn 02\" by eliasheuninck (CC BY 4.0, excerpt edited) and ship's bell by Sojan (CC0).",
     "deployBoardNoDeploysNow": "None now",
     "deployBoardLastDeploy": "last: {0}, {1} ago",
