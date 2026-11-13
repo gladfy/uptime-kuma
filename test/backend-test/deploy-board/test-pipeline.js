@@ -25,6 +25,8 @@ const PROJECTS = [
     { name: "chat", source: "github", releases: [{ namespace: "chat", release: "chatwoot" }] },
     { name: "uptime-kuma", source: "github", releases: [{ namespace: "monitor-infra", release: "uptime-kuma" }] },
     { name: "agua-gas", source: null, releases: [{ namespace: "microservices-prod", release: "agua-gas" }] },
+    // The Prefect flows: the pipeline pushes an image that the next flow run pulls; nothing rolls.
+    { name: "dwh", source: "github", releases: [] },
 ];
 
 describe("Pipeline e virada viram um deploy só", () => {
@@ -265,6 +267,28 @@ describe("Pipeline e virada viram um deploy só", () => {
         assert.strictEqual(snap.history[0].outcome, "noRollout");
         assert.strictEqual(snap.stats.noRollout, 1);
         assert.strictEqual(snap.stats.successRate, null, "fora da taxa de sucesso");
+    });
+
+    test("projeto sem release (fluxos do Prefect): a pipeline verde é o fim, sem esperar virada nem acusar", () => {
+        run("dwh", SHA, "running");
+        assert.strictEqual(cards()[0].state, "pipeline");
+        tick(4 * 60 * 1000);
+        run("dwh", SHA, "success");
+        const [card] = cards();
+        assert.strictEqual(card.state, "done");
+        assert.strictEqual(card.label, "live");
+        assert.deepStrictEqual(
+            card.steps.map((s) => s.key),
+            ["merge", "pipeline", "live"]
+        );
+
+        // Nem o aviso de "nenhuma virada" com o tempo: sai da tela como concluído, e conta como sucesso.
+        tick(NO_ROLLOUT_LEAVE_MS);
+        store.tick();
+        const snap = store.snapshot();
+        assert.deepStrictEqual(snap.deploys, []);
+        assert.strictEqual(snap.history[0].outcome, "done");
+        assert.strictEqual(snap.stats.successRate, 100);
     });
 
     test("pipeline verde de um commit que o cluster já roda: No ar, sem aviso de virada", () => {

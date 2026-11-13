@@ -396,13 +396,13 @@ class DeployBoardStore {
 
     /**
      * @param {object} deploy Internal deploy.
-     * @returns {string[]} The cluster sources its project rolls in: those of its releases, or the
-     * pod's own cluster for a project with none listed.
+     * @returns {string[]} The cluster sources its project rolls in, from its releases. A project with
+     * none (the Prefect flows: the pipeline pushes an image that the next flow run pulls, and nothing
+     * rolls in the cluster) has no rollout to wait for: its green pipeline is the end of the deploy.
      */
     clusterSourcesOf(deploy) {
         const releases = this.projects.get(deploy.project)?.releases || [];
-        const ids = [...new Set(releases.map((r) => clusterSourceId(r.cluster)))];
-        return ids.length ? ids : ["cluster"];
+        return [...new Set(releases.map((r) => clusterSourceId(r.cluster)))];
     }
 
     /**
